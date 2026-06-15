@@ -1,6 +1,5 @@
 import { CheckCircle2, FolderOpen, Loader2, Package, XCircle } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { ExportConversationResult } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 export type ConversationExportStatus = 'idle' | 'exporting' | 'success' | 'error'
 
@@ -87,7 +87,7 @@ export function ConversationExportDialog({
               : isError
                 ? '导出时遇到问题，可以稍后再试。'
                 : isIdle
-                  ? '将生成一个本地 zip 文件，包含当前对话和运行信息。文件只会保存在本机。'
+                  ? '将生成一个本地 zip 文件，包含当前对话和最近 24 小时运行信息。文件只会保存在本机。'
                   : '正在整理当前对话内容，请稍等。'}
           </DialogDescription>
         </DialogHeader>
@@ -122,13 +122,13 @@ export function ConversationExportDialog({
               <Package className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
               <div className="space-y-1 text-sm">
                 <div className="font-medium text-foreground">准备生成对话文件</div>
-                <div className="text-muted-foreground">开始后会自动整理内容并生成 zip 文件。</div>
+                <div className="text-muted-foreground">开始后会自动整理当前对话和最近 24 小时日志。</div>
               </div>
             </div>
           ) : (
             <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
               <StepRow done={progressStep > 0} active={progressStep === 0} label="整理对话内容" />
-              <StepRow done={progressStep > 1} active={progressStep === 1} label="收集运行信息" />
+              <StepRow done={progressStep > 1} active={progressStep === 1} label="收集最近 24 小时运行信息" />
               <StepRow done={false} active={progressStep >= 2} label="生成文件" />
             </div>
           )}

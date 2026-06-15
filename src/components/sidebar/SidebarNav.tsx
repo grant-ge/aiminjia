@@ -4,6 +4,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { Blocks, CheckSquare, Clock3, GraduationCap, MessageSquare, Users, type LucideIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'expert-teams' | 'channel'
 
@@ -24,24 +25,24 @@ const NAV: Array<{ key: SidebarNavKey; i18nKey: string; icon: LucideIcon }> = [
 export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNavProps) {
   const { t } = useTranslation()
   return (
-    <nav className="mb-2 flex flex-col gap-0.5">
+    <nav className="mb-2 flex flex-col gap-0.5 px-2">
       {NAV.map(({ key, i18nKey, icon: Icon }) => {
         const active = key === activeKey
         return (
-          <button
+          <Button unstyled
             key={key}
             type="button"
             data-aijia-nav={key}
             onClick={() => onSelect(key)}
             className={
               active
-                ? 'flex h-9 w-full items-center gap-2 rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-semibold text-sidebar-foreground'
-                : 'flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
+                ? `flex h-8 w-full items-center gap-2 rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-semibold text-sidebar-foreground`
+                : `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`
             }
           >
             <Icon className="h-4 w-4 shrink-0" />
             <span className="flex-1 truncate">{t(i18nKey)}</span>
-          </button>
+          </Button>
         )
       })}
     </nav>

@@ -11,8 +11,8 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import type { Conversation } from '@/types/message'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 interface ArchivedConversation {
   id: string
@@ -347,7 +347,7 @@ interface CheckSquareProps {
 function CheckSquare({ checked, indeterminate, onClick }: CheckSquareProps) {
   const active = checked || indeterminate
   return (
-    <button
+    <Button unstyled
       type="button"
       role="checkbox"
       aria-checked={indeterminate ? 'mixed' : checked}
@@ -360,6 +360,6 @@ function CheckSquare({ checked, indeterminate, onClick }: CheckSquareProps) {
       )}
     >
       {active ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-    </button>
+    </Button>
   )
 }

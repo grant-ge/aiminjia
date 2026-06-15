@@ -10,9 +10,11 @@
 //! card-streaming path will route through `IMConnector::send`.
 
 pub mod aicard_fallback;
+pub mod app_feedback;
 pub mod ask_coordinator;
 pub mod config_store;
 pub mod dedup;
+pub mod envelope;
 pub mod pending_adapter;
 pub mod proxy;
 pub mod reconnect;

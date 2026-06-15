@@ -146,6 +146,15 @@ pub async fn channel_reveal_secret(app: AppHandle, platform: String) -> Result<S
 }
 
 #[tauri::command]
+pub async fn channel_send_dingtalk_greeting(app: AppHandle) -> Result<(), String> {
+    manager(&app)
+        .await?
+        .send_dingtalk_greeting()
+        .await
+        .map_err(|e| format!("{:#}", e))
+}
+
+#[tauri::command]
 pub async fn channel_get_conversations(
     app: AppHandle,
     platform: Option<String>,

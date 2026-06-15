@@ -15,51 +15,63 @@
  * are full-width centered system messages and should NOT be wrapped —
  * the caller decides whether to render <ChatRow> at all.
  */
-import type { ReactNode } from 'react'
-import { ChatAvatar } from './ChatAvatar'
-import { formatChatTime, formatFullDateTime } from '@/lib/chatTime'
+import type { ReactNode } from "react";
+import { ChatAvatar } from "./ChatAvatar";
+import { formatChatTime, formatFullDateTime } from "@/lib/chatTime";
 
 interface ChatRowProps {
-  role: 'user' | 'assistant'
-  name: string
-  avatarUrl?: string | null
+  role: "user" | "assistant";
+  name: string;
+  avatarUrl?: string | null;
   /**
    * Fallback variant when `avatarUrl` is null. `'neutral'` paints the
    * gender-free brand-tinted silhouette (default for the current user),
    * `'initial'` paints the first character on a hashed palette color.
    */
-  avatarVariant?: 'initial' | 'neutral'
+  avatarVariant?: "initial" | "neutral";
   /** Background color seed for the avatar fallback. Defaults to `name`. */
-  colorSeed?: string
+  colorSeed?: string;
   /**
    * ISO 时间。提供时在 name 旁渲染小号时间戳（hover 显示完整时间）。
    * 同一个 turn 内的连续消息只在第一条传入，避免视觉噪音。
    */
-  timestamp?: string | null
+  timestamp?: string | null;
   /**
    * Suppress the avatar + name header. The gutter is preserved with an
    * invisible placeholder so child bubbles stay aligned with the previous
    * (header-bearing) row. Used in interleaved mode for the 2nd+ assistant
    * "runs" that follow a tool card — the avatar already stamped above.
    */
-  hideHeader?: boolean
-  children: ReactNode
+  hideHeader?: boolean;
+  children: ReactNode;
 }
 
-export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, timestamp, hideHeader, children }: ChatRowProps) {
-  const isUser = role === 'user'
+export function ChatRow({
+  role,
+  name,
+  avatarUrl,
+  avatarVariant,
+  colorSeed,
+  timestamp,
+  hideHeader,
+  children,
+}: ChatRowProps) {
+  const isUser = role === "user";
   // We anchor the header (avatar+name) at the top so multi-line bubbles
   // don't drift the avatar to the middle. `items-start` does that.
-  const rowDir = isUser ? 'flex-row-reverse' : 'flex-row'
-  const nameAlign = isUser ? 'text-right' : 'text-left'
-  const rowInset = isUser ? '' : 'pr-9'
+  const rowDir = isUser ? "flex-row-reverse" : "flex-row";
+  const nameAlign = isUser ? "text-right" : "text-left";
+  const rowInset = isUser ? "" : "pr-9";
   return (
     <div
       data-testid="chat-row"
       data-role={role}
       className={`flex w-full items-start gap-2 ${rowDir} ${rowInset}`.trim()}
     >
-      <div className="flex shrink-0 flex-col items-center gap-1 pt-1" aria-hidden={hideHeader || undefined}>
+      <div
+        className="flex shrink-0 flex-col items-center gap-1 pt-1"
+        aria-hidden={hideHeader || undefined}
+      >
         {hideHeader ? (
           // Invisible spacer keeps the bubble aligned with the previous
           // header-bearing row. Matches ChatAvatar's intrinsic size (32px).
@@ -73,12 +85,15 @@ export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, times
           />
         )}
       </div>
-      <div data-testid="chat-row-content" className="flex min-w-0 flex-1 flex-col gap-1">
+      <div
+        data-testid="chat-row-content"
+        className="flex min-w-0 flex-1 flex-col gap-1"
+      >
         {hideHeader ? null : (
           <div
             data-testid="chat-row-name"
             className={`flex items-baseline gap-2 text-xs font-medium text-muted-foreground ${
-              isUser ? 'flex-row-reverse justify-start' : 'justify-start'
+              isUser ? "flex-row-reverse justify-start" : "justify-start"
             }`}
           >
             <span className={nameAlign}>{name}</span>
@@ -97,14 +112,16 @@ export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, times
         <div
           className={
             isUser
-              ? 'flex w-full justify-end'
-              // assistant rows can stack multiple children (tool trace + AI
-              // bubble + …). Keep them compact so one assistant turn still
-              // reads as a continuous response.
-              : 'flex flex-col gap-1'
+              ? "flex w-full justify-end"
+              : // assistant rows can stack multiple children (tool trace + AI
+                // bubble + …). Keep them compact so one assistant turn still
+                // reads as a continuous response.
+                "flex flex-col gap-1"
           }
-        >{children}</div>
+        >
+          {children}
+        </div>
       </div>
     </div>
-  )
+  );
 }

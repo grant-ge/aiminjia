@@ -322,6 +322,8 @@ async fn allow_resolution_replays_tool_and_returns_successful_tool_result_to_llm
                 updated_input: None,
                 remember: false,
                 destination: None,
+                message: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("allow ask");
@@ -528,6 +530,8 @@ async fn multiple_asks_are_processed_in_order_with_independent_results() {
                 updated_input: None,
                 remember: false,
                 destination: None,
+                message: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("allow first ask");
@@ -626,6 +630,7 @@ fn permission_ask_required_maps_to_frontend_permission_ask_payload() {
             mode: PermissionMode::Default,
             remember_options: vec![PermissionDestination::Session],
             default_destination: Some(PermissionDestination::Session),
+            path_auth_scope: None,
             primary_model: "deepseek-v3".into(),
         },
     );

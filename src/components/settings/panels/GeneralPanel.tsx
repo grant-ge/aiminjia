@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
 import { getSettings, updateSettings } from '@/lib/tauri'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ChatWidthMode, FontScale } from '@/types/settings'
 import type { AppLanguage } from '@/i18n'
+import { Button } from '@/components/ui/button'
 
 interface GeneralPanelProps {
   user: { name: string; tenantName: string; avatarUrl: string }
@@ -51,9 +51,9 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
   }
 
   const FONT_SCALE_OPTIONS: Array<{ value: FontScale; description: string; labelKey: string }> = [
-    { value: 'small', description: '14px', labelKey: 'settings.general.fontSmall' },
-    { value: 'medium', description: '16px', labelKey: 'settings.general.fontMedium' },
-    { value: 'large', description: '18px', labelKey: 'settings.general.fontLarge' },
+    { value: 'small', description: '12px', labelKey: 'settings.general.fontSmall' },
+    { value: 'medium', description: '13px', labelKey: 'settings.general.fontMedium' },
+    { value: 'large', description: '14px', labelKey: 'settings.general.fontLarge' },
   ]
 
   const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
@@ -84,7 +84,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="truncate text-sm leading-none text-muted-foreground">{accountSubtitle}</div>
           </div>
         </div>
-        <Button variant="outline" data-aijia-logout-button className="h-9 rounded-md px-5 text-sm font-semibold" onClick={onLogout}>
+        <Button variant="outline" data-aijia-logout-button onClick={onLogout}>
           {t('settings.general.logout')}
         </Button>
       </section>
@@ -108,7 +108,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               const selected = fontScale === option.value
               const label = t(option.labelKey)
               return (
-                <button
+                <Button unstyled
                   key={option.value}
                   type="button"
                   role="radio"
@@ -123,7 +123,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   }
                 >
                   {label}
-                </button>
+                </Button>
               )
             })}
           </div>
@@ -143,7 +143,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               const selected = chatWidthMode === option.value
               const label = t(option.labelKey)
               return (
-                <button
+                <Button unstyled
                   key={option.value}
                   type="button"
                   role="radio"
@@ -157,7 +157,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   }
                 >
                   {label}
-                </button>
+                </Button>
               )
             })}
           </div>
@@ -181,7 +181,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             {LANGUAGE_OPTIONS.map((option) => {
               const selected = appLanguage === option.value
               return (
-                <button
+                <Button unstyled
                   key={option.value}
                   type="button"
                   role="radio"
@@ -195,7 +195,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   }
                 >
                   {option.label}
-                </button>
+                </Button>
               )
             })}
           </div>

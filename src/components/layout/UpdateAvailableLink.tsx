@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useUpdaterStore } from '@/lib/updaterStore'
+import { Button } from '@/components/ui/button'
 
 const READY_DOT_COLOR = '#22c55e'
 
@@ -12,14 +13,14 @@ export function UpdateAvailableLink() {
   if (phase !== 'ready' || !version) return null
 
   return (
-    <button
+    <Button unstyled
       data-aijia-updater-link
       data-aijia-updater-version={version}
       type="button"
       onClick={openPanel}
       onMouseDown={(e) => e.stopPropagation()}
       title={t('updater.linkReadyTooltip')}
-      className="mr-2 flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-primary-foreground/95 transition-colors hover:bg-white/10"
+      className="mr-2 flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
     >
       <span
         className="inline-block h-1.5 w-1.5 rounded-md ring-1 ring-white/75"
@@ -27,6 +28,6 @@ export function UpdateAvailableLink() {
         aria-hidden
       />
       <span>{t('updater.linkReady', { version })}</span>
-    </button>
+    </Button>
   )
 }

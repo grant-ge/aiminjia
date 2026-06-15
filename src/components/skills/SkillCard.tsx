@@ -25,10 +25,10 @@ interface SkillCardProps {
   marketInstalled?: boolean
 }
 
-export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version, skillId, skillSource, skillEnabled, marketCard, marketInstalled }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[#fbeed8] text-[#d19b00]', onClick, size = 'office', actionsSlot, version, skillId, skillSource, skillEnabled, marketCard, marketInstalled }: SkillCardProps) {
   const isHot = size === 'hot'
-  const height = isHot ? 'min-h-[156px]' : 'min-h-[140px]'
-  const iconSize = isHot ? 'h-11 w-11' : 'h-10 w-10'
+  const height = isHot ? 'min-h-32' : 'min-h-28'
+  const avatarText = Array.from(title.trim())[0]?.toUpperCase() ?? '?'
 
   const interactiveProps = onClick
     ? {
@@ -41,7 +41,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
       }
     : {}
   const interactiveClass = onClick
-    ? 'cursor-pointer hover:border-primary/50 hover:shadow-[var(--shadow-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+    ? 'cursor-pointer hover:border-primary/40 hover:bg-card/95 hover:shadow-[var(--shadow-skill-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
     : ''
 
   return (
@@ -54,32 +54,45 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
       data-aijia-skill-market-card={marketCard ? 'true' : undefined}
       data-aijia-skill-installed={marketInstalled === undefined ? undefined : String(marketInstalled)}
       {...interactiveProps}
-      className={`group relative flex ${height} flex-col rounded-md border border-border bg-card p-4 shadow-[var(--shadow-card)] transition-all duration-150 ${interactiveClass}`}
+      className={`group relative flex ${height} flex-col rounded-md border border-border/65 bg-card p-3 shadow-[var(--shadow-skill-card)] transition-[border-color,background-color,box-shadow] duration-150 ${interactiveClass}`}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-md ${iconBg}`}>
-          {iconNode}
+        <div
+          data-testid="skill-card-avatar"
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${iconBg}`}
+        >
+          {iconNode ?? (
+            <span
+              data-testid="skill-card-fallback-avatar"
+              className="text-[length:var(--text-lg)] font-semibold leading-none text-inherit"
+              aria-hidden="true"
+            >
+              {avatarText}
+            </span>
+          )}
         </div>
         <div className={`flex min-w-0 flex-1 flex-col gap-0.5 ${actionsSlot ? 'pr-28' : ''}`}>
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{title}</span>
+            <span className="truncate text-sm font-semibold leading-5 text-foreground">{title}</span>
+          </div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-xs font-medium leading-4 text-muted-foreground">{meta}</span>
             {version ? (
               <span
                 data-testid="skill-card-version"
                 title={version}
-                className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0 font-mono text-[10px] leading-relaxed text-muted-foreground"
+                className="shrink-0 rounded-[2px] border border-border bg-muted px-1.5 py-0 font-mono text-2xs leading-4 text-muted-foreground"
               >
                 {version}
               </span>
             ) : null}
           </div>
-          <span className="text-xs font-medium text-muted-foreground">{meta}</span>
         </div>
       </div>
-      <p className="mt-3 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{desc}</p>
+      <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{desc}</p>
       {actionsSlot ? (
         <div
-          className="absolute right-4 top-4"
+          className="absolute right-3 top-3"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >

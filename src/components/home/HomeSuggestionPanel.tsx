@@ -3,6 +3,7 @@
  * @sizing wrapper r-30 border 1 padding [18,24]; row gap 20 padding [20,0]
  */
 import type { HomeSuggestionItem } from '@/data/home-suggestions'
+import { Button } from '@/components/ui/button'
 
 interface HomeSuggestionPanelProps {
   items: HomeSuggestionItem[]
@@ -17,7 +18,7 @@ export function HomeSuggestionPanel({
     <div className="w-full px-4 -mt-1.5">
       <div className="flex flex-col">
         {items.map((item, index) => (
-          <button
+          <Button unstyled
             key={item.key}
             type="button"
             onClick={() => onSelect(item)}
@@ -37,7 +38,7 @@ export function HomeSuggestionPanel({
             <span className="text-sm leading-6 text-muted-foreground">
               {item.desc}
             </span>
-          </button>
+          </Button>
         ))}
       </div>
     </div>

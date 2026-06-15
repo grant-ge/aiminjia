@@ -109,4 +109,39 @@ describe('generatedFileActions', () => {
       fileType: undefined,
     })
   })
+
+  it('keeps structured generated file preview targets on the conversation file index path', () => {
+    expect(
+      toPreviewTarget({
+        id: 'file-1',
+        title: 'report.md',
+        fileName: 'report.md',
+        filePath: '/tmp/report.md',
+        fileType: 'markdown',
+      }, conversationId),
+    ).toEqual({
+      fileId: 'file-1',
+      conversationId,
+      fileName: 'report.md',
+      fileType: 'markdown',
+    })
+  })
+
+  it('uses explicit local paths only for artifact-marker preview targets', () => {
+    expect(
+      toPreviewTarget({
+        id: 'artifact-a1-report.md',
+        title: 'report.md',
+        fileName: 'report.md',
+        filePath: '/tmp/report.md',
+        fileType: 'markdown',
+      }, conversationId),
+    ).toEqual({
+      fileId: 'artifact-a1-report.md',
+      conversationId,
+      fileName: 'report.md',
+      fileType: 'markdown',
+      localPath: '/tmp/report.md',
+    })
+  })
 })

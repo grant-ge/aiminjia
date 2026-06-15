@@ -20,10 +20,10 @@
 //! parent LLM knows the launch succeeded.
 //!
 //! ## Teammate dispatch (P1.6)
-//! Passing `employee_id` (mutually exclusive with `subagent_type`) sources the
-//! spawned agent from an Employee profile.  `team_name` (non-empty) turns the
-//! dispatch into a Teammate that joins the session's Team.  `name` is required
-//! for Teammate dispatch and is registered in [`AgentNameRegistry`].
+//! Passing `team_name` (non-empty) turns the dispatch into a Teammate that
+//! joins the session's Team. `subagent_type` may be a builtin agent or an
+//! Employee profile. `name` is required for Teammate dispatch and is registered
+//! in [`AgentNameRegistry`].
 //! The idle loop is launched via `tokio::spawn(run_worker(WorkerMode::TeammateIdle{...}))`.
 
 use std::sync::Arc;
@@ -173,7 +173,8 @@ pub fn render_dispatch_catalog(ctx: &crate::runtime::tools::ToolDescriptionConte
     let mut out = String::new();
     out.push_str(
         "**重要**：`subagent_type` 必须从下面清单中精确选择，禁止编造未列出的名字。\
-         有匹配的数字员工（`emp-...`）时请优先选择它们——它们带有专属人设和工具白名单。",
+         普通角色发言、临时专家讨论、兜底分析优先使用通用/内置 Agent；\
+         只有用户明确要求某个数字员工，或任务确实需要该数字员工的专属人设、技能和工具白名单时，才选择 `emp-...`。",
     );
     let _ = write!(out, "\n\n<available_subagent_types>\n");
     for line in emp_lines.iter().chain(other_lines.iter()) {
@@ -206,6 +207,29 @@ pub fn build_unknown_subagent_type_error(bad_name: &str, registry: &AgentRegistr
             available.join(", ")
         )
     }
+}
+
+fn should_route_omitted_team_name_to_active_team(
+    active_team_name: Option<&str>,
+    name: Option<&str>,
+    prompt: &str,
+    description: &str,
+) -> bool {
+    if active_team_name.is_none() || name.is_none() {
+        return false;
+    }
+    let text = format!("{description}\n{prompt}");
+    let has_team_recipient = text.contains("team-lead")
+        || text.contains("团队")
+        || text.contains("圆桌")
+        || text.contains("专家");
+    let has_expert_deliverable = text.contains("发表")
+        || text.contains("发言")
+        || text.contains("观点")
+        || text.contains("专业")
+        || text.contains("共识")
+        || text.contains("请从");
+    has_team_recipient && has_expert_deliverable
 }
 
 #[async_trait]
@@ -274,16 +298,6 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 ToolError::ExecutionFailed("missing required field: description".into())
             })?;
 
-        // ── Parse the single dispatch source field ────────────────────────
-        let subagent_type = input
-            .get("subagent_type")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| {
-                ToolError::ExecutionFailed("missing required field: subagent_type".into())
-            })?;
-
         // ── Parse optional routing/dispatch fields ─────────────────────────
         let caller_model = input
             .get("model")
@@ -299,42 +313,91 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .map(str::to_string);
-        let team_name = input
+        let explicit_team_name = input
             .get("team_name")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .map(str::to_string);
+        let inferred_active_team_name = if explicit_team_name.is_none()
+            && should_route_omitted_team_name_to_active_team(
+                ctx.active_team_name.as_deref(),
+                name.as_deref(),
+                prompt,
+                description,
+            ) {
+            ctx.active_team_name.clone()
+        } else {
+            None
+        };
+        let team_name = explicit_team_name
+            .clone()
+            .or_else(|| inferred_active_team_name.clone());
+
+        // ── Parse the single dispatch source field ────────────────────────
+        // Server-authored expert-team templates can omit subagent_type while
+        // still supplying (or implying) team_name/name/prompt. Treat that as
+        // the generic teammate worker instead of forcing a visible retry.
+        let subagent_type = match input
+            .get("subagent_type")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+        {
+            Some(value) => value,
+            None if team_name.is_some() => "general-purpose".to_string(),
+            None => {
+                return Err(ToolError::ExecutionFailed(
+                    "missing required field: subagent_type".into(),
+                ))
+            }
+        };
 
         // ── Team handle resolution ─────────────────────────────────────────
         // Must happen before name registration so a failed team lookup doesn't
         // leave a stale entry in AgentNameRegistry.
         //
-        // Resolution rule: caller-supplied `team_name` takes precedence; if
-        // absent or empty we fall back to ctx.active_team_name (single owner
-        // via TeamRegistry). We no longer silently pick "the first team in
-        // the session" — that historical fallback masked bugs where the
-        // active team was not propagated to the tool context and the caller
-        // dispatched to the wrong team when multiple were present.
-        let team_handle = if let Some(caller_team) =
-            team_name.as_deref().or(ctx.active_team_name.as_deref())
-        {
+        // Resolution rule: an explicit `team_name` turns Agent dispatch into
+        // a Teammate. Expert-team director templates sometimes omit
+        // `team_name` on Agent calls after creating a team; if the call carries
+        // a member `name` and the prompt clearly asks for expert/team
+        // deliverables, route it to the active team as a narrow compatibility
+        // fallback. Other omitted-team Agent calls remain standalone.
+        //
+        // If the caller supplied a stale/display team name, fall back to the
+        // current active team to avoid a failed tool round caused by mixing
+        // human labels with internal IDs.
+        let team_handle = if let Some(caller_team) = team_name.as_deref() {
             let session_id = ctx.session_id.clone();
-            let team = ctx
-                .team_registry()
-                .get(&session_id, caller_team)
-                .await
-                .ok_or_else(|| {
-                    ToolError::ExecutionFailed(format!(
-                        "team `{caller_team}` not found in this session — call TeamCreate first or check the spelling"
-                    ))
-                })?;
+            let team = match ctx.team_registry().get(&session_id, caller_team).await {
+                Some(team) => team,
+                None => {
+                    let active = ctx.active_team_name.as_deref().ok_or_else(|| {
+                        ToolError::ExecutionFailed(format!(
+                            "team `{caller_team}` not found in this session — call TeamCreate first or check the spelling"
+                        ))
+                    })?;
+                    let active_team = ctx.team_registry().get(&session_id, active).await.ok_or_else(
+                        || {
+                            ToolError::ExecutionFailed(format!(
+                                "team `{caller_team}` not found in this session, and active team `{active}` is not available"
+                            ))
+                        },
+                    )?;
+                    log::warn!(
+                        "[spawn_subagent] caller-supplied team_name {:?} not found; using active team {:?}",
+                        caller_team,
+                        active
+                    );
+                    active_team
+                }
+            };
             // Surface unexpected mismatches between the caller-supplied name
             // and the active team to help diagnose stale UI labels, but the
-            // caller-supplied name is authoritative for routing.
+            // resolved team handle is authoritative for routing.
             if let (Some(caller), Some(active)) = (&team_name, &ctx.active_team_name) {
                 if caller != active {
                     log::warn!(
-                        "[spawn_subagent] caller-supplied team_name {:?} differs from active team {:?}; using caller's",
+                        "[spawn_subagent] caller-supplied team_name {:?} differs from active team {:?}; using resolved team handle",
                         caller,
                         active
                     );
@@ -398,6 +461,22 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     let guard = team_handle.as_ref().unwrap().lock().await;
                     guard.team_name.clone()
                 };
+                if let Some(existing_agent_id) = ctx
+                    .agent_names()
+                    .resolve(&ctx.session_id, &team_name_for_reg, agent_name)
+                    .await
+                {
+                    return Ok(ToolResult::new(
+                        "Agent",
+                        format!("teammate `{agent_name}` already registered; duplicate spawn suppressed"),
+                        Some(serde_json::json!({
+                            "status": "teammate_spawned",
+                            "agent_id": existing_agent_id.as_str(),
+                            "name": agent_name,
+                            "duplicate_suppressed": true,
+                        })),
+                    ));
+                }
                 let ws = crate::telemetry::diagnostics_workspace();
                 record_diagnostic(
                     &ws,
@@ -814,6 +893,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn render_catalog_does_not_prefer_employees_for_generic_roles() {
+        let ctx = ToolDescriptionContext {
+            agents: vec![
+                AgentDefSummary {
+                    name: "emp-x".into(),
+                    description: "薪酬专家（数字员工）".into(),
+                    source: AgentSource::Employee,
+                },
+                AgentDefSummary {
+                    name: "general-purpose".into(),
+                    description: "通用子代理".into(),
+                    source: AgentSource::Builtin,
+                },
+            ],
+            mcp_servers: vec![],
+        };
+
+        let out = render_dispatch_catalog(&ctx);
+
+        assert!(
+            !out.contains("优先选择"),
+            "catalog should not bias generic role roundtables toward employees: {out}"
+        );
+        assert!(
+            out.contains("明确要求") || out.contains("专属"),
+            "catalog should explain when employee agents are appropriate: {out}"
+        );
+    }
+
     // ── definition() integration with ctx ──────────────────────────────────
 
     #[tokio::test]
@@ -1059,6 +1168,211 @@ mod tests {
         let reqs = seen.lock().unwrap();
         assert_eq!(reqs.len(), 1);
         assert_eq!(reqs[0].subagent_type, "explore");
+    }
+
+    #[tokio::test]
+    async fn active_team_does_not_force_standalone_agent_into_teammate_dispatch() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let tool = build_tool_with_recorder(seen.clone());
+        let ctx = ToolExecutionContext::for_test("conv-active", "run-active", "tc-active")
+            .with_active_team("existing-team".to_string());
+
+        let result = tool
+            .execute(
+                json!({
+                    "subagent_type": "general-purpose",
+                    "prompt": "standalone fallback analysis",
+                    "description": "fallback analysis"
+                }),
+                ctx,
+            )
+            .await
+            .expect("omitting team_name should use standalone sync Agent path");
+
+        assert!(
+            result.content.contains("stub-output"),
+            "standalone path should return launcher output, got: {}",
+            result.content
+        );
+        let reqs = seen.lock().unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].subagent_type, "general-purpose");
+    }
+
+    #[tokio::test]
+    async fn omitted_team_name_expert_agent_routes_to_active_team() {
+        let team_registry = crate::runtime::agent::TeamRegistry::new();
+        let names = crate::runtime::agent::AgentNameRegistry::new();
+        let inboxes = crate::runtime::agent::InboxRegistry::new();
+
+        let create_ctx = ToolExecutionContext::for_test("conv-infer-team", "run-1", "tc-create")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+        crate::runtime::tools::builtin::team_tools::TeamCreateRuntimeTool
+            .execute(json!({ "team_name": "expert-team-strategy" }), create_ctx)
+            .await
+            .expect("test setup should create an active team");
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let tool = build_tool_with_recorder(seen.clone());
+        let spawn_ctx = ToolExecutionContext::for_test("conv-infer-team", "run-2", "tc-agent")
+            .with_team_registry(team_registry)
+            .with_agent_names(names)
+            .with_inbox_registry(inboxes)
+            .with_active_team("expert-team-strategy".to_string());
+
+        let result = tool
+            .execute(
+                json!({
+                    "subagent_type": "general-purpose",
+                    "prompt": "你是战略推演团的 CFO。请从财务视角发表你的专业观点，发送完观点后发给 team-lead。",
+                    "description": "CFO 财务观点",
+                    "name": "cfo"
+                }),
+                spawn_ctx,
+            )
+            .await
+            .expect("expert Agent call should infer active team when team_name is omitted");
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result.content).expect("teammate response should be JSON");
+        assert_eq!(parsed["status"], "teammate_spawned");
+        assert_eq!(parsed["name"], "cfo");
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "teammate path should not call sync launcher"
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_display_team_name_falls_back_to_active_team_for_teammate_spawn() {
+        let team_registry = crate::runtime::agent::TeamRegistry::new();
+        let names = crate::runtime::agent::AgentNameRegistry::new();
+        let inboxes = crate::runtime::agent::InboxRegistry::new();
+
+        let create_ctx = ToolExecutionContext::for_test("conv-active-team", "run-1", "tc-create")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+        crate::runtime::tools::builtin::team_tools::TeamCreateRuntimeTool
+            .execute(json!({ "team_name": "safe-team" }), create_ctx)
+            .await
+            .expect("test setup should create an active team");
+
+        let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
+        let spawn_ctx = ToolExecutionContext::for_test("conv-active-team", "run-2", "tc-agent")
+            .with_team_registry(team_registry)
+            .with_agent_names(names)
+            .with_inbox_registry(inboxes)
+            .with_active_team("safe-team".to_string());
+
+        let result = tool
+            .execute(
+                json!({
+                    "subagent_type": "general-purpose",
+                    "prompt": "请作为品牌负责人发言",
+                    "description": "品牌负责人",
+                    "team_name": "市场营销策划团",
+                    "name": "brand-lead"
+                }),
+                spawn_ctx,
+            )
+            .await
+            .expect("display team_name should route to active team instead of failing");
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result.content).expect("teammate response should be JSON");
+        assert_eq!(parsed["status"], "teammate_spawned");
+        assert_eq!(parsed["name"], "brand-lead");
+    }
+
+    #[tokio::test]
+    async fn teammate_spawn_defaults_missing_subagent_type_to_general_purpose() {
+        let team_registry = crate::runtime::agent::TeamRegistry::new();
+        let names = crate::runtime::agent::AgentNameRegistry::new();
+        let inboxes = crate::runtime::agent::InboxRegistry::new();
+
+        let create_ctx = ToolExecutionContext::for_test("conv-default-type", "run-1", "tc-create")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+        crate::runtime::tools::builtin::team_tools::TeamCreateRuntimeTool
+            .execute(json!({ "team_name": "expert-team-marketing" }), create_ctx)
+            .await
+            .expect("test setup should create an active team");
+
+        let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
+        let spawn_ctx = ToolExecutionContext::for_test("conv-default-type", "run-2", "tc-agent")
+            .with_team_registry(team_registry)
+            .with_agent_names(names)
+            .with_inbox_registry(inboxes)
+            .with_active_team("expert-team-marketing".to_string());
+
+        let result = tool
+            .execute(
+                json!({
+                    "prompt": "请作为渠道经理发言",
+                    "description": "渠道经理",
+                    "team_name": "expert-team-marketing",
+                    "name": "channel-manager"
+                }),
+                spawn_ctx,
+            )
+            .await
+            .expect("teammate dispatch should default missing subagent_type");
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result.content).expect("teammate response should be JSON");
+        assert_eq!(parsed["status"], "teammate_spawned");
+        assert_eq!(parsed["name"], "channel-manager");
+    }
+
+    #[tokio::test]
+    async fn duplicate_teammate_spawn_is_suppressed_without_error() {
+        let team_registry = crate::runtime::agent::TeamRegistry::new();
+        let names = crate::runtime::agent::AgentNameRegistry::new();
+        let inboxes = crate::runtime::agent::InboxRegistry::new();
+
+        let create_ctx = ToolExecutionContext::for_test("conv-dup-agent", "run-1", "tc-create")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+        crate::runtime::tools::builtin::team_tools::TeamCreateRuntimeTool
+            .execute(json!({ "team_name": "expert-team-marketing" }), create_ctx)
+            .await
+            .expect("test setup should create an active team");
+
+        let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
+        for tool_call_id in ["tc-agent-1", "tc-agent-2"] {
+            let spawn_ctx = ToolExecutionContext::for_test("conv-dup-agent", "run-2", tool_call_id)
+                .with_team_registry(team_registry.clone())
+                .with_agent_names(names.clone())
+                .with_inbox_registry(inboxes.clone())
+                .with_active_team("expert-team-marketing".to_string());
+            let result = tool
+                .execute(
+                    json!({
+                        "subagent_type": "general-purpose",
+                        "prompt": "请作为增长黑客发言",
+                        "description": "增长黑客",
+                        "team_name": "expert-team-marketing",
+                        "name": "growth-hacker"
+                    }),
+                    spawn_ctx,
+                )
+                .await
+                .expect("duplicate teammate spawn should not fail");
+            let parsed = result
+                .data
+                .clone()
+                .or_else(|| serde_json::from_str(&result.content).ok())
+                .expect("teammate response should provide structured data");
+            assert_eq!(parsed["status"], "teammate_spawned");
+            if tool_call_id == "tc-agent-2" {
+                assert_eq!(parsed["duplicate_suppressed"], true);
+            }
+        }
     }
 
     #[tokio::test]

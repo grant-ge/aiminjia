@@ -1,9 +1,9 @@
 import * as React from 'react'
 import { Calendar, Check, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 export type DateTimePickerLevel = 'year' | 'month' | 'day' | 'hour' | 'minute' | 'second'
 export type DateTimePickerMode = 'single' | 'range' | 'time'
@@ -114,7 +114,7 @@ function SingleDateTimePicker(
           data-aijia-date-time-trigger={id ?? label}
           disabled={disabled}
           className={cn(
-            'h-9 w-full justify-between border-input bg-card px-3 text-left font-normal hover:border-primary hover:bg-card focus-visible:border-primary focus-visible:ring-primary/15',
+            'w-full justify-between text-left font-normal focus-visible:ring-primary/15',
             !display && 'text-muted-foreground',
             className,
           )}
@@ -203,7 +203,7 @@ function RangeDateTimePicker(props: Extract<DateTimePickerProps, { mode: 'range'
           aria-label={label}
           disabled={disabled}
           className={cn(
-            'h-9 w-full justify-between border-input bg-card px-3 text-left font-normal hover:border-primary hover:bg-card focus-visible:border-primary focus-visible:ring-primary/15',
+            'w-full justify-between text-left font-normal focus-visible:ring-primary/15',
             !display && 'text-muted-foreground',
             className,
           )}
@@ -389,11 +389,11 @@ function DatePanel({ draft, level, locale, onDraftChange }: Omit<PickerContentPr
 function PickerHeader({ title, onPrev, onNext }: { title: string; onPrev: () => void; onNext: () => void }) {
   return (
     <div className="mb-2 flex items-center justify-between">
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={onPrev} aria-label="上一页">
+      <Button type="button" variant="ghost" size="icon" onClick={onPrev} aria-label="上一页">
         <ChevronLeft className="h-4 w-4" />
       </Button>
       <div className="text-sm font-medium text-foreground">{title}</div>
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={onNext} aria-label="下一页">
+      <Button type="button" variant="ghost" size="icon" onClick={onNext} aria-label="下一页">
         <ChevronRight className="h-4 w-4" />
       </Button>
     </div>
@@ -488,7 +488,7 @@ function TimeColumn({
         )}
       >
         {values.map((value) => (
-          <button
+          <Button unstyled
             key={value}
             ref={selected === value ? selectedRef : undefined}
             type="button"
@@ -502,7 +502,7 @@ function TimeColumn({
             onClick={() => onSelect(value)}
           >
             {pad(value)}
-          </button>
+          </Button>
         ))}
       </div>
     </div>
@@ -526,7 +526,7 @@ function PickerCell({
   square?: boolean
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button
+    <Button unstyled
       type="button"
       aria-label={ariaLabel}
       className={cn(
@@ -539,7 +539,7 @@ function PickerCell({
       {...props}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 

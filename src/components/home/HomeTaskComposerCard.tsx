@@ -33,13 +33,16 @@ import {
   createConversation,
   getDefaultFolder,
   pickLocalDirectory,
+  type PermissionMode,
   type AuthorizedWorkspaceRef,
 } from '@/lib/tauri'
 import { localizeSkill, localizedSkillName } from '@/lib/skillLocalization'
 import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
-import { selectEnabledSkills, useSkillStore } from '@/stores/skillStore'
-import { useUiStore } from '@/stores/uiStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { useSkillStore } from '@/stores/skillStore'
+import { DRAFT_PERMISSION_SESSION_ID, useUiStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
 
 export function HomeTaskComposerCard() {
   const { t, i18n } = useTranslation()
@@ -56,9 +59,13 @@ export function HomeTaskComposerCard() {
     selectedWorkspace,
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
-  const allSkills = useSkillStore((s) => s.skills)
-  const skills = useMemo(() => selectEnabledSkills({ skills: allSkills }), [allSkills])
+  const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
+  const defaultPermissionMode = useSettingsStore((s) => s.defaultPermissionMode ?? 'default')
+  const permissionMode = useUiStore((s) =>
+    s.permissionModesBySession[DRAFT_PERMISSION_SESSION_ID] ?? defaultPermissionMode,
+  )
+  const setPermissionModeForSession = useUiStore((s) => s.setPermissionModeForSession)
   // Snapshot of the installed skills as composer-friendly tokens. Drives the
   // slash-command input rule and chip rendering inside the editor (mirrors
   // ChatBottomArea — single source of truth for selected skills).
@@ -109,6 +116,10 @@ export function HomeTaskComposerCard() {
     composerRef.current?.focus()
     setShowSkillPopover(false)
   }, [getSkillById, i18n.language])
+
+  const handlePermissionModeChange = useCallback((mode: PermissionMode) => {
+    setPermissionModeForSession(DRAFT_PERMISSION_SESSION_ID, mode)
+  }, [setPermissionModeForSession])
 
   // Load default folder if no workspace has been selected yet
   useEffect(() => {
@@ -167,6 +178,7 @@ export function HomeTaskComposerCard() {
     try {
       // Create conversation first so we have an ID to authorize against
       const backendId = await createConversation()
+      setPermissionModeForSession(backendId, permissionMode)
       const now = new Date().toISOString()
       const store = useChatStore.getState()
       store.setConversations([
@@ -218,11 +230,11 @@ export function HomeTaskComposerCard() {
       // doc, gets cleared automatically on submit, and is collected by the
       // serializer into payload.skills (mirrors ChatBottomArea).
       const skillForThisTurn = payload.skills[0] ?? null
-      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
+      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn, permissionMode)
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage, t])
+  }, [displayWorkspace, isSubmitting, permissionMode, sendUserMessage, setPermissionModeForSession, t])
 
   const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath
@@ -250,6 +262,8 @@ export function HomeTaskComposerCard() {
         initialMarkdown={initialMarkdown}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
         skillTokens={skillTokens}
+        permissionMode={permissionMode}
+        onPermissionModeChange={handlePermissionModeChange}
         showProjectButton={false}
         limitEditorHeight
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
@@ -261,7 +275,7 @@ export function HomeTaskComposerCard() {
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
+            <Button unstyled
               type="button"
               data-aijia-workspace-trigger
               disabled={isSubmitting}
@@ -272,7 +286,7 @@ export function HomeTaskComposerCard() {
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
               <span className="truncate">{t('homeComposer.workingIn', { name: workspaceLabel })}</span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
@@ -293,7 +307,7 @@ export function HomeTaskComposerCard() {
                   >
                     <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="flex-1 truncate text-foreground">{ws.displayName}</span>
-                    <button
+                    <Button unstyled
                       type="button"
                       aria-label={`从最近列表中移除 ${ws.displayName}`}
                       onClick={(e) => {
@@ -305,7 +319,7 @@ export function HomeTaskComposerCard() {
                       className="hidden h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </DropdownMenuItem>
                 ))}
               </div>

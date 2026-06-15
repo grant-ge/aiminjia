@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
 import { GroupMatchInput, groupMatchFromRecord, groupMatchToRecord, type GroupMatchConfig } from './GroupMatchInput'
 import { KnowledgeSourcesField, parseKnowledgeSources, type KnowledgeSource } from './KnowledgeSourcesField'
+import { Button } from '@/components/ui/button'
 
 interface Props { initial: Record<string, unknown>; onSubmit: (n: Record<string, unknown>) => void; onCancel: () => void }
 type ResponseStyle = 'professional' | 'friendly' | 'concise'

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { TenantHeader } from '../TenantHeader'
 
@@ -19,5 +19,26 @@ describe('TenantHeader', () => {
     const logoWrap = container.querySelector('[data-testid="tenant-logo"]')
     expect(logoWrap?.className).toMatch(/h-7/)
     expect(logoWrap?.className).toMatch(/w-7/)
+  })
+
+  it('stays clickable without rendering a native button, padding, or hover treatment', () => {
+    const onClick = vi.fn()
+    render(<TenantHeader name="X" logoUrl="/app-icon.png" onClick={onClick} />)
+
+    const header = screen.getByRole('button', { name: /X/ })
+    expect(header.tagName).not.toBe('BUTTON')
+    expect(header).not.toHaveClass('py-2')
+    expect(header).not.toHaveClass('pt-2')
+    expect(header).not.toHaveClass('pb-2')
+    expect(header).not.toHaveClass('mt-2')
+    expect(header).not.toHaveClass('my-2')
+    expect(header).toHaveClass('mb-2')
+    expect(header.className).not.toMatch(/hover:/)
+
+    fireEvent.click(header)
+    fireEvent.keyDown(header, { key: 'Enter' })
+    fireEvent.keyDown(header, { key: ' ' })
+
+    expect(onClick).toHaveBeenCalledTimes(3)
   })
 })

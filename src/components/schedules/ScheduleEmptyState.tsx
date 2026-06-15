@@ -3,8 +3,8 @@
  * @sizing h 280 center; gap 14
  */
 import type { ReactNode } from 'react'
-
 import { Button } from '@/components/ui/button'
+
 
 interface ScheduleEmptyStateProps {
   icon?: ReactNode

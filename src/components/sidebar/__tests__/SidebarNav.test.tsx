@@ -21,6 +21,15 @@ describe('SidebarNav', () => {
     expect(active.className).toMatch(/bg-sidebar-accent/)
   })
 
+  it('renders each nav item with the sidebar 30px item height variable', () => {
+    render(<SidebarNav activeKey="home" onSelect={() => {}} />)
+    for (const nav of screen.getAllByRole('button')) {
+      expect(nav).toHaveClass('h-8')
+      expect(nav.className).not.toContain('30px')
+      expect(nav).not.toHaveClass('h-9')
+    }
+  })
+
   it('calls onSelect with the kind on click', () => {
     const onSelect = vi.fn()
     render(<SidebarNav activeKey="home" onSelect={onSelect} />)

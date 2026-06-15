@@ -2,6 +2,25 @@ import type { EmployeeTemplate } from './templates'
 
 const SAFE_RE = /[\\/<>:"|?*\s]/g
 const RELEASE_RESOURCE_BASE_URL = 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/'
+const LOCAL_EMPLOYEE_AVATAR_NAMES = new Set([
+  '林知远',
+  '陈景律',
+  '周思齐',
+  '许嘉宁',
+  '丁若安',
+  '赵明川',
+  '何予周',
+  '沈柏川',
+  '顾承远',
+  '韩可欣',
+  '方予衡',
+  '陆时安',
+  '秦砚知',
+  '温嘉言',
+  '梁承序',
+  '何远策',
+  '唐识衡',
+])
 
 interface EmployeePersona {
   name: string
@@ -92,13 +111,6 @@ const EMPLOYEE_PERSONAS: Record<string, EmployeePersona> = {
     strengths: ['业务咨询分流', 'FAQ 话术', '客户沟通复盘'],
     examples: ['整理客户咨询并给出回复草稿', '把这段对话沉淀成 FAQ', '分析客户最关心的产品问题'],
   },
-  'builtin:xiaocheng': {
-    name: '程砚舟',
-    title: '流程设计师',
-    accent: 'bg-orange-50 text-orange-700',
-    strengths: ['流程拆解', '技能沉淀', '重复任务标准化'],
-    examples: ['把这个重复流程整理成可复用技能', '帮我拆解一项团队交付 SOP', '把口头经验改写成 SKILL.md'],
-  },
 }
 
 function safeName(name: string): string {
@@ -111,7 +123,16 @@ function fallbackExamples(template: EmployeeTemplate): string[] {
   return base ? [`围绕「${template.role}」安排一项具体任务`, base] : ['描述目标和上下文，让 TA 开始处理']
 }
 
+export function getLocalEmployeeAvatarUrl(name: string): string | null {
+  const normalized = name.trim()
+  if (!LOCAL_EMPLOYEE_AVATAR_NAMES.has(normalized)) return null
+  return `/employee-avatars/${safeName(normalized)}.svg`
+}
+
 function templateAvatarUrl(template: EmployeeTemplate): string | null {
+  const localUrl = getLocalEmployeeAvatarUrl(template.name)
+  if (localUrl) return localUrl
+
   const explicitUrl = template.avatarUrl?.trim()
   if (explicitUrl) return explicitUrl
 
@@ -138,7 +159,7 @@ export function getEmployeeVisual(template: EmployeeTemplate): EmployeeVisual {
   return {
     name: persona.name,
     title: persona.title || template.role,
-    avatarUrl: `/employee-avatars/${safeName(persona.name)}.svg`,
+    avatarUrl: getLocalEmployeeAvatarUrl(persona.name),
     avatarText: '',
     accent: persona.accent,
     strengths: persona.strengths,

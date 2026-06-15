@@ -17,6 +17,9 @@ pub use types::{
 pub use queue_manager::{ChatTurnDispatcher, ConvDirResolver, PendingQueueManager};
 
 #[cfg(test)]
+pub use queue_manager::build_request_from_batch_for_test;
+
+#[cfg(test)]
 mod types_test;
 
 #[cfg(test)]

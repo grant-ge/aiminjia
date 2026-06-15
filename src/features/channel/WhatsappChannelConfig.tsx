@@ -4,7 +4,6 @@ import type { TFunction } from 'i18next'
 import { ChevronDown, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react'
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   RegistrationModal,
@@ -19,6 +18,7 @@ import {
   channelWhatsappGetAllowFrom,
   channelWhatsappUpdateAllowFrom,
 } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   onSaved?: () => void
@@ -141,13 +141,13 @@ function CountryCodePicker({
       ariaLabel={t('channel.whatsapp.allowlist.selectCountry')}
       contentClassName="max-h-72 overflow-y-auto"
       trigger={
-        <button
+        <Button unstyled
           type="button"
           className="inline-flex h-9 w-[88px] shrink-0 items-center justify-between gap-1 rounded-md border border-input bg-background px-2 text-sm font-medium text-foreground hover:bg-muted"
         >
           <span>{value}</span>
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
+        </Button>
       }
       items={commonCountries.map((c) => ({
         id: c.code,
@@ -170,7 +170,7 @@ function ModeRadio({
   const Option = ({ kind, label, hint }: { kind: AllowMode; label: string; hint: string }) => {
     const active = value === kind
     return (
-      <button
+      <Button unstyled
         type="button"
         role="radio"
         aria-checked={active}
@@ -188,7 +188,7 @@ function ModeRadio({
           <span className="text-sm font-semibold text-foreground">{label}</span>
           <span className="text-xs text-muted-foreground">{hint}</span>
         </span>
-      </button>
+      </Button>
     )
   }
   return (
@@ -509,7 +509,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
       <div className="flex-1 space-y-6 overflow-y-auto px-10 pb-6">
         {!isConfigured && (
           <div className="flex justify-center">
-            <Button onClick={handleAddOrRescan} className="rounded-md px-6">
+            <Button onClick={handleAddOrRescan}>
               {t('channel.whatsapp.config.addAccount')}
             </Button>
           </div>
@@ -526,7 +526,6 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             <Button
               size="sm"
               variant="secondary"
-              className="rounded-md"
               onClick={handleAddOrRescan}
             >
               <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
@@ -567,14 +566,14 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
                               className="h-9 flex-1"
                               aria-invalid={err ? true : undefined}
                             />
-                            <button
+                            <Button unstyled
                               type="button"
                               aria-label={t('channel.actions.deleteRow')}
                               onClick={() => removeRow(row.id)}
                               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
                             >
                               <Trash2 className="h-4 w-4" />
-                            </button>
+                            </Button>
                           </div>
                           {err && (
                             <p className="px-1 text-xs text-destructive">{t(err.reason)}</p>
@@ -587,7 +586,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-8 rounded-md px-2 text-primary hover:bg-primary/10 hover:text-primary"
+                      link
                       onClick={addRow}
                     >
                       <Plus className="mr-1 h-3.5 w-3.5" />
@@ -605,8 +604,8 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
         {isConfigured ? (
           <>
             <Button
-              variant="destructive"
-              className="flex-1 rounded-md"
+              danger
+              className="flex-1"
               onClick={() => void handleRemove()}
               disabled={removing || saving}
             >
@@ -614,7 +613,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
               {t('channel.actions.removeChannel')}
             </Button>
             <Button
-              className="flex-1 rounded-md"
+              className="flex-1"
               onClick={() => void handleSave()}
               disabled={saving || removing || allowLoading}
             >
@@ -623,7 +622,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             </Button>
           </>
         ) : (
-          <Button variant="ghost" className="w-full rounded-md" onClick={onClose}>
+          <Button variant="ghost" block onClick={onClose}>
             {t('channel.actions.cancel')}
           </Button>
         )}

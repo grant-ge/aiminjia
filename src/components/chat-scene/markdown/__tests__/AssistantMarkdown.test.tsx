@@ -293,7 +293,7 @@ Paragraph with **bold**, *italic*, ~~deleted~~, and \`inline code\`.
     const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8')
 
     expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*border-left: 3px solid/s)
-    expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*border-radius: var\(--radius-md\);/s)
+    expect(css).not.toMatch(/\.assistant-markdown blockquote \{[^}]*border-radius:/s)
     expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*background: transparent;/s)
   })
 

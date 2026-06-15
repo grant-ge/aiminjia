@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import type { SettingsModalKey } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 export interface SettingsMenuItem {
   key: SettingsModalKey
@@ -24,7 +25,7 @@ export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', labelKey: 'settings.tabs.general' },
   { key: 'account-billing', labelKey: 'settings.billing.title' },
   { key: 'usage', labelKey: 'settings.tabs.usage', disabled: true },
-  { key: 'permissions', labelKey: 'settings.tabs.permissions', disabled: true },
+  { key: 'permissions', labelKey: 'settings.tabs.permissions' },
   { key: 'mcp', labelKey: 'settings.tabs.mcp', disabled: true },
   { key: 'sso', labelKey: 'settings.tabs.sso', disabled: true },
   { key: 'shortcuts', labelKey: 'settings.tabs.shortcuts', disabled: true },
@@ -53,7 +54,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
           const active = it.key === activeKey
           const label = t(it.labelKey)
           return (
-            <button
+            <Button unstyled
               key={it.key}
               type="button"
               data-aijia-settings-panel={it.key}
@@ -69,7 +70,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
               )}
             >
               <span className="min-w-0 flex-1 truncate">{label}</span>
-            </button>
+            </Button>
           )
         })}
       </div>

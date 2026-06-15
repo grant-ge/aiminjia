@@ -11,7 +11,13 @@ import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCard } from '@/components/skills/SkillCard'
 import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
-import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/skillVisual'
+import {
+  getSkillAvatarNode,
+  getSkillAvatarSrc,
+  getSkillCardAvatarClass,
+  getSkillCategoryBg,
+  getSkillIconComponent,
+} from '@/components/skills/skillVisual'
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES } from '@/data/skill-categories'
 import { useChat } from '@/hooks/useChat'
@@ -36,9 +42,17 @@ import { SkillValidationError, type SkillValidationKind } from '@/stores/skillSt
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
 import { ChevronDown, Cloud, FolderOpen, HardDrive, Package } from 'lucide-react'
 
-function getSkillIcon(icon: string) {
+function getSkillIcon(icon: string | null | undefined) {
   const Icon = getSkillIconComponent(icon)
   return <Icon className="h-4 w-4 text-primary-foreground" />
+}
+
+function getSkillCardIcon(skillId: string | null | undefined, icon: string | null | undefined) {
+  return getSkillAvatarNode(skillId) ?? getSkillIcon(icon)
+}
+
+function getSkillCardIconBg(skillId: string | null | undefined, category: string | null | undefined) {
+  return getSkillAvatarSrc(skillId) ? getSkillCardAvatarClass(skillId) : getSkillCategoryBg(category)
 }
 
 function compareVersionText(a?: string | null, b?: string | null) {
@@ -690,8 +704,8 @@ export function SkillCenterPage() {
                 title={item.name || item.pluginId}
                 meta={getMarketSkillMeta(item)}
                 desc={item.description}
-                iconNode={getSkillIcon(item.icon)}
-                iconBg={getSkillCategoryBg(item.category)}
+                iconNode={getSkillCardIcon(item.pluginId, item.icon)}
+                iconBg={getSkillCardIconBg(item.pluginId, item.category)}
                 version={installedSkill?.version ?? item.version}
                 skillId={item.pluginId}
                 skillSource={item.scope === 'tenant' ? 'tenant' : 'global'}
@@ -766,8 +780,8 @@ export function SkillCenterPage() {
                 title={localized.name}
                 meta={getSkillMeta(skill)}
                 desc={localized.description}
-                iconNode={getSkillIcon(skill.icon)}
-                iconBg={getSkillCategoryBg(skill.category)}
+                iconNode={getSkillAvatarNode(skill.id)}
+                iconBg={getSkillCardAvatarClass(skill.id)}
                 version={skill.version}
                 skillId={skill.id}
                 skillSource={skill.source}

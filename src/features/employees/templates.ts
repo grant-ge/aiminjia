@@ -150,12 +150,6 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     description: '定时扫描客户钉钉群的业务咨询，查阅产品 FAQ 和历史对话经验，生成友好回复草稿。持续积累客服话术库。',
     badge: '🟠 需配置', resourceConfigKind: 'customer-support',
   }),
-  builtin({
-    templateId: 'builtin:xiaocheng', avatar: '🛠️', name: '小程',
-    role: '流程设计师',
-    description: '通过对话拆解你的工作流程，沉淀成可复用的 SKILL.md 技能。当你想让 AIjia 学会一项重复性任务时，找小程聊一聊，他会帮你把流程"教"给 AI。',
-    badge: '🟢 开箱即用', resourceConfigKind: 'none',
-  }),
 ]
 
 /** Look up the template that produced an employee, by `EmployeeRecord.templateId`. */
@@ -253,14 +247,6 @@ const BUILTIN_TEMPLATE_I18N: Record<string, Partial<Record<TemplateLocale, Parti
       badge: 'Needs knowledge base',
     },
   },
-  'builtin:xiaocheng': {
-    'en-US': {
-      name: 'XiaoCheng',
-      role: 'Workflow designer',
-      description: 'Helps turn repeatable work into reusable skills by clarifying scenarios, designing steps, and drafting skill instructions.',
-      badge: 'Ready',
-    },
-  },
 }
 
 function normalizeLocale(language?: string): TemplateLocale {
@@ -353,7 +339,6 @@ const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
   'builtin:xiaobiao': 'none',
   'builtin:xiaogong': 'tech-support',
   'builtin:xiaoke': 'customer-support',
-  'builtin:xiaocheng': 'none',
 }
 
 /**

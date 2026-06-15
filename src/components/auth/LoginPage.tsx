@@ -12,12 +12,12 @@ import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
 import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { TitleBar } from '@/components/layout/TitleBar'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { Button } from '@/components/ui/button'
 
 const REMEMBER_KEY = 'login_remembered_username'
 const PHONE_LIKE_REGEX = /^\+?[1-9]\d{1,14}$/
@@ -245,7 +245,7 @@ export function LoginPage() {
             </Button>
             <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
               <span>{t('login.noAccount')}</span>
-              <button
+              <Button unstyled
                 type="button"
                 className="font-medium text-primary underline-offset-4 hover:underline"
                 onClick={() => {
@@ -255,25 +255,25 @@ export function LoginPage() {
                 }}
               >
                 {t('login.registerNow')}
-              </button>
+              </Button>
             </div>
             <div className="text-center text-xs text-muted-foreground">
               {t('login.agreeByLogin')}
-              <button
+              <Button unstyled
                 type="button"
                 className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
                 onClick={() => setActiveLegalDocument('terms')}
               >
                 {t('login.termsOfService')}
-              </button>
+              </Button>
               {t('login.and')}
-              <button
+              <Button unstyled
                 type="button"
                 className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
                 onClick={() => setActiveLegalDocument('privacy')}
               >
                 {t('login.privacyPolicy')}
-              </button>
+              </Button>
             </div>
           </form>
         </LoginCard>

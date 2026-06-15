@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react'
-import { Copy } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toCsv, toTsv } from '@/components/data-table/tableUtils'
 import type { TableColumn, TableRow } from '@/components/data-table'
 import { extractTableFromGfm } from './extractTableFromGfm'
+import { Button } from '@/components/ui/button'
 
 interface MarkdownTableProps {
   children?: React.ReactNode
@@ -39,14 +40,19 @@ export function MarkdownTable({ children }: MarkdownTableProps) {
         <table>{children}</table>
       </div>
       <div className="markdown-table-actions">
-        <button
+        <Button
           type="button"
-          className="markdown-table-copy"
+          link
+          className="markdown-table-copy gap-1 text-[var(--color-text-muted)]"
           onClick={handleCopy}
           title={t('dataTable.copyCsv', 'Copy as CSV (hold Shift for TSV)')}
           data-testid="markdown-table-copy-button"
         >
-          <Copy size={15} strokeWidth={2} aria-hidden="true" />
+          {copied === 'ok' ? (
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
           <span>
             {copied === 'ok'
               ? t('common.copied', 'Copied')
@@ -54,7 +60,7 @@ export function MarkdownTable({ children }: MarkdownTableProps) {
                 ? t('common.copyFailed', 'Copy failed')
                 : t('common.copy', 'Copy')}
           </span>
-        </button>
+        </Button>
       </div>
     </div>
   )

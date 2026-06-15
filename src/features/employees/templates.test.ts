@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { EmployeeTemplateSnapshot } from '@/lib/tauri'
 
 import { getEmployeeVisual } from './employeeVisual'
-import { snapshotToTemplate } from './templates'
+import { BUILTIN_TEMPLATES, findTemplate, snapshotToTemplate } from './templates'
 
 function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): EmployeeTemplateSnapshot {
   return {
@@ -27,6 +27,12 @@ function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): Employ
 }
 
 describe('snapshotToTemplate', () => {
+  it('does not expose the retired skill-creation employee', () => {
+    const retiredTemplateId = ['builtin', 'xiao', 'cheng'].join(':').replace(':cheng', 'cheng')
+    expect(BUILTIN_TEMPLATES.map((template) => template.templateId)).not.toContain(retiredTemplateId)
+    expect(findTemplate(retiredTemplateId)).toBeNull()
+  })
+
   it('uses catalog fields and version when a builtin id comes from the server catalog', () => {
     const snap = makeSnapshot({ templateId: 'builtin:xiaoyuan', name: '远程小研', version: '1.2.0' })
     const out = snapshotToTemplate(snap)
@@ -112,7 +118,7 @@ describe('snapshotToTemplate', () => {
     const out = snapshotToTemplate(snap, 'zh-CN')
     expect(out.avatarAssetKey).toBe('desktop-resources/employee-avatars/hr-v1/salary-expert.svg')
     expect(out.avatarUrl).toBe('https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/employee-avatars/hr-v1/salary-expert.svg')
-    expect(getEmployeeVisual(out).avatarUrl).toBe(out.avatarUrl)
+    expect(getEmployeeVisual(out).avatarUrl).toBe('/employee-avatars/方予衡.svg')
   })
 
   it('derives a public release avatar URL from avatarAssetKey when avatarUrl is absent', () => {

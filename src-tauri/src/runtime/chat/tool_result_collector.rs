@@ -118,6 +118,9 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
                 if let Ok(v) = serde_json::to_value(meta) {
                     new_file_metas.push(v);
                 }
+                if !meta.file_id.is_empty() && !new_generated_file_ids.contains(&meta.file_id) {
+                    new_generated_file_ids.push(meta.file_id.clone());
+                }
             }
             if let Some(modifier_message) = outcome.context_modifier_message() {
                 context_modifier_messages.push(modifier_message.clone());

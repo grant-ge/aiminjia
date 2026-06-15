@@ -1,7 +1,7 @@
 {
   "name": "aijia",
   "private": true,
-  "version": "0.5.34-beta.3",
+  "version": "0.5.34",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,7 +28,8 @@
     "prebuild:with-pilot": "pnpm ensure:runtime",
     "build:with-pilot": "VITE_E2E_ENABLED=true tauri build --features e2e --config src-tauri/tauri.conf.e2e.json",
     "pretauri:dev:5174": "pnpm ensure:runtime",
-    "tauri:dev:5174": "tauri dev --config src-tauri/tauri.dev.5174.conf.json"
+    "tauri:dev:5174": "tauri dev --config src-tauri/tauri.dev.5174.conf.json",
+    "pilot:expert-teams": "node scripts/pilot-expert-team-discussion.mjs"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -71,7 +72,7 @@
   },
   "devDependencies": {
     "@dicebear/core": "^9.4.2",
-    "@dicebear/personas": "^9.4.2",
+    "@dicebear/lorelei": "^9.4.2",
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.2.1",
     "@tauri-apps/cli": "^2.10.0",

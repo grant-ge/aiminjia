@@ -65,6 +65,78 @@ function normalizeFacilitationStyle(style: string | undefined, expertCount: numb
   return expertCount > 0 ? 'rounds' : 'open'
 }
 
+function stripTerminalPunctuation(text: string): string {
+  return text.trim().replace(/[。.!！?？；;，,、\s]+$/g, '')
+}
+
+function compactPersonaForDescription(persona: string, language?: string): string {
+  const text = stripTerminalPunctuation(persona)
+  if (language?.toLowerCase().startsWith('en')) {
+    return text
+      .replace(/^(Focuses on|Uses|Connects|Represents|Reviews|Prepares|Balances|Adds)\s+/i, '')
+      .replace(/^(Focuses|Uses|Connects|Represents|Reviews|Prepares|Balances|Adds)\s+/i, '')
+      .replace(/^(on|with)\s+/i, '')
+  }
+  return text
+    .replace(/^(关注|熟悉|善用|擅长|用|看|从|连接|组织|准备|论证|扮演|事后点评)/, '')
+    .replace(/^于/, '')
+}
+
+function joinList(items: string[], language?: string): string {
+  if (items.length === 0) return ''
+  if (!language?.toLowerCase().startsWith('en')) return items.join('、')
+  if (items.length === 1) return items[0]
+  if (items.length === 2) return `${items[0]} and ${items[1]}`
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
+}
+
+function buildTeamDescription(
+  base: string,
+  experts: ExpertPersona[],
+  examples: string[],
+  language?: string,
+): string {
+  const normalizedBase = stripTerminalPunctuation(base)
+  const primaryExample = examples.find((example) => example.trim().length > 0)?.trim()
+  const en = language?.toLowerCase().startsWith('en')
+
+  if (experts.length === 0) {
+    if (en) {
+      const exampleText = primaryExample ? `, often for topics like ${stripTerminalPunctuation(primaryExample)}` : ''
+      return `${normalizedBase || 'Open-ended discussion'}; the host selects suitable expert roles for each topic${exampleText}.`
+    }
+    const exampleText = primaryExample ? `，常用于「${stripTerminalPunctuation(primaryExample)}」这类开放问题` : ''
+    return `${normalizedBase || '开放议题讨论'}；主持人会按议题动态召集合适专家${exampleText}。`
+  }
+
+  const names = experts.slice(0, 3).map((expert) => expert.name.trim()).filter(Boolean)
+  const rolesSuffix = experts.length > 3 ? (en ? ' and others' : '等角色') : (en ? '' : '等角色')
+  const perspectives = experts
+    .slice(0, 3)
+    .map((expert) => compactPersonaForDescription(expert.persona, language))
+    .filter(Boolean)
+  const exampleText = primaryExample
+    ? (en
+        ? `, often used for ${stripTerminalPunctuation(primaryExample)}`
+        : `，常用于「${stripTerminalPunctuation(primaryExample)}」`)
+    : ''
+
+  if (en) {
+    const nameText = joinList(names, language)
+    const action = experts.length === 1 ? 'reviews' : 'review'
+    const perspectiveText = perspectives.length > 0
+      ? ` across ${joinList(perspectives, language)}`
+      : ''
+    return `${normalizedBase || 'Multi-expert review'}; ${nameText}${rolesSuffix} ${action} the issue${perspectiveText}${exampleText}.`
+  }
+
+  const nameText = joinList(names, language)
+  const perspectiveText = perspectives.length > 0
+    ? `从${joinList(perspectives, language)}等视角共同判断`
+    : '共同判断'
+  return `${normalizedBase || '多专家协同评审'}；由${nameText}${rolesSuffix}${perspectiveText}${exampleText}。`
+}
+
 function toCatalogCategory(category: WorkplaceDirectoryCategory): ExpertTeamCategory {
   return {
     categoryId: category.categoryId,
@@ -158,6 +230,12 @@ function directoryItemToTeam(
     name: remoteDisplay?.name || itemDisplay.name || item.resourceId,
     emoji: iconEmoji(item.icon),
     tagline: remoteDisplay?.tagline || itemDisplay.tagline || remoteDisplay?.description || itemDisplay.description || '',
+    description: buildTeamDescription(
+      remoteDisplay?.description || itemDisplay.description || remoteDisplay?.tagline || itemDisplay.tagline || '',
+      experts,
+      examples,
+      language,
+    ),
     experts,
     examples,
     composerPlaceholder: remoteDisplay?.composerPlaceholder || defaultComposerPlaceholder(language),

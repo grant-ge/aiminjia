@@ -606,6 +606,71 @@ fn should_sync_remote_skill(item: &SkillPackageItem, local_state: &GlobalSkillsS
         || local_state.installed.contains_key(&item.plugin_id)
 }
 
+fn skill_package_scope_rank(item: &SkillPackageItem) -> u8 {
+    if item.scope == "tenant" {
+        2
+    } else {
+        1
+    }
+}
+
+fn compare_version_text(a: &str, b: &str) -> std::cmp::Ordering {
+    let left = a.trim();
+    let right = b.trim();
+    if left == right {
+        return std::cmp::Ordering::Equal;
+    }
+    if left.is_empty() {
+        return std::cmp::Ordering::Less;
+    }
+    if right.is_empty() {
+        return std::cmp::Ordering::Greater;
+    }
+
+    let left_parts: Vec<&str> = left.split(['.', '_', '-']).collect();
+    let right_parts: Vec<&str> = right.split(['.', '_', '-']).collect();
+    let len = left_parts.len().max(right_parts.len());
+    for idx in 0..len {
+        let lp = left_parts.get(idx).copied().unwrap_or("0");
+        let rp = right_parts.get(idx).copied().unwrap_or("0");
+        match (lp.parse::<i64>(), rp.parse::<i64>()) {
+            (Ok(ln), Ok(rn)) if ln != rn => return ln.cmp(&rn),
+            _ if lp != rp => return lp.cmp(rp),
+            _ => {}
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
+fn should_replace_skill_package(current: &SkillPackageItem, candidate: &SkillPackageItem) -> bool {
+    let scope_delta = skill_package_scope_rank(candidate).cmp(&skill_package_scope_rank(current));
+    if scope_delta != std::cmp::Ordering::Equal {
+        return scope_delta == std::cmp::Ordering::Greater;
+    }
+
+    let version_delta = compare_version_text(&candidate.version, &current.version);
+    if version_delta != std::cmp::Ordering::Equal {
+        return version_delta == std::cmp::Ordering::Greater;
+    }
+
+    candidate.id > current.id
+}
+
+fn dedupe_skill_packages(items: &[SkillPackageItem]) -> Vec<&SkillPackageItem> {
+    let mut by_plugin_id: HashMap<&str, &SkillPackageItem> = HashMap::new();
+    for item in items {
+        match by_plugin_id.get(item.plugin_id.as_str()) {
+            Some(current) if !should_replace_skill_package(current, item) => {}
+            _ => {
+                by_plugin_id.insert(item.plugin_id.as_str(), item);
+            }
+        }
+    }
+    let mut deduped: Vec<&SkillPackageItem> = by_plugin_id.into_values().collect();
+    deduped.sort_by(|a, b| a.id.cmp(&b.id));
+    deduped
+}
+
 pub async fn sync_skill_packages_from_server(
     config: GlobalSkillSyncConfig,
     server_base_url: String,
@@ -649,7 +714,15 @@ pub async fn sync_skill_packages_from_server(
         &config.global_skills_dir,
     )?);
     let mut new_installed: HashMap<String, String> = local_state.installed.clone();
-    let mut remote_ids: HashSet<String> = HashSet::new();
+    let remote_ids: HashSet<String> = list.data.iter().map(|item| item.plugin_id.clone()).collect();
+    let packages_to_sync = dedupe_skill_packages(&list.data);
+    if packages_to_sync.len() != list.data.len() {
+        log::info!(
+            "[skill-sync] deduped server skill list from {} to {} plugin ids",
+            list.data.len(),
+            packages_to_sync.len()
+        );
+    }
 
     fs::create_dir_all(&config.downloads_dir)
         .with_context(|| format!("create downloads dir '{}'", config.downloads_dir.display()))?;
@@ -657,8 +730,7 @@ pub async fn sync_skill_packages_from_server(
         .with_context(|| format!("create prepared dir '{}'", config.prepared_dir.display()))?;
 
     // 3. Install or update remote skills whose version changed (or are missing locally)
-    for item in &list.data {
-        remote_ids.insert(item.plugin_id.clone());
+    for item in packages_to_sync {
         if !should_sync_remote_skill(item, &local_state) {
             report.skipped.push(item.plugin_id.clone());
             log::info!(
@@ -952,6 +1024,18 @@ mod tests {
         })
     }
 
+    async fn mock_skill_package_with_scope(
+        server: &MockServer,
+        package_id: u64,
+        skill_id: &str,
+        version: &str,
+        scope: &str,
+    ) -> serde_json::Value {
+        let mut item = mock_skill_package(server, package_id, skill_id, version).await;
+        item["scope"] = json!(scope);
+        item
+    }
+
     #[tokio::test]
     async fn first_login_installs_required_builtin_packages_only() {
         let tmp = tempfile::tempdir().unwrap();
@@ -995,6 +1079,68 @@ mod tests {
             state.installed.keys().cloned().collect::<Vec<_>>(),
             vec!["dingtalk-workspace".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn sync_dedupes_duplicate_packages_before_updating_required_builtins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = MockServer::start().await;
+        let tenant_newer =
+            mock_skill_package_with_scope(&server, 11, "dingtalk-workspace", "1.3.0", "tenant")
+                .await;
+        let public_older =
+            mock_skill_package_with_scope(&server, 12, "dingtalk-workspace", "1.2.0", "public")
+                .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/skill-packages"))
+            .and(query_param("page", "1"))
+            .and(query_param("size", "100"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [tenant_newer, public_older],
+                "total": 2
+            })))
+            .mount(&server)
+            .await;
+
+        let config = test_config(tmp.path());
+        write_managed_global_skill(&config, "dingtalk-workspace", "tenant");
+        write_global_skills_state(
+            &config.state_path,
+            &GlobalSkillsState {
+                installed: HashMap::from([(
+                    "dingtalk-workspace".to_string(),
+                    "1.2.0".to_string(),
+                )]),
+                updated_at_unix_seconds: 1,
+            },
+        )
+        .unwrap();
+
+        let report = sync_skill_packages_from_server(
+            config.clone(),
+            server.uri(),
+            "session-key".to_string(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.updated, vec!["dingtalk-workspace".to_string()]);
+        let state = read_global_skills_state(&config.state_path)
+            .unwrap()
+            .expect("state written");
+        assert_eq!(
+            state.installed.get("dingtalk-workspace"),
+            Some(&"1.3.0".to_string())
+        );
+        let skill_md = fs::read_to_string(
+            config
+                .global_skills_dir
+                .join("dingtalk-workspace")
+                .join("SKILL.md"),
+        )
+        .unwrap();
+        assert!(skill_md.contains("version: \"1.3.0\""));
     }
 
     #[tokio::test]

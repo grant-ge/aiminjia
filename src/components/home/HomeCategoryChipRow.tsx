@@ -11,6 +11,7 @@ import {
   Search,
   Sparkles,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export interface HomeChipItem {
   key: string
@@ -52,7 +53,7 @@ export function HomeCategoryChipRow({
       {items.map((it) => {
         const active = it.key === activeKey
         return (
-          <button
+          <Button unstyled
             key={it.key}
             type="button"
             onClick={() => onSelect(it.key)}
@@ -64,7 +65,7 @@ export function HomeCategoryChipRow({
           >
             <span className={active ? 'text-primary' : ''}>{renderIcon(it.icon)}</span>
             <span className={active ? 'text-primary' : ''}>{it.label}</span>
-          </button>
+          </Button>
         )
       })}
     </div>

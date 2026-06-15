@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button'
 export interface SkillCategoryItem {
   key: string
   label: string
@@ -12,25 +13,25 @@ interface SkillCategoryBarProps {
 
 export function SkillCategoryBar({ items, activeKey, onSelect, itemDataAttribute }: SkillCategoryBarProps) {
   return (
-    <div className="flex w-full min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden rounded-md bg-card p-1">
+    <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden px-1 pb-1">
       {items.map((it) => {
         const active = it.key === activeKey
         const dataAttrs = itemDataAttribute ? { [itemDataAttribute]: it.key } : {}
         return (
-          <button
+          <Button unstyled
             key={it.key}
             type="button"
             {...dataAttrs}
             onClick={() => onSelect(it.key)}
             className={
               active
-                ? 'h-8 max-w-[220px] shrink-0 truncate rounded-md bg-brand-primary-subtle px-3 text-sm font-semibold text-primary'
-                : 'h-8 max-w-[220px] shrink-0 truncate rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+                ? 'h-8 max-w-[220px] shrink-0 truncate rounded-md bg-[rgba(var(--primary-rgb),0.10)] px-3 text-sm font-semibold text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.12)]'
+                : 'h-8 max-w-[220px] shrink-0 truncate rounded-md px-3 text-sm font-semibold text-muted-foreground/80 transition-colors hover:bg-muted/40 hover:text-foreground'
             }
             title={it.label}
           >
             {it.label}
-          </button>
+          </Button>
         )
       })}
     </div>

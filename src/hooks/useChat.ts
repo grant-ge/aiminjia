@@ -31,6 +31,7 @@ import {
   setConversationPinned as tauriSetConversationPinned,
   getActiveTurnStage,
   type ChatAttachmentPayload,
+  type PermissionMode,
   type SkillCommandPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
@@ -263,8 +264,18 @@ export function useChat() {
     // immediately reflects the in-flight turn's state without waiting for
     // the next 2s heartbeat.  Returns null when no turn is active.
     void getActiveTurnStage(id)
-      .then((snapshot) => {
-        if (!snapshot) return
+      .then(async (snapshot) => {
+        if (!snapshot) {
+          if (switchVersionRef.current !== loadVersion) return
+          const store = useChatStore.getState()
+          store.clearConversationTurnStage(id)
+          if (!store.busyConversations.has(id)) return
+          const busyIds = await syncBusyConversations()
+          if (!busyIds.has(id)) {
+            useChatStore.getState().removeBusyConversation(id)
+          }
+          return
+        }
         if (switchVersionRef.current !== loadVersion) return
         const store = useChatStore.getState()
         store.setConversationTurnStage(id, snapshot.stage, snapshot.stageStartedAtMs)
@@ -289,11 +300,13 @@ export function useChat() {
    *                 the backend persists `skillCommand` metadata on the user
    *                 message which the prompt builder uses to inject SKILL.md
    *                 contents and mark the turn as a skill-driven flow.
+   * @param permissionMode - Optional session-level permission mode override.
    */
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
     skill?: PendingSkillCommand | null,
+    permissionMode?: PermissionMode | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -474,7 +487,7 @@ export function useChat() {
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
-      await sendMessage(conversationId, text, files, null, messageId, skillCommand)
+      await sendMessage(conversationId, text, files, null, messageId, skillCommand, permissionMode)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',
@@ -516,6 +529,7 @@ export function useChat() {
     if (convId) {
       recordDiagnostic({ event: 'streaming.stop.requested', conversationId: convId })
       store.clearConversationStreamState(convId)
+      store.removeBusyConversation(convId)
       stopStreaming(convId).catch((err) => {
         console.error('[useChat] stopStreaming IPC failed:', err)
       })

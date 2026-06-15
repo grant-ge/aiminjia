@@ -25,14 +25,16 @@ pub const TEAM_CONTEXT_TEMPLATE: &str = r#"<system-reminder>
 
 **团队负责人**：Lead 的名字是 "team-lead"。把进度和完成情况发给 Lead。
 
-读取团队配置文件了解队友名单。定期检查任务列表。需要分工时创建新任务，完成后标记任务为 resolved。
+如果收到 Lead 明确要求你直接回答、发表观点、生成内容或给出结论，先完成该指令并用 SendMessage 发给 team-lead；不要先读取团队配置或任务列表。
+
+只有当当前任务确实需要了解队友名单、任务分工或共享任务状态时，再读取团队配置文件或检查任务列表。需要分工时创建新任务，完成后标记任务为 resolved。
 
 **重要**：始终用名字（如 "team-lead", "researcher", "analyzer"）称呼队友，绝不用 UUID。发消息时直接用名字：
 
 ```json
 {
   "to": "team-lead",
-  "message": "你的消息内容",
+  "message": {"type": "text", "content": "你的消息内容"},
   "summary": "5-10 字预览"
 }
 ```
@@ -108,6 +110,36 @@ mod tests {
         assert!(
             out.contains("绝不用 UUID") || out.contains("不要 UUID") || out.contains("UUID"),
             "should explicitly warn against UUID addressing"
+        );
+    }
+
+    #[test]
+    fn rendered_output_uses_structured_send_message_payload() {
+        let out = render("t", "n", Path::new("/a"), Path::new("/b"));
+        assert!(
+            out.contains(r#""message": {"type": "text", "content": "你的消息内容"}"#),
+            "SendMessage example must use StructuredMessage object payload: {out}"
+        );
+        assert!(
+            !out.contains(r#""message": "你的消息内容""#),
+            "string message payload is invalid and should not be suggested: {out}"
+        );
+    }
+
+    #[test]
+    fn rendered_output_prioritizes_direct_lead_requests_before_coordination_reads() {
+        let out = render("t", "n", Path::new("/a"), Path::new("/b"));
+        let direct_idx = out.find("明确要求你直接回答").expect("direct guidance");
+        let read_idx = out
+            .find("读取团队配置文件")
+            .expect("coordination read guidance");
+        assert!(
+            direct_idx < read_idx,
+            "direct requests should not be shadowed by coordination-read guidance: {out}"
+        );
+        assert!(
+            out.contains("不要先读取团队配置或任务列表"),
+            "should explicitly prevent unnecessary config/task reads: {out}"
         );
     }
 }

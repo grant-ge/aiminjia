@@ -226,10 +226,12 @@ pub(crate) fn check_path_permission(
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|| canonical.clone())
             };
-            let path_auth_scope = if is_step_4b_write(&canonical, op, ctx_ref) {
-                format!("pathwrite:{}", scope_path.display())
-            } else {
-                format!("path:{}", scope_path.display())
+            let path_auth_scope = match op {
+                PathOp::Write if is_step_4b_write(&canonical, op, ctx_ref) => {
+                    format!("pathwrite:{}", scope_path.display())
+                }
+                PathOp::Delete => format!("pathdelete:{}", scope_path.display()),
+                _ => format!("path:{}", scope_path.display()),
             };
             Some(PermissionDecision::Ask {
                 message: reason,

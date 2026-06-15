@@ -174,6 +174,15 @@ describe('TableView — copy', () => {
     expect(screen.getByTestId('table-copy-button')).toBeInTheDocument()
   })
 
+  it('keeps copy feedback color-neutral', async () => {
+    render(<TableView columns={cols} rows={rows} enableCopy />)
+    const button = screen.getByTestId('table-copy-button')
+    fireEvent.click(button)
+    expect(button.className).not.toContain('color-semantic-green')
+    expect(button.className).not.toContain('color-semantic-red')
+    expect(await screen.findByText('Copied')).toBeInTheDocument()
+  })
+
   it('copies CSV by default', async () => {
     render(<TableView columns={cols} rows={rows} enableCopy />)
     fireEvent.click(screen.getByTestId('table-copy-button'))

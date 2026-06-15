@@ -18,38 +18,47 @@ describe('ChatTopBar', () => {
     expect(screen.getByText('Desktop')).toBeInTheDocument()
   })
 
-  it('fires share/more/toggleSidebar callbacks', () => {
-    const onShare = vi.fn()
+  it('does not render updated-at metadata in the header', () => {
+    const updatedAt = '2026-06-10T07:31:25.990007+00:00'
+    const { container } = render(
+      <ChatTopBar
+        title="打开 BI 看板导出绩效分析数据并总结"
+        workspace="Desktop"
+        updatedAt={updatedAt}
+      />,
+    )
+
+    expect(screen.queryByText(/更新于/)).not.toBeInTheDocument()
+    expect(container.querySelector(`[title="${updatedAt}"]`)).not.toBeInTheDocument()
+  })
+
+  it('fires more/toggleSidebar callbacks', () => {
     const onMore = vi.fn()
     const onToggleSidebar = vi.fn()
     render(
       <ChatTopBar
         title="X"
         workspace="W"
-        onShare={onShare}
         onMore={onMore}
         onToggleSidebar={onToggleSidebar}
       />,
     )
-    screen.getByRole('button', { name: /分享/ }).click()
     screen.getByRole('button', { name: /更多/ }).click()
     screen.getByRole('button', { name: /折叠侧栏/ }).click()
-    expect(onShare).toHaveBeenCalled()
     expect(onMore).toHaveBeenCalled()
     expect(onToggleSidebar).toHaveBeenCalled()
   })
 
-  it('allows the share action to be labeled as conversation export', () => {
-    const onShare = vi.fn()
-    render(<ChatTopBar title="X" onShare={onShare} shareLabel="导出对话" />)
-    screen.getByRole('button', { name: '导出对话' }).click()
-    expect(onShare).toHaveBeenCalledTimes(1)
+  it('does not render a standalone share/export button in the header', () => {
+    render(<ChatTopBar title="X" />)
+    expect(screen.queryByRole('button', { name: /分享|导出对话/ })).not.toBeInTheDocument()
   })
 
-  it('header has h-14, px-6 and bottom border', () => {
+  it('header has 48px height, px-6 and bottom border', () => {
     const { container } = render(<ChatTopBar title="X" workspace="Y" />)
     const header = container.querySelector('header')
-    expect(header?.className).toMatch(/h-14/)
+    expect(header).toHaveClass('h-12')
+    expect(header).not.toHaveClass('h-14')
     expect(header?.className).toMatch(/px-6/)
     expect(header?.className).toMatch(/border-b/)
   })

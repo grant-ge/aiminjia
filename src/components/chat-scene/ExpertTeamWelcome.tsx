@@ -5,8 +5,9 @@ import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt
 import type { ExpertTeam } from '@/features/expert-teams/teams'
 import { ExpertAvatarView } from '@/features/expert-teams/ExpertAvatarView'
 import { getExpertAvatarVisual } from '@/features/expert-teams/expertAvatar'
-import { getExpertTeamLogo } from '@/features/expert-teams/teamLogo'
+import { ExpertTeamAvatarStack } from '@/features/expert-teams/ExpertTeamAvatarStack'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { Button } from '@/components/ui/button'
 
 interface ExpertTeamWelcomeProps {
   team: ExpertTeam
@@ -17,10 +18,19 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
   const { sendUserMessage } = useChat()
   const [picking, setPicking] = useState<string | null>(null)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
-  const logo = getExpertTeamLogo(team.id)
-  const TeamLogo = logo.icon
 
-  const welcomeWidthClass = chatWidthMode === 'centered' ? 'mx-auto max-w-[640px]' : 'w-full'
+  const welcomeWidthClass = chatWidthMode === 'centered'
+    ? 'mx-auto max-w-[680px]'
+    : 'mx-auto w-full max-w-[820px]'
+  const memberCountLabel = team.experts.length > 0
+    ? t('ExpertTeams.memberCount', { count: team.experts.length, defaultValue: `${team.experts.length} 位专家` })
+    : t('ExpertTeams.dynamicExperts', '动态召集专家')
+  const facilitationLabel = team.facilitationStyle === 'debate'
+    ? t('ExpertTeams.debateMode', '辩论推演')
+    : team.facilitationStyle === 'open'
+      ? t('ExpertTeams.openMode', '动态圆桌')
+      : t('ExpertTeams.roundsMode', '多角色轮询')
+  const teamSummary = team.description || team.workplaceCategoryDescription || team.tagline
 
   const handlePick = useCallback(async (example: string) => {
     if (picking) return
@@ -39,71 +49,82 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
   return (
     <div
       data-testid="expert-team-welcome-shell"
-      className={`flex ${welcomeWidthClass} flex-col items-center gap-5 px-6 py-10 text-center`}
+      className={`flex ${welcomeWidthClass} flex-col gap-6 px-6 py-8 text-left`}
     >
-      <div
-        data-testid="expert-team-welcome-logo"
-        className={`flex h-16 w-16 items-center justify-center rounded-md ${logo.className}`}
-        aria-hidden
-      >
-        <TeamLogo className="h-8 w-8" />
-      </div>
-      <div className="space-y-1.5">
-        <h2 className="text-xl font-semibold text-foreground">{team.name}</h2>
-        <p className="text-sm text-muted-foreground">{team.tagline}</p>
+      <div className="flex items-start gap-4">
+        <ExpertTeamAvatarStack team={team} size="lg" />
+        <div className="min-w-0 flex-1 pt-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="truncate text-xl font-semibold leading-7 text-foreground">{team.name}</h2>
+            <span className="rounded-[2px] bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground">
+              {memberCountLabel}
+            </span>
+            <span className="rounded-[2px] bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground">
+              {facilitationLabel}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{teamSummary}</p>
+        </div>
       </div>
 
-      <div className="w-full rounded-md border border-border bg-card px-4 py-3 text-left">
-        <div className="text-xs text-muted-foreground">{t('ExpertTeams.members')}</div>
+      <section className="w-full border-t border-border/70 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('ExpertTeams.members')}</h3>
+          <span className="truncate text-2xs text-muted-foreground/80">{team.tagline}</span>
+        </div>
         {team.experts.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {team.experts.map((expert) => {
               const avatarVisual = getExpertAvatarVisual(team.id, expert)
               return (
-                <span
+                <div
                   key={expert.name}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
+                  className="flex min-w-0 items-center gap-2 rounded-md border border-border/70 bg-card px-2.5 py-2"
                   title={expert.persona}
                 >
-                  <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-md bg-muted text-xs">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-muted text-xs">
                     <ExpertAvatarView visual={avatarVisual} fallback={expert.emoji} />
                   </span>
-                  {expert.name}
-                </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold leading-4 text-foreground">{expert.name}</span>
+                    <span className="block truncate text-2xs leading-4 text-muted-foreground">{expert.persona}</span>
+                  </span>
+                </div>
               )
             })}
           </div>
         ) : (
-          <div className="mt-1 text-sm text-foreground">{t('ExpertTeams.directorInvites')}</div>
+          <div className="mt-3 rounded-md border border-dashed border-border/80 px-3 py-3 text-sm leading-6 text-muted-foreground">
+            {t('ExpertTeams.directorInvites')}，{t('ExpertTeams.customTopicHint')}
+          </div>
         )}
-      </div>
+      </section>
 
-      <div className="w-full space-y-2">
-        <div className="text-sm font-medium text-foreground">{t('ExpertTeams.pickTopic')}</div>
-        <ul className="space-y-1.5">
+      <section className="w-full border-t border-border/70 pt-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('ExpertTeams.pickTopic')}</h3>
+          <span className="truncate text-2xs text-muted-foreground/80">{t('ExpertTeams.customTopicHint')}</span>
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2">
           {team.examples.map((example) => {
             const isPicking = picking === example
             return (
               <li key={example}>
-                <button
+                <Button unstyled
                   type="button"
                   disabled={picking !== null}
                   onClick={() => void handlePick(example)}
-                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex min-h-11 w-full items-center rounded-md border border-border/70 bg-card px-3 py-2 text-left text-sm leading-5 text-foreground transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isPicking
                     ? t('ExpertTeams.startingTopic', { topic: example })
                     : t('ExpertTeams.topicQuote', { topic: example })}
-                </button>
+                </Button>
               </li>
             )
           })}
         </ul>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        {t('ExpertTeams.customTopicHint')}
-      </p>
+      </section>
     </div>
   )
 }

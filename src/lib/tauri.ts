@@ -10,146 +10,166 @@
  *   responses are already camelCase — no client-side transformation needed.
  */
 
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
-import { recordDiagnostic, recordDiagnosticError } from './diagnostics'
-export type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauriDiagnostics'
-export { recordFrontendDiagnostic } from './tauriDiagnostics'
+import { recordDiagnostic, recordDiagnosticError } from "./diagnostics";
+export type {
+  DiagnosticLevel,
+  FrontendDiagnosticPayload,
+} from "./tauriDiagnostics";
+export { recordFrontendDiagnostic } from "./tauriDiagnostics";
 
-import type { Message, SubAgentTranscriptEntry } from '@/types/message'
-import type { TeamOverview } from '@/types/team'
+import type { Message, SubAgentTranscriptEntry } from "@/types/message";
+import type { TeamOverview } from "@/types/team";
+import type { AppLanguage } from "@/i18n";
 import type {
   PendingItem,
   PendingSnapshotPayload,
   PendingQueuedPayload,
   PendingDrainedPayload,
   PendingRemovedPayload,
-} from '@/types/pending'
-import type { Settings } from '@/types/settings'
+} from "@/types/pending";
+import type { Settings } from "@/types/settings";
 
 // ---------------------------------------------------------------------------
 // Tauri Event Constants
 // ---------------------------------------------------------------------------
 
 export const TAURI_EVENTS = {
-  STREAMING_DELTA: 'streaming:delta',
-  STREAMING_DONE: 'streaming:done',
-  STREAMING_ERROR: 'streaming:error',
-  STREAMING_RETRY_RESET: 'streaming:retry-reset',
-  STREAMING_NOTICE: 'streaming:notice',
-  MESSAGE_UPDATED: 'message:updated',
-  STOP_PREVENTED_CONTINUATION: 'stop:prevented-continuation',
+  STREAMING_DELTA: "streaming:delta",
+  STREAMING_DONE: "streaming:done",
+  STREAMING_ERROR: "streaming:error",
+  STREAMING_RETRY_RESET: "streaming:retry-reset",
+  STREAMING_NOTICE: "streaming:notice",
+  MESSAGE_UPDATED: "message:updated",
+  STOP_PREVENTED_CONTINUATION: "stop:prevented-continuation",
   /** @deprecated 后端不发送此事件 */
-  FILE_PARSED: 'file:parsed',
-  FILE_GENERATED: 'file:generated',
-  NOTIFICATION: 'notification',
-  TOOL_EXECUTING: 'tool:executing',
-  TOOL_COMPLETED: 'tool:completed',
+  FILE_PARSED: "file:parsed",
+  FILE_GENERATED: "file:generated",
+  NOTIFICATION: "notification",
+  TOOL_EXECUTING: "tool:executing",
+  TOOL_COMPLETED: "tool:completed",
   /** Live stdout/stderr tail for long-running shell tools (Bash/PowerShell). */
-  TOOL_PROGRESS: 'tool:progress',
-  CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
-  AGENT_IDLE: 'agent:idle',
-  TASK_STATUS_CHANGED: 'task:status-changed',
-  AUTH_EXPIRED: 'auth:expired',
-  PERMISSION_ASK: 'permission:ask',
-  INTERACTION_REQUIRED: 'interaction:required',
-  INTERACTION_RESOLVED: 'interaction:resolved',
-  TURN_COMPLETED: 'turn:completed',
-  DIAGNOSTICS_EVENT: 'diagnostics:event',
-  CONVERSATION_CREATED: 'conversation:created',
-  CHANNEL_PLATFORM_STATE: 'channel:platform-state',
-  CHANNEL_MESSAGE: 'channel:message',
+  TOOL_PROGRESS: "tool:progress",
+  CONVERSATION_TITLE_UPDATED: "conversation:title-updated",
+  AGENT_IDLE: "agent:idle",
+  TASK_STATUS_CHANGED: "task:status-changed",
+  AUTH_EXPIRED: "auth:expired",
+  PERMISSION_ASK: "permission:ask",
+  PERMISSION_RESOLVED: "permission:resolved",
+  INTERACTION_REQUIRED: "interaction:required",
+  INTERACTION_RESOLVED: "interaction:resolved",
+  TURN_COMPLETED: "turn:completed",
+  DIAGNOSTICS_EVENT: "diagnostics:event",
+  CONVERSATION_CREATED: "conversation:created",
+  CHANNEL_PLATFORM_STATE: "channel:platform-state",
+  CHANNEL_MESSAGE: "channel:message",
   /** LTR Path A: Lead finished a turn and has pending Teammate messages queued. */
-  LEAD_HAS_PENDING_MESSAGES: 'lead:has-pending-messages',
-  PENDING_SNAPSHOT: 'pending:snapshot',
-  PENDING_QUEUED: 'pending:queued',
-  PENDING_DRAINED: 'pending:drained',
-  PENDING_REMOVED: 'pending:removed',
+  LEAD_HAS_PENDING_MESSAGES: "lead:has-pending-messages",
+  PENDING_SNAPSHOT: "pending:snapshot",
+  PENDING_QUEUED: "pending:queued",
+  PENDING_DRAINED: "pending:drained",
+  PENDING_REMOVED: "pending:removed",
   /** Spec 2026-05-17 §4.1 — TurnStage transitions. */
-  TURN_STAGE: 'turn:stage',
-  COMPACT_COMPLETED: 'compact:completed',
+  TURN_STAGE: "turn:stage",
+  COMPACT_COMPLETED: "compact:completed",
   /** Spec 2026-05-17 §4.1 — ~2s keep-alive while a turn is in progress. */
-  TURN_HEARTBEAT: 'turn:heartbeat',
+  TURN_HEARTBEAT: "turn:heartbeat",
   /** Spec 2026-05-26 §5.2 — Network probe result broadcast. */
-  NETWORK_STATUS: 'network:status',
+  NETWORK_STATUS: "network:status",
   /** Skill enabled/disabled state changed. Frontend stores reload to keep
    * composer skill pickers and the model skill catalog in sync. */
-  SKILL_ENABLEMENT_CHANGED: 'skill:enablement-changed',
+  SKILL_ENABLEMENT_CHANGED: "skill:enablement-changed",
   /** Skill registry refreshed (any path: install_custom_skill / import / RefreshSkills tool /
    *  load_skill miss-retry). Frontend stores subscribe to reload their cached skill list. */
-  SKILL_REGISTRY_REFRESHED: 'skill:registry-refreshed',
-} as const
+  SKILL_REGISTRY_REFRESHED: "skill:registry-refreshed",
+  /** Native app menu requested route history navigation. Payload: "back" | "forward". */
+  NAVIGATION_MENU_COMMAND: "navigation:menu-command",
+} as const;
 
 // ---------------------------------------------------------------------------
 // Event Payload Types
 // ---------------------------------------------------------------------------
 
 export interface StreamingDeltaPayload {
-  conversationId: string
-  delta: string
+  conversationId: string;
+  delta: string;
 }
 
 export interface StreamingDonePayload {
-  conversationId: string
+  conversationId: string;
 }
 
 export interface StreamingErrorPayload {
-  conversationId: string
-  error: string
-  rawError?: string
-  code?: string
-  retryable?: boolean
-  handling?: 'auto_retrying' | 'auto_failed_over' | 'manual_decision_required' | 'terminal_error' | string
-  requestPhase?: 'pre_first_byte' | 'streaming' | 'post_stream_pre_settlement' | string
-  currentRoute?: Record<string, unknown> | null
-  alternatives?: Array<Record<string, unknown>> | null
+  conversationId: string;
+  error: string;
+  rawError?: string;
+  code?: string;
+  retryable?: boolean;
+  handling?:
+    | "auto_retrying"
+    | "auto_failed_over"
+    | "manual_decision_required"
+    | "terminal_error"
+    | string;
+  requestPhase?:
+    | "pre_first_byte"
+    | "streaming"
+    | "post_stream_pre_settlement"
+    | string;
+  currentRoute?: Record<string, unknown> | null;
+  alternatives?: Array<Record<string, unknown>> | null;
 }
 
 export interface StreamingRetryResetPayload {
-  conversationId: string
-  runId?: string
-  reason?: 'upstream_busy' | 'rate_limited' | 'network_flap' | 'fallback_to_non_stream'
+  conversationId: string;
+  runId?: string;
+  reason?:
+    | "upstream_busy"
+    | "rate_limited"
+    | "network_flap"
+    | "fallback_to_non_stream";
 }
 
 export interface StreamingNoticePayload {
-  conversationId: string
-  runId?: string
-  level: 'info' | 'warning' | 'error' | string
-  code?: string
-  message: string
-  fromRoute?: Record<string, unknown> | null
-  toRoute?: Record<string, unknown> | null
+  conversationId: string;
+  runId?: string;
+  level: "info" | "warning" | "error" | string;
+  code?: string;
+  message: string;
+  fromRoute?: Record<string, unknown> | null;
+  toRoute?: Record<string, unknown> | null;
 }
 
 export interface AgentIdlePayload {
-  conversationId: string
-  runId?: string
-  agentId?: string
-  scope?: 'primary' | 'child'
+  conversationId: string;
+  runId?: string;
+  agentId?: string;
+  scope?: "primary" | "child";
 }
 
 export interface ToolExecutingPayload {
-  conversationId: string
-  toolName: string
-  toolId: string
-  purpose?: string
-  input?: unknown  // 完整入参 JSON 对象
+  conversationId: string;
+  toolName: string;
+  toolId: string;
+  purpose?: string;
+  input?: unknown; // 完整入参 JSON 对象
   /**
    * 'child' 表示这是子 agent 内部的工具执行；前端在主对话工具轨迹里应过滤掉，
    * 这些事件留作"子 agent 详情"等未来用途。缺省（undefined / 'primary'）
    * 视为主 agent 自己的工具，正常渲染。
    */
-  scope?: 'primary' | 'child'
+  scope?: "primary" | "child";
 }
 
 /** @deprecated tool:completed 现在直接推完整 Message，保留此类型仅供旧引用过渡 */
 export interface ToolCompletedPayload {
-  conversationId: string
-  toolName: string
-  toolId: string
-  success: boolean
-  summary?: string
+  conversationId: string;
+  toolName: string;
+  toolId: string;
+  success: boolean;
+  summary?: string;
 }
 
 /** Live progress snapshot from a running shell tool (Bash/PowerShell).
@@ -161,29 +181,29 @@ export interface ToolCompletedPayload {
  * buffer cap, so the UI can show "已收到 N KB" even after the buffer plateaus.
  */
 export interface ToolProgressPayload {
-  conversationId: string
-  runId?: string
-  toolId: string
+  conversationId: string;
+  runId?: string;
+  toolId: string;
   /** Up to ~20 lines of the most recent merged stdout/stderr. */
-  stdoutTail: string
+  stdoutTail: string;
   /** Total bytes captured so far (cumulative, not the tail length). */
-  totalBytes: number
+  totalBytes: number;
 }
 
 export interface ChatAttachmentPayload {
-  id: string
-  fileName: string
-  filePath: string
-  kind: 'file' | 'folder' | 'image'
-  fileSize: number
-  fileType: 'excel' | 'csv' | 'word' | 'pdf' | 'json' | 'folder' | 'image'
-  mimeType?: string
+  id: string;
+  fileName: string;
+  filePath: string;
+  kind: "file" | "folder" | "image";
+  fileSize: number;
+  fileType: "excel" | "csv" | "word" | "pdf" | "json" | "folder" | "image";
+  mimeType?: string;
 }
 
 export interface SkillCommandPayload {
-  id: string
-  label?: string
-  command?: string
+  id: string;
+  label?: string;
+  command?: string;
 }
 
 export interface SkillEnablementChangedPayload {
@@ -192,121 +212,127 @@ export interface SkillEnablementChangedPayload {
 }
 
 export interface SavedClipboardAttachmentPayload {
-  fileName: string
-  path: string
-  fileSize: number
-  mimeType: string
+  fileName: string;
+  path: string;
+  fileSize: number;
+  mimeType: string;
 }
 
 export function readClipboardFilePaths(): Promise<string[]> {
-  return invoke<string[]>('read_clipboard_file_paths')
+  return invoke<string[]>("read_clipboard_file_paths");
 }
 
 export interface FileGeneratedPayload {
-  conversationId: string
-  fileId: string
-  fileName: string
-  requestedFormat: string
-  actualFormat: string
-  fileSize: number
-  storedPath: string
-  category: string
-  isDegraded: boolean
-  degradationNotice: string | null
+  conversationId: string;
+  fileId: string;
+  fileName: string;
+  requestedFormat: string;
+  actualFormat: string;
+  fileSize: number;
+  storedPath: string;
+  category: string;
+  isDegraded: boolean;
+  degradationNotice: string | null;
 }
 
 export interface TaskStatusChangedPayload {
-  conversationId: string
-  taskId: string
-  status: string
-  runId: string
-  subject: string
-  description?: string
-  activeForm?: string
-  owner?: string
-  blockedBy?: string[]
-  createdAt?: string
+  conversationId: string;
+  taskId: string;
+  status: string;
+  runId: string;
+  subject: string;
+  description?: string;
+  activeForm?: string;
+  owner?: string;
+  blockedBy?: string[];
+  createdAt?: string;
 }
 
 export interface PermissionAskPayload {
-  conversationId: string
-  runId: string
-  toolCallId: string
-  toolName: string
-  message: string
-  suggestions: string[] | null
-  mode: 'default' | 'plan' | 'dontAsk'
-  rememberOptions: Array<'session' | 'workspace' | 'user'> | null
-  defaultDestination: 'session' | 'workspace' | 'user' | null
+  conversationId: string;
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  message: string;
+  suggestions: string[] | null;
+  mode: "default" | "plan" | "dontAsk" | "acceptEdits" | "fullAccess";
+  rememberOptions: Array<"session" | "workspace" | "user"> | null;
+  defaultDestination: "session" | "workspace" | "user" | null;
+}
+
+export interface PermissionResolvedPayload {
+  conversationId: string;
+  runId: string;
+  toolCallId: string;
 }
 
 export interface QuestionOption {
-  label: string
-  description: string
-  preview?: string
+  label: string;
+  description: string;
+  preview?: string;
 }
 
 export interface Question {
-  question: string
-  header: string
-  options: QuestionOption[]
-  multiSelect?: boolean
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiSelect?: boolean;
 }
 
 export interface InteractionRequiredPayload {
-  conversationId: string
-  runId: string
-  interactionId: string
-  toolCallId: string
-  toolName: string
-  kind: 'askUserQuestion'
+  conversationId: string;
+  runId: string;
+  interactionId: string;
+  toolCallId: string;
+  toolName: string;
+  kind: "askUserQuestion";
   payload: {
-    questions: Question[]
-    metadata?: unknown
-  }
+    questions: Question[];
+    metadata?: unknown;
+  };
 }
 
 export interface InteractionResolvedPayload {
-  conversationId: string
-  runId: string
-  interactionId: string
+  conversationId: string;
+  runId: string;
+  interactionId: string;
 }
 
 export type TurnOutcome =
-  | 'Success'
-  | 'Cancelled'
-  | 'MaxIterationsReached'
-  | 'BudgetExceeded'
-  | 'ExecutionError'
+  | "Success"
+  | "Cancelled"
+  | "MaxIterationsReached"
+  | "BudgetExceeded"
+  | "ExecutionError";
 
 export interface TurnCompletedPayload {
-  conversationId: string
-  runId: string
-  outcome: TurnOutcome
-  totalInputTokens: number
-  totalOutputTokens: number
+  conversationId: string;
+  runId: string;
+  outcome: TurnOutcome;
+  totalInputTokens: number;
+  totalOutputTokens: number;
   /** Anthropic-style prompt-cache write tokens accumulated this turn. */
-  totalCacheCreationInputTokens?: number
+  totalCacheCreationInputTokens?: number;
   /** Anthropic-style prompt-cache read tokens accumulated this turn. */
-  totalCacheReadInputTokens?: number
-  totalCostUsd?: number | null
-  permissionDenialCount: number
-  iterations?: number
-  reason?: string
-  message?: string
+  totalCacheReadInputTokens?: number;
+  totalCostUsd?: number | null;
+  permissionDenialCount: number;
+  iterations?: number;
+  reason?: string;
+  message?: string;
 }
 
 export interface CompactCompletedPayload {
-  conversationId: string
-  runId: string
-  boundaryId?: string
-  trigger?: 'auto' | 'manual'
-  createdAt?: string
-  tailMessageId?: string | null
-  preTokens: number
-  postTokens: number
-  tokensSaved: number
-  messagesSummarized: number
+  conversationId: string;
+  runId: string;
+  boundaryId?: string;
+  trigger?: "auto" | "manual";
+  createdAt?: string;
+  tailMessageId?: string | null;
+  preTokens: number;
+  postTokens: number;
+  tokensSaved: number;
+  messagesSummarized: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,95 +340,107 @@ export interface CompactCompletedPayload {
 // ---------------------------------------------------------------------------
 
 export interface TurnRunningTool {
-  toolName: string
-  toolCallId: string
-  startedAtMs: number
+  toolName: string;
+  toolCallId: string;
+  startedAtMs: number;
 }
 
 export type TurnStageKind =
-  | { kind: 'submitted' }
-  | { kind: 'waitingLlm';         iteration: number }
-  | { kind: 'streaming';          iteration: number }
+  | { kind: "submitted" }
+  | { kind: "waitingLlm"; iteration: number }
+  | { kind: "streaming"; iteration: number }
   | {
-      kind: 'tools'
-      iteration: number
-      running: TurnRunningTool[]
-      completedInBatch: number
+      kind: "tools";
+      iteration: number;
+      running: TurnRunningTool[];
+      completedInBatch: number;
     }
-  | { kind: 'waitingPermission';  toolName: string; toolCallId: string }
+  | { kind: "waitingPermission"; toolName: string; toolCallId: string }
   | {
-      kind: 'waitingInteraction'
-      interactionKind: string
-      interactionId: string
+      kind: "waitingInteraction";
+      interactionKind: string;
+      interactionId: string;
     }
-  | { kind: 'compacting' }
-  | { kind: 'completing' }
+  | { kind: "compacting" }
+  | { kind: "completing" };
 
 export interface TurnStagePayload {
-  conversationId: string
-  runId: string
-  stage: TurnStageKind
-  stageStartedAtMs: number
+  conversationId: string;
+  runId: string;
+  stage: TurnStageKind;
+  stageStartedAtMs: number;
 }
 
 export interface TurnHeartbeatPayload {
-  conversationId: string
-  runId: string
-  stageElapsedMs: number
-  turnElapsedMs: number
+  conversationId: string;
+  runId: string;
+  stageElapsedMs: number;
+  turnElapsedMs: number;
 }
 
 /** Spec 2026-05-26 §5.2 — mirrors Rust NetworkStatus enum (camelCase). */
-export type NetworkStatus = 'online' | 'offline' | 'server-degraded'
+export type NetworkStatus = "online" | "offline" | "server-degraded";
 /** Spec 2026-05-26 §5.2 — mirrors Rust NetworkErrorKind enum (camelCase). */
-export type NetworkErrorKind = 'timeout' | 'dns' | 'connect_refused' | 'tls' | 'other'
+export type NetworkErrorKind =
+  | "timeout"
+  | "dns"
+  | "connect_refused"
+  | "tls"
+  | "other";
 
 export interface NetworkStatusPayload {
-  status: NetworkStatus
-  lastCheckAtMs: number
-  latencyMs: number | null
-  errorKind: NetworkErrorKind | null
+  status: NetworkStatus;
+  lastCheckAtMs: number;
+  latencyMs: number | null;
+  errorKind: NetworkErrorKind | null;
 }
 
 /** Mirror of backend `PersistedTurnStage` (turn_stage.json on disk). */
 export interface PersistedTurnStage {
-  schemaVersion: number
-  conversationId: string
-  runId: string
-  stage: TurnStageKind
-  stageStartedAtMs: number
-  turnStartedAtMs: number
-  lastHeartbeatAtMs: number
+  schemaVersion: number;
+  conversationId: string;
+  runId: string;
+  stage: TurnStageKind;
+  stageStartedAtMs: number;
+  turnStartedAtMs: number;
+  lastHeartbeatAtMs: number;
 }
 
 export interface DiagnosticsEventPayload {
-  ts: string
-  seq: number
-  category: 'diagnostics'
-  level: 'debug' | 'info' | 'warn' | 'error'
-  source: 'frontend' | 'backend'
-  event: string
-  ok?: boolean
-  conversationId?: string
-  runId?: string
-  messageId?: string
-  clientMessageId?: string
-  toolCallId?: string
-  agentId?: string
-  interactionId?: string
-  taskId?: string
-  command?: string
-  durationMs?: number
-  elapsedMs?: number
-  error?: string
-  payload?: unknown
+  ts: string;
+  seq: number;
+  category: "diagnostics";
+  level: "debug" | "info" | "warn" | "error";
+  source: "frontend" | "backend";
+  event: string;
+  ok?: boolean;
+  conversationId?: string;
+  runId?: string;
+  messageId?: string;
+  clientMessageId?: string;
+  toolCallId?: string;
+  agentId?: string;
+  interactionId?: string;
+  taskId?: string;
+  command?: string;
+  durationMs?: number;
+  elapsedMs?: number;
+  error?: string;
+  payload?: unknown;
 }
 
 export interface AgentInfo {
-  name: string
-  description: string
-  source: 'builtin' | 'user'
+  name: string;
+  description: string;
+  source: "builtin" | "user";
 }
+
+export type PermissionMode =
+  | "default"
+  | "plan"
+  | "dontAsk"
+  | "acceptEdits"
+  | "fullAccess";
 
 // ---------------------------------------------------------------------------
 // Chat Commands
@@ -422,49 +460,57 @@ export function sendMessage(
   agentName?: string | null,
   clientMessageId?: string,
   skillCommand?: SkillCommandPayload | null,
+  permissionMode?: PermissionMode | null,
 ): Promise<void> {
-  return invoke<void>('send_message', {
+  return invoke<void>("send_message", {
     conversationId,
     content,
     attachments: attachments ?? [],
+    permissionMode: permissionMode ?? null,
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
     skillCommand: skillCommand ?? null,
-  })
+  });
 }
 
 export function compactConversation(
   conversationId: string,
   customInstructions?: string | null,
 ): Promise<void> {
-  return invoke<void>('compact_conversation', {
+  return invoke<void>("compact_conversation", {
     conversationId,
     customInstructions: customInstructions ?? null,
-  })
+  });
 }
 
 export function saveClipboardImageToTmp(
   bytes: number[],
   mimeType: string,
 ): Promise<SavedClipboardAttachmentPayload> {
-  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_to_tmp_dir', {
-    bytes,
-    mimeType,
-  })
+  return invoke<SavedClipboardAttachmentPayload>(
+    "save_clipboard_image_to_tmp_dir",
+    {
+      bytes,
+      mimeType,
+    },
+  );
 }
 
 export function saveClipboardImageToWorkspaceStaging(
   bytes: number[],
   mimeType: string,
 ): Promise<SavedClipboardAttachmentPayload> {
-  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_to_workspace_staging', {
-    bytes,
-    mimeType,
-  })
+  return invoke<SavedClipboardAttachmentPayload>(
+    "save_clipboard_image_to_workspace_staging",
+    {
+      bytes,
+      mimeType,
+    },
+  );
 }
 
 export function listAgents(): Promise<AgentInfo[]> {
-  return invoke<AgentInfo[]>('list_agents')
+  return invoke<AgentInfo[]>("list_agents");
 }
 
 /**
@@ -473,56 +519,79 @@ export function listAgents(): Promise<AgentInfo[]> {
  * @param conversationId - The conversation whose streaming should be stopped
  */
 export function stopStreaming(conversationId: string): Promise<void> {
-  return invoke<void>('stop_streaming', { conversationId })
+  return invoke<void>("stop_streaming", { conversationId });
 }
 
 export function approvePermissionRequest(
   toolCallId: string,
   updatedInput: unknown,
   remember?: boolean,
-  destination?: 'session' | 'workspace' | 'user',
+  destination?: "session" | "workspace" | "user",
+  message?: string,
 ): Promise<void> {
-  return invoke<void>('approve_permission_request', {
+  return invoke<void>("approve_permission_request", {
     toolCallId,
     updatedInput,
     remember,
     destination,
-  })
+    message,
+  });
 }
 
 export function denyPermissionRequest(
   toolCallId: string,
   message?: string,
   remember?: boolean,
-  destination?: 'session' | 'workspace' | 'user',
+  destination?: "session" | "workspace" | "user",
 ): Promise<void> {
-  return invoke<void>('deny_permission_request', {
+  return invoke<void>("deny_permission_request", {
     toolCallId,
     message,
     remember,
     destination,
-  })
+  });
 }
 
 export function cancelPermissionRequest(
   toolCallId: string,
   message?: string,
 ): Promise<void> {
-  return invoke<void>('cancel_permission_request', { toolCallId, message })
+  return invoke<void>("cancel_permission_request", { toolCallId, message });
+}
+
+export function pendingPermissionSnapshotForSession(
+  sessionId: string,
+): Promise<PermissionAskPayload[]> {
+  return invoke<PermissionAskPayload[]>(
+    "pending_permission_snapshot_for_session",
+    { sessionId },
+  );
+}
+
+export function pendingInteractionSnapshotForSession(
+  sessionId: string,
+): Promise<InteractionRequiredPayload[]> {
+  return invoke<InteractionRequiredPayload[]>(
+    "pending_interaction_snapshot_for_session",
+    { sessionId },
+  );
 }
 
 export function submitUserInteraction(
   interactionId: string,
-  value: { answers: Record<string, string>; annotations?: Record<string, unknown> },
+  value: {
+    answers: Record<string, string>;
+    annotations?: Record<string, unknown>;
+  },
 ): Promise<void> {
-  return invoke<void>('submit_user_interaction', { interactionId, value })
+  return invoke<void>("submit_user_interaction", { interactionId, value });
 }
 
 export function cancelUserInteraction(
   interactionId: string,
   message?: string,
 ): Promise<void> {
-  return invoke<void>('cancel_user_interaction', { interactionId, message })
+  return invoke<void>("cancel_user_interaction", { interactionId, message });
 }
 
 /**
@@ -532,146 +601,156 @@ export function cancelUserInteraction(
  * @returns Array of messages belonging to the conversation
  */
 export function getMessages(conversationId: string): Promise<Message[]> {
-  return invoke<Message[]>('get_messages', {
+  return invoke<Message[]>("get_messages", {
     conversationId,
-  })
+  });
 }
 
 export function getTasks(
   conversationId: string,
-): Promise<import('@/stores/streamingStore').ConversationTaskState[]> {
-  return invoke('get_tasks', { conversationId })
+): Promise<import("@/stores/streamingStore").ConversationTaskState[]> {
+  return invoke("get_tasks", { conversationId });
 }
 
-export type ItemStatus = 'active' | 'paused' | 'completed' | 'orphaned' | 'cancelled'
-export type OccurrenceStatus = 'running' | 'succeeded' | 'failed'
-export type Freq = 'daily' | 'weekly' | 'monthly' | 'yearly'
+export type ItemStatus =
+  | "active"
+  | "paused"
+  | "completed"
+  | "orphaned"
+  | "cancelled";
+export type OccurrenceStatus = "running" | "succeeded" | "failed";
+export type Freq = "daily" | "weekly" | "monthly" | "yearly";
 
 export interface Participant {
-  employeeId: string
-  joinedAt: string
+  employeeId: string;
+  joinedAt: string;
 }
 
 export interface RecurrenceRule {
-  freq: Freq
-  interval: number
+  freq: Freq;
+  interval: number;
   endCondition:
-    | { kind: 'never' }
-    | { kind: 'count'; n: number }
-    | { kind: 'until'; at: string }
-  byDay?: string[]
-  byMonthDay?: number[]
+    | { kind: "never" }
+    | { kind: "count"; n: number }
+    | { kind: "until"; at: string };
+  byDay?: string[];
+  byMonthDay?: number[];
 }
 
 export interface OverrideRef {
-  seriesItemId: string
-  originalAt: string
+  seriesItemId: string;
+  originalAt: string;
 }
 
 export interface AgendaItem {
-  id: string
-  title: string
-  prompt: string
-  organizerEmployeeId: string
-  participants: Participant[]
-  startAt: string
-  timezone: string
-  rule: RecurrenceRule | null
-  skipDates: string[]
-  nextFireAt: string | null
-  occurrenceCount: number
-  status: ItemStatus
-  overrideOf: OverrideRef | null
-  workspacePath: string | null
-  createdAt: string
-  updatedAt: string
+  id: string;
+  title: string;
+  prompt: string;
+  organizerEmployeeId: string;
+  participants: Participant[];
+  startAt: string;
+  timezone: string;
+  rule: RecurrenceRule | null;
+  skipDates: string[];
+  nextFireAt: string | null;
+  occurrenceCount: number;
+  status: ItemStatus;
+  overrideOf: OverrideRef | null;
+  workspacePath: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Occurrence {
-  id: string
-  agendaItemId: string
-  firedAt: string
-  plannedFireAt: string
-  startedAt: string
-  finishedAt: string | null
-  primaryEmployeeId: string
-  conversationId: string
-  sessionId: string
-  runId: string
-  status: OccurrenceStatus
-  errorSummary: string | null
-  triggerSource: 'scheduled' | 'manual_run_now'
+  id: string;
+  agendaItemId: string;
+  firedAt: string;
+  plannedFireAt: string;
+  startedAt: string;
+  finishedAt: string | null;
+  primaryEmployeeId: string;
+  conversationId: string;
+  sessionId: string;
+  runId: string;
+  status: OccurrenceStatus;
+  errorSummary: string | null;
+  triggerSource: "scheduled" | "manual_run_now";
 }
 
 export interface ItemFilter {
-  statusIn?: ItemStatus[]
-  employeeId?: string
-  search?: string
+  statusIn?: ItemStatus[];
+  employeeId?: string;
+  search?: string;
 }
 
 export interface CreateAgendaItemRequest {
-  title: string
-  prompt: string
-  organizerEmployeeId: string
-  startAt: string
-  timezone?: string
-  rule?: RecurrenceRule | null
-  workspacePath?: string | null
+  title: string;
+  prompt: string;
+  organizerEmployeeId: string;
+  startAt: string;
+  timezone?: string;
+  rule?: RecurrenceRule | null;
+  workspacePath?: string | null;
 }
 
 export interface UpdateAgendaItemRequest {
-  title?: string
-  prompt?: string
-  startAt?: string
-  timezone?: string
-  rule?: RecurrenceRule | null
-  status?: ItemStatus
-  workspacePath?: string | null
+  title?: string;
+  prompt?: string;
+  startAt?: string;
+  timezone?: string;
+  rule?: RecurrenceRule | null;
+  status?: ItemStatus;
+  workspacePath?: string | null;
 }
 
 export function listAgendaItems(filter?: ItemFilter): Promise<AgendaItem[]> {
-  return invoke<AgendaItem[]>('list_agenda_items', { filter })
+  return invoke<AgendaItem[]>("list_agenda_items", { filter });
 }
 export function getAgendaItem(id: string): Promise<AgendaItem> {
-  return invoke<AgendaItem>('get_agenda_item', { id })
+  return invoke<AgendaItem>("get_agenda_item", { id });
 }
-export function createAgendaItem(request: CreateAgendaItemRequest): Promise<AgendaItem> {
-  return invoke<AgendaItem>('create_agenda_item', { request })
+export function createAgendaItem(
+  request: CreateAgendaItemRequest,
+): Promise<AgendaItem> {
+  return invoke<AgendaItem>("create_agenda_item", { request });
 }
 export function updateAgendaItem(
   id: string,
   request: UpdateAgendaItemRequest,
 ): Promise<AgendaItem> {
-  return invoke<AgendaItem>('update_agenda_item', { id, request })
+  return invoke<AgendaItem>("update_agenda_item", { id, request });
 }
 export function deleteAgendaItem(id: string): Promise<boolean> {
-  return invoke<boolean>('delete_agenda_item', { id })
+  return invoke<boolean>("delete_agenda_item", { id });
 }
 export function cancelAgendaItem(id: string): Promise<AgendaItem> {
-  return invoke<AgendaItem>('cancel_agenda_item', { id })
+  return invoke<AgendaItem>("cancel_agenda_item", { id });
 }
 export function restoreAgendaItem(id: string): Promise<AgendaItem> {
-  return invoke<AgendaItem>('restore_agenda_item', { id })
+  return invoke<AgendaItem>("restore_agenda_item", { id });
 }
 export function runAgendaItemNow(id: string): Promise<string> {
-  return invoke<string>('run_agenda_item_now', { id })
+  return invoke<string>("run_agenda_item_now", { id });
 }
-export function listAgendaOccurrences(itemId: string, limit?: number): Promise<Occurrence[]> {
-  return invoke<Occurrence[]>('list_agenda_occurrences', { itemId, limit })
+export function listAgendaOccurrences(
+  itemId: string,
+  limit?: number,
+): Promise<Occurrence[]> {
+  return invoke<Occurrence[]>("list_agenda_occurrences", { itemId, limit });
 }
 export function skipOccurrence(id: string, at: string): Promise<AgendaItem> {
-  return invoke<AgendaItem>('skip_occurrence', { id, at })
+  return invoke<AgendaItem>("skip_occurrence", { id, at });
 }
 export function unskipOccurrence(id: string, at: string): Promise<AgendaItem> {
-  return invoke<AgendaItem>('unskip_occurrence', { id, at })
+  return invoke<AgendaItem>("unskip_occurrence", { id, at });
 }
 
 export function getSubagentTranscript(
   transcriptRef: string,
 ): Promise<SubAgentTranscriptEntry[]> {
-  return invoke<SubAgentTranscriptEntry[]>('get_subagent_transcript', {
+  return invoke<SubAgentTranscriptEntry[]>("get_subagent_transcript", {
     transcriptRef,
-  })
+  });
 }
 
 /**
@@ -680,7 +759,7 @@ export function getSubagentTranscript(
  * for conversations that never had a team.
  */
 export function getTeamOverview(conversationId: string): Promise<TeamOverview> {
-  return invoke<TeamOverview>('get_team_overview', { conversationId })
+  return invoke<TeamOverview>("get_team_overview", { conversationId });
 }
 
 /**
@@ -691,10 +770,10 @@ export function getTeammateTranscript(
   conversationId: string,
   agentId: string,
 ): Promise<unknown[]> {
-  return invoke<unknown[]>('get_teammate_transcript', {
+  return invoke<unknown[]>("get_teammate_transcript", {
     conversationId,
     agentId,
-  })
+  });
 }
 
 /**
@@ -702,11 +781,11 @@ export function getTeammateTranscript(
  * matches what the writer (SendMessage tool) puts on disk.
  */
 export interface TeamChatMessage {
-  ts: string
-  from: string
-  to: string
-  text: string
-  variant?: string
+  ts: string;
+  from: string;
+  to: string;
+  text: string;
+  variant?: string;
 }
 
 /**
@@ -721,12 +800,12 @@ export function teamChatMessages(
   sinceTs?: string,
   limit?: number,
 ): Promise<TeamChatMessage[]> {
-  return invoke<TeamChatMessage[]>('team_chat_messages', {
+  return invoke<TeamChatMessage[]>("team_chat_messages", {
     conversationId,
     teamName,
     sinceTs,
     limit,
-  })
+  });
 }
 
 /**
@@ -735,7 +814,7 @@ export function teamChatMessages(
  * @returns The ID of the newly created conversation
  */
 export function createConversation(): Promise<string> {
-  return invoke<string>('create_conversation')
+  return invoke<string>("create_conversation");
 }
 
 /**
@@ -744,7 +823,7 @@ export function createConversation(): Promise<string> {
  * @returns Array of conversation objects from the database
  */
 export function getConversations(): Promise<Record<string, unknown>[]> {
-  return invoke<Record<string, unknown>[]>('get_conversations')
+  return invoke<Record<string, unknown>[]>("get_conversations");
 }
 
 /**
@@ -753,9 +832,9 @@ export function getConversations(): Promise<Record<string, unknown>[]> {
  * @param conversationId - The conversation to delete
  */
 export function deleteConversation(conversationId: string): Promise<void> {
-  return invoke<void>('delete_conversation', {
+  return invoke<void>("delete_conversation", {
     conversationId,
-  })
+  });
 }
 
 /**
@@ -764,44 +843,53 @@ export function deleteConversation(conversationId: string): Promise<void> {
  * @param conversationId - The conversation to rename
  * @param newTitle - The new title
  */
-export function renameConversation(conversationId: string, newTitle: string): Promise<void> {
-  return invoke<void>('rename_conversation', {
+export function renameConversation(
+  conversationId: string,
+  newTitle: string,
+): Promise<void> {
+  return invoke<void>("rename_conversation", {
     conversationId,
     newTitle,
-  })
+  });
 }
 
 export function archiveConversation(conversationId: string): Promise<void> {
-  return invoke<void>('archive_conversation', { conversationId })
+  return invoke<void>("archive_conversation", { conversationId });
 }
 
 export function setConversationPinned(
   conversationId: string,
   pinned: boolean,
 ): Promise<void> {
-  return invoke<void>('set_conversation_pinned', { conversationId, pinned })
+  return invoke<void>("set_conversation_pinned", { conversationId, pinned });
 }
 
 export type ConversationSourceDto =
-  | { kind: 'user' }
-  | { kind: 'employee'; employeeId: string }
-  | { kind: 'expertTeam'; expertTeamId: string }
-  | { kind: 'im' }
+  | { kind: "user" }
+  | { kind: "employee"; employeeId: string }
+  | { kind: "expertTeam"; expertTeamId: string }
+  | { kind: "im" };
 
 export function setConversationExpertTeam(
   conversationId: string,
   expertTeamId: string,
   teamLabel: string,
 ): Promise<void> {
-  return invoke('set_conversation_expert_team', { conversationId, expertTeamId, teamLabel })
+  return invoke("set_conversation_expert_team", {
+    conversationId,
+    expertTeamId,
+    teamLabel,
+  });
 }
 
 export function clearConversationSource(conversationId: string): Promise<void> {
-  return invoke('clear_conversation_source', { conversationId })
+  return invoke("clear_conversation_source", { conversationId });
 }
 
-export function getConversationSource(conversationId: string): Promise<ConversationSourceDto> {
-  return invoke('get_conversation_source', { conversationId })
+export function getConversationSource(
+  conversationId: string,
+): Promise<ConversationSourceDto> {
+  return invoke("get_conversation_source", { conversationId });
 }
 
 /**
@@ -810,19 +898,21 @@ export function getConversationSource(conversationId: string): Promise<Conversat
  * conversation does not exist or its `conv.json` is unreadable.
  */
 export interface ConversationMetaDto {
-  id: string
-  title: string
-  createdAt: string
-  updatedAt: string
-  isArchived: boolean
-  employeeId?: string | null
-  activeTeamName?: string | null
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  isArchived: boolean;
+  employeeId?: string | null;
+  activeTeamName?: string | null;
 }
 
 export function getConversationMeta(
   conversationId: string,
 ): Promise<ConversationMetaDto | null> {
-  return invoke<ConversationMetaDto | null>('get_conversation_meta', { conversationId })
+  return invoke<ConversationMetaDto | null>("get_conversation_meta", {
+    conversationId,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -830,88 +920,88 @@ export function getConversationMeta(
 // ---------------------------------------------------------------------------
 
 export type ChannelPlatform =
-  | 'dingtalk'
-  | 'feishu'
-  | 'wechat'
-  | 'wecom'
-  | 'telegram'
-  | 'whatsapp'
+  | "dingtalk"
+  | "feishu"
+  | "wechat"
+  | "wecom"
+  | "telegram"
+  | "whatsapp";
 
-export type ChannelCapability = 'available' | 'comingSoon'
+export type ChannelCapability = "available" | "comingSoon";
 
 // Mirror of src-tauri/src/connector/im/types.rs ChannelConnectionState (serde camelCase).
 export type ChannelConnectionState =
-  | 'unconfigured'
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'configError'
-  | 'needsReauth'
+  | "unconfigured"
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "configError"
+  | "needsReauth";
 
-export type RobotCodeSource = 'registration' | 'appKeyFallback'
+export type RobotCodeSource = "registration" | "appKeyFallback";
 
 export interface ChannelConfigView {
-  platform: ChannelPlatform
-  appKey: string
-  appSecretMasked: string
-  robotCode: string
-  robotCodeSource: RobotCodeSource
-  source: 'OPEN_CLAW'
-  createdAt: string
-  updatedAt: string
+  platform: ChannelPlatform;
+  appKey: string;
+  appSecretMasked: string;
+  robotCode: string;
+  robotCodeSource: RobotCodeSource;
+  source: "OPEN_CLAW";
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ChannelPlatformState {
-  platform: ChannelPlatform
-  capability: ChannelCapability
-  configured: boolean
-  enabled: boolean
-  connection: ChannelConnectionState
-  config?: ChannelConfigView | null
-  lastConnectedAt?: string | null
-  lastError?: string | null
+  platform: ChannelPlatform;
+  capability: ChannelCapability;
+  configured: boolean;
+  enabled: boolean;
+  connection: ChannelConnectionState;
+  config?: ChannelConfigView | null;
+  lastConnectedAt?: string | null;
+  lastError?: string | null;
 }
 
 export interface ChannelPlatformStatePayload {
-  state: ChannelPlatformState
+  state: ChannelPlatformState;
 }
 
 export interface ChannelMessagePayload {
-  platform: ChannelPlatform
-  sessionId: string
-  senderNick: string
-  textPreview: string
+  platform: ChannelPlatform;
+  sessionId: string;
+  senderNick: string;
+  textPreview: string;
 }
 
 export interface ChannelConversation {
-  sessionId: string
-  platform: ChannelPlatform
-  conversationType: 'group' | 'private'
-  externalId: string
-  displayName: string
-  unreadCount: number
-  robotCode: string
-  isActiveRobot: boolean
+  sessionId: string;
+  platform: ChannelPlatform;
+  conversationType: "group" | "private";
+  externalId: string;
+  displayName: string;
+  unreadCount: number;
+  robotCode: string;
+  isActiveRobot: boolean;
 }
 
 export interface ChannelRegistrationBeginResult {
-  deviceCode: string
-  userCode: string
-  verificationUriComplete: string
-  verificationUri: string
-  intervalSeconds: number
-  expiresInSeconds: number
-  source: string
+  deviceCode: string;
+  userCode: string;
+  verificationUriComplete: string;
+  verificationUri: string;
+  intervalSeconds: number;
+  expiresInSeconds: number;
+  source: string;
 }
 
 export interface ChannelRegistrationPollResult {
-  state: 'waiting' | 'success' | 'fail' | 'expired' | 'unknown'
-  clientId?: string | null
-  robotCode?: string | null
-  config?: ChannelConfigView | null
-  platformState?: ChannelPlatformState | null
-  failReason?: string | null
+  state: "waiting" | "success" | "fail" | "expired" | "unknown";
+  clientId?: string | null;
+  robotCode?: string | null;
+  config?: ChannelConfigView | null;
+  platformState?: ChannelPlatformState | null;
+  failReason?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -919,45 +1009,65 @@ export interface ChannelRegistrationPollResult {
 // ---------------------------------------------------------------------------
 
 export function channelGetPlatforms(): Promise<ChannelPlatformState[]> {
-  return invoke<ChannelPlatformState[]>('channel_get_platforms')
+  return invoke<ChannelPlatformState[]>("channel_get_platforms");
 }
 
-export function channelGetPlatform(platform: ChannelPlatform): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_get_platform', { platform })
+export function channelGetPlatform(
+  platform: ChannelPlatform,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>("channel_get_platform", { platform });
 }
 
 export function channelGetConversations(
   platform?: ChannelPlatform,
 ): Promise<ChannelConversation[]> {
-  return invoke<ChannelConversation[]>('channel_get_conversations', { platform })
+  return invoke<ChannelConversation[]>("channel_get_conversations", {
+    platform,
+  });
 }
 
 export function channelBeginRegistration(
   platform: ChannelPlatform,
 ): Promise<ChannelRegistrationBeginResult> {
-  return invoke<ChannelRegistrationBeginResult>('channel_begin_registration', { platform })
+  return invoke<ChannelRegistrationBeginResult>("channel_begin_registration", {
+    platform,
+  });
 }
 
 export function channelPollRegistration(
   platform: ChannelPlatform,
   deviceCode: string,
 ): Promise<ChannelRegistrationPollResult> {
-  return invoke<ChannelRegistrationPollResult>('channel_poll_registration', { platform, deviceCode })
+  return invoke<ChannelRegistrationPollResult>("channel_poll_registration", {
+    platform,
+    deviceCode,
+  });
 }
 
 export function channelSetEnabled(
   platform: ChannelPlatform,
   enabled: boolean,
 ): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_set_enabled', { platform, enabled })
+  return invoke<ChannelPlatformState>("channel_set_enabled", {
+    platform,
+    enabled,
+  });
 }
 
-export function channelRemovePlatform(platform: ChannelPlatform): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_remove_platform', { platform })
+export function channelRemovePlatform(
+  platform: ChannelPlatform,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>("channel_remove_platform", { platform });
 }
 
-export function channelRevealSecret(platform: ChannelPlatform): Promise<string> {
-  return invoke<string>('channel_reveal_secret', { platform })
+export function channelRevealSecret(
+  platform: ChannelPlatform,
+): Promise<string> {
+  return invoke<string>("channel_reveal_secret", { platform });
+}
+
+export function channelSendDingtalkGreeting(): Promise<void> {
+  return invoke<void>("channel_send_dingtalk_greeting");
 }
 
 // ---------------------------------------------------------------------------
@@ -965,8 +1075,8 @@ export function channelRevealSecret(platform: ChannelPlatform): Promise<string> 
 // ---------------------------------------------------------------------------
 
 export interface WecomTestConnectionResult {
-  ok: boolean
-  error: string | null
+  ok: boolean;
+  error: string | null;
 }
 
 export function channelWecomSave(
@@ -974,22 +1084,31 @@ export function channelWecomSave(
   secret: string,
   displayName?: string,
 ): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_wecom_save', { botId, secret, displayName })
+  return invoke<ChannelPlatformState>("channel_wecom_save", {
+    botId,
+    secret,
+    displayName,
+  });
 }
 
 export function channelWecomTestConnection(
   botId: string,
   secret: string,
 ): Promise<WecomTestConnectionResult> {
-  return invoke<WecomTestConnectionResult>('channel_wecom_test_connection', { botId, secret })
+  return invoke<WecomTestConnectionResult>("channel_wecom_test_connection", {
+    botId,
+    secret,
+  });
 }
 
 export function channelWecomRemove(): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_wecom_remove')
+  return invoke<ChannelPlatformState>("channel_wecom_remove");
 }
 
-export function channelWecomSetEnabled(enabled: boolean): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_wecom_set_enabled', { enabled })
+export function channelWecomSetEnabled(
+  enabled: boolean,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>("channel_wecom_set_enabled", { enabled });
 }
 
 // ---- Wecom QR scan registration -------------------------------------------
@@ -998,26 +1117,28 @@ export function channelWecomSetEnabled(enabled: boolean): Promise<ChannelPlatfor
 // 成功时拿到 botId/secret，前端再调 channelWecomSave 完成持久化 + 自动连接。
 
 export interface WecomBeginResult {
-  scode: string
-  authUrl: string
-  fallbackUrl: string
-  intervalSeconds: number
-  expiresInSeconds: number
-  source: string
+  scode: string;
+  authUrl: string;
+  fallbackUrl: string;
+  intervalSeconds: number;
+  expiresInSeconds: number;
+  source: string;
 }
 
 export interface WecomPollResult {
-  state: 'waiting' | 'success'
-  botId: string | null
-  secret: string | null
+  state: "waiting" | "success";
+  botId: string | null;
+  secret: string | null;
 }
 
 export function channelWecomBeginRegistration(): Promise<WecomBeginResult> {
-  return invoke<WecomBeginResult>('channel_wecom_begin_registration')
+  return invoke<WecomBeginResult>("channel_wecom_begin_registration");
 }
 
-export function channelWecomPollRegistration(scode: string): Promise<WecomPollResult> {
-  return invoke<WecomPollResult>('channel_wecom_poll_registration', { scode })
+export function channelWecomPollRegistration(
+  scode: string,
+): Promise<WecomPollResult> {
+  return invoke<WecomPollResult>("channel_wecom_poll_registration", { scode });
 }
 
 export function onChannelPlatformState(
@@ -1026,13 +1147,15 @@ export function onChannelPlatformState(
   return listen<ChannelPlatformStatePayload>(
     TAURI_EVENTS.CHANNEL_PLATFORM_STATE,
     (e) => handler(e.payload),
-  )
+  );
 }
 
 export function onChannelMessage(
   handler: (payload: ChannelMessagePayload) => void,
 ): Promise<() => void> {
-  return listen<ChannelMessagePayload>(TAURI_EVENTS.CHANNEL_MESSAGE, (e) => handler(e.payload))
+  return listen<ChannelMessagePayload>(TAURI_EVENTS.CHANNEL_MESSAGE, (e) =>
+    handler(e.payload),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1040,70 +1163,92 @@ export function onChannelMessage(
 // ---------------------------------------------------------------------------
 
 export interface TelegramPairingBeginResult {
-  code: string
-  deepLink: string
-  expiresInSeconds: number
-  botUsername: string
+  code: string;
+  deepLink: string;
+  expiresInSeconds: number;
+  botUsername: string;
 }
 
 export interface TelegramPendingPairing {
-  code: string
+  code: string;
   /** Telegram user id (i64). JS number is safe up to 2^53. */
-  userId: number
-  firstName: string
-  username: string | null
-  requestedAt: string
+  userId: number;
+  firstName: string;
+  username: string | null;
+  requestedAt: string;
 }
 
 export interface TelegramPairedUser {
   /** Telegram user id (i64). JS number is safe up to 2^53; Telegram currently uses ~10-digit ids so headroom is large. */
-  userId: number
-  firstName: string
-  username: string | null
+  userId: number;
+  firstName: string;
+  username: string | null;
 }
 
-export function channelTelegramSave(token: string): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_telegram_save', { token })
+export function channelTelegramSave(
+  token: string,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>("channel_telegram_save", { token });
 }
 
 export function channelTelegramRemove(): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_telegram_remove')
+  return invoke<ChannelPlatformState>("channel_telegram_remove");
 }
 
-export function channelTelegramSetEnabled(enabled: boolean): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_telegram_set_enabled', { enabled })
+export function channelTelegramSetEnabled(
+  enabled: boolean,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>("channel_telegram_set_enabled", {
+    enabled,
+  });
 }
 
 export function channelTelegramBeginPairing(): Promise<TelegramPairingBeginResult> {
-  return invoke<TelegramPairingBeginResult>('channel_telegram_begin_pairing')
+  return invoke<TelegramPairingBeginResult>("channel_telegram_begin_pairing");
 }
 
-export function channelTelegramListPendingPairings(): Promise<TelegramPendingPairing[]> {
-  return invoke<TelegramPendingPairing[]>('channel_telegram_list_pending_pairings')
+export function channelTelegramListPendingPairings(): Promise<
+  TelegramPendingPairing[]
+> {
+  return invoke<TelegramPendingPairing[]>(
+    "channel_telegram_list_pending_pairings",
+  );
 }
 
-export function channelTelegramApprovePairing(code: string): Promise<TelegramPairedUser> {
-  return invoke<TelegramPairedUser>('channel_telegram_approve_pairing', { code })
+export function channelTelegramApprovePairing(
+  code: string,
+): Promise<TelegramPairedUser> {
+  return invoke<TelegramPairedUser>("channel_telegram_approve_pairing", {
+    code,
+  });
 }
 
 export function channelTelegramRejectPairing(code: string): Promise<void> {
-  return invoke<void>('channel_telegram_reject_pairing', { code })
+  return invoke<void>("channel_telegram_reject_pairing", { code });
 }
 
-export function channelTelegramRevokeUser(userId: number): Promise<ChannelPlatformState> {
-  return invoke<ChannelPlatformState>('channel_telegram_revoke_user', { userId })
+export function channelTelegramRevokeUser(
+  userId: number,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>("channel_telegram_revoke_user", {
+    userId,
+  });
 }
 
-export function channelTelegramListPairedUsers(): Promise<TelegramPairedUser[]> {
-  return invoke<TelegramPairedUser[]>('channel_telegram_list_paired_users')
+export function channelTelegramListPairedUsers(): Promise<
+  TelegramPairedUser[]
+> {
+  return invoke<TelegramPairedUser[]>("channel_telegram_list_paired_users");
 }
 
 // ---------------------------------------------------------------------------
 // WhatsApp-specific channel commands
 // ---------------------------------------------------------------------------
 
-export async function channelWhatsappUpdateAllowFrom(allowFrom: string[]): Promise<void> {
-  await invoke('channel_whatsapp_update_allow_from', { allowFrom })
+export async function channelWhatsappUpdateAllowFrom(
+  allowFrom: string[],
+): Promise<void> {
+  await invoke("channel_whatsapp_update_allow_from", { allowFrom });
 }
 
 /**
@@ -1111,15 +1256,19 @@ export async function channelWhatsappUpdateAllowFrom(allowFrom: string[]): Promi
  * 有限制返回 ["+86xxx", ...]。供"管理允许列表"UI 初始化预填用。
  */
 export async function channelWhatsappGetAllowFrom(): Promise<string[] | null> {
-  return (await invoke<string[] | null>('channel_whatsapp_get_allow_from')) ?? null
+  return (
+    (await invoke<string[] | null>("channel_whatsapp_get_allow_from")) ?? null
+  );
 }
 
 export function restoreConversation(conversationId: string): Promise<void> {
-  return invoke<void>('restore_conversation', { conversationId })
+  return invoke<void>("restore_conversation", { conversationId });
 }
 
-export function getArchivedConversations(): Promise<Array<{ id: string; title: string; updatedAt: string; isArchived: boolean }>> {
-  return invoke('get_archived_conversations')
+export function getArchivedConversations(): Promise<
+  Array<{ id: string; title: string; updatedAt: string; isArchived: boolean }>
+> {
+  return invoke("get_archived_conversations");
 }
 
 /**
@@ -1128,7 +1277,7 @@ export function getArchivedConversations(): Promise<Array<{ id: string; title: s
  * @returns Array of conversation IDs that are being processed
  */
 export function isAgentBusy(): Promise<string[]> {
-  return invoke<string[]>('is_agent_busy')
+  return invoke<string[]>("is_agent_busy");
 }
 
 // ---------------------------------------------------------------------------
@@ -1142,11 +1291,14 @@ export function isAgentBusy(): Promise<string[]> {
  * @param conversationId - Conversation to associate the file with
  * @returns Upload result with file ID and file size in bytes
  */
-export function uploadFile(filePath: string, conversationId: string): Promise<{ fileId: string; fileSize: number }> {
-  return invoke<{ fileId: string; fileSize: number }>('upload_file', {
+export function uploadFile(
+  filePath: string,
+  conversationId: string,
+): Promise<{ fileId: string; fileSize: number }> {
+  return invoke<{ fileId: string; fileSize: number }>("upload_file", {
     filePath,
     conversationId,
-  })
+  });
 }
 
 /**
@@ -1155,11 +1307,14 @@ export function uploadFile(filePath: string, conversationId: string): Promise<{ 
  * @param fileId - ID of the generated file to open
  * @param conversationId - Conversation that owns the file
  */
-export function openGeneratedFile(fileId: string, conversationId: string): Promise<void> {
-  return invoke<void>('open_generated_file', {
+export function openGeneratedFile(
+  fileId: string,
+  conversationId: string,
+): Promise<void> {
+  return invoke<void>("open_generated_file", {
     fileId,
     conversationId,
-  })
+  });
 }
 
 /**
@@ -1168,33 +1323,58 @@ export function openGeneratedFile(fileId: string, conversationId: string): Promi
  * @param fileId - ID of the file to reveal
  * @param conversationId - Conversation that owns the file
  */
-export function revealFileInFolder(fileId: string, conversationId: string): Promise<void> {
-  return invoke<void>('reveal_file_in_folder', {
+export function revealFileInFolder(
+  fileId: string,
+  conversationId: string,
+): Promise<void> {
+  return invoke<void>("reveal_file_in_folder", {
     fileId,
     conversationId,
-  })
+  });
 }
 
-export function saveGeneratedFileAs(fileId: string, conversationId: string, destinationPath: string): Promise<string> {
-  return invoke<string>('save_generated_file_as', {
+export function isGeneratedFileAvailable(
+  fileId: string,
+  conversationId: string,
+): Promise<boolean> {
+  return invoke<boolean>("is_generated_file_available", {
+    fileId,
+    conversationId,
+  });
+}
+
+export function isLocalFileAvailable(path: string): Promise<boolean> {
+  return invoke<boolean>("is_local_file_available", { path });
+}
+
+export function saveGeneratedFileAs(
+  fileId: string,
+  conversationId: string,
+  destinationPath: string,
+): Promise<string> {
+  return invoke<string>("save_generated_file_as", {
     fileId,
     conversationId,
     destinationPath,
-  })
+  });
 }
 
 export interface ExportConversationResult {
-  zipPath: string
-  fileName: string
-  sizeBytes: number
+  zipPath: string;
+  fileName: string;
+  sizeBytes: number;
 }
 
-export function exportConversation(conversationId: string): Promise<ExportConversationResult> {
-  return invoke<ExportConversationResult>('export_conversation', { conversationId })
+export function exportConversation(
+  conversationId: string,
+): Promise<ExportConversationResult> {
+  return invoke<ExportConversationResult>("export_conversation", {
+    conversationId,
+  });
 }
 
 export function revealExportInFolder(path: string): Promise<void> {
-  return invoke<void>('reveal_export_in_folder', { path })
+  return invoke<void>("reveal_export_in_folder", { path });
 }
 
 /**
@@ -1204,33 +1384,53 @@ export function revealExportInFolder(path: string): Promise<void> {
  * @param conversationId - Conversation that owns the file
  * @returns Preview content as a string (HTML or data URI)
  */
-export function previewFile(fileId: string, conversationId: string): Promise<string> {
-  return invoke<string>('preview_file', {
+export function previewFile(
+  fileId: string,
+  conversationId: string,
+): Promise<string> {
+  return invoke<string>("preview_file", {
     fileId,
     conversationId,
-  })
+  });
 }
 
 export type FilePreview =
-  | { kind: 'markdown' | 'text' | 'json' | 'csv'; fileName: string; mimeType: string; content: string }
-  | { kind: 'html'; fileName: string; mimeType: 'text/html'; content: string; sandbox: true }
-  | { kind: 'image'; fileName: string; mimeType: string; dataUrl: string }
-  | { kind: 'unsupported'; fileName: string; reason: string }
+  | {
+      kind: "markdown" | "text" | "json" | "csv";
+      fileName: string;
+      mimeType: string;
+      content: string;
+    }
+  | {
+      kind: "html";
+      fileName: string;
+      mimeType: "text/html";
+      content: string;
+      sandbox: true;
+    }
+  | { kind: "image"; fileName: string; mimeType: string; dataUrl: string }
+  | { kind: "unsupported"; fileName: string; reason: string };
 
-export function getFilePreview(fileId: string, conversationId: string): Promise<FilePreview> {
-  return invoke<FilePreview>('get_file_preview', { fileId, conversationId })
+export function getFilePreview(
+  fileId: string,
+  conversationId: string,
+): Promise<FilePreview> {
+  return invoke<FilePreview>("get_file_preview", { fileId, conversationId });
 }
 
 export function getLocalFilePreview(path: string): Promise<FilePreview> {
-  return invoke<FilePreview>('get_local_file_preview', { path })
+  return invoke<FilePreview>("get_local_file_preview", { path });
 }
 
 export function openLocalFile(path: string): Promise<void> {
-  return invoke<void>('open_local_file', { path })
+  return invoke<void>("open_local_file", { path });
 }
 
-export function saveLocalFileAs(path: string, destinationPath: string): Promise<string> {
-  return invoke<string>('save_local_file_as', { path, destinationPath })
+export function saveLocalFileAs(
+  path: string,
+  destinationPath: string,
+): Promise<string> {
+  return invoke<string>("save_local_file_as", { path, destinationPath });
 }
 
 /**
@@ -1239,11 +1439,14 @@ export function saveLocalFileAs(path: string, destinationPath: string): Promise<
  * @param fileId - ID of the file to delete
  * @param conversationId - Conversation that owns the file
  */
-export function deleteFile(fileId: string, conversationId: string): Promise<void> {
-  return invoke<void>('delete_file', {
+export function deleteFile(
+  fileId: string,
+  conversationId: string,
+): Promise<void> {
+  return invoke<void>("delete_file", {
     fileId,
     conversationId,
-  })
+  });
 }
 
 /**
@@ -1253,7 +1456,7 @@ export function deleteFile(fileId: string, conversationId: string): Promise<void
  * @param fileName - The file name to search for (e.g. "report.xlsx")
  */
 export function openFileByName(fileName: string): Promise<void> {
-  return invoke<void>('open_file_by_name', { fileName })
+  return invoke<void>("open_file_by_name", { fileName });
 }
 
 /**
@@ -1262,7 +1465,7 @@ export function openFileByName(fileName: string): Promise<void> {
  * @param fileName - The file name to search for
  */
 export function revealFileByName(fileName: string): Promise<void> {
-  return invoke<void>('reveal_file_by_name', { fileName })
+  return invoke<void>("reveal_file_by_name", { fileName });
 }
 
 // ---------------------------------------------------------------------------
@@ -1275,7 +1478,7 @@ export function revealFileByName(fileName: string): Promise<void> {
  * @returns The full Settings object
  */
 export function getSettings(): Promise<Settings> {
-  return invoke<Settings>('get_settings')
+  return invoke<Settings>("get_settings");
 }
 
 /**
@@ -1284,7 +1487,7 @@ export function getSettings(): Promise<Settings> {
  * @param settings - The complete Settings object to save
  */
 export function updateSettings(settings: Settings): Promise<void> {
-  return invoke<void>('update_settings', { settings })
+  return invoke<void>("update_settings", { settings });
 }
 
 /**
@@ -1294,11 +1497,14 @@ export function updateSettings(settings: Settings): Promise<void> {
  * @param apiKey - The API key to validate
  * @returns `true` if the key is valid, `false` otherwise
  */
-export function validateApiKey(provider: string, apiKey: string): Promise<boolean> {
-  return invoke<boolean>('validate_api_key', {
+export function validateApiKey(
+  provider: string,
+  apiKey: string,
+): Promise<boolean> {
+  return invoke<boolean>("validate_api_key", {
     provider,
     apiKey,
-  })
+  });
 }
 
 /**
@@ -1307,7 +1513,7 @@ export function validateApiKey(provider: string, apiKey: string): Promise<boolea
  * @returns Array of provider identifiers (e.g. ['deepseek-v3', 'openai'])
  */
 export function getConfiguredProviders(): Promise<string[]> {
-  return invoke<string[]>('get_configured_providers')
+  return invoke<string[]>("get_configured_providers");
 }
 
 /**
@@ -1317,7 +1523,7 @@ export function getConfiguredProviders(): Promise<string[]> {
  * @param provider - The provider to switch to
  */
 export function switchProvider(provider: string): Promise<void> {
-  return invoke<void>('switch_provider', { provider })
+  return invoke<void>("switch_provider", { provider });
 }
 
 /**
@@ -1327,7 +1533,7 @@ export function switchProvider(provider: string): Promise<void> {
  * @returns Map of provider identifier → plaintext API key
  */
 export function getAllProviderKeys(): Promise<Record<string, string>> {
-  return invoke<Record<string, string>>('get_all_provider_keys')
+  return invoke<Record<string, string>>("get_all_provider_keys");
 }
 
 /**
@@ -1336,8 +1542,10 @@ export function getAllProviderKeys(): Promise<Record<string, string>> {
  *
  * @param keys - Map of provider identifier → plaintext API key
  */
-export function updateAllProviderKeys(keys: Record<string, string>): Promise<void> {
-  return invoke<void>('update_all_provider_keys', { keys })
+export function updateAllProviderKeys(
+  keys: Record<string, string>,
+): Promise<void> {
+  return invoke<void>("update_all_provider_keys", { keys });
 }
 
 // ---------------------------------------------------------------------------
@@ -1350,7 +1558,7 @@ export function updateAllProviderKeys(keys: Record<string, string>): Promise<voi
  * @param path - Absolute path to the workspace directory
  */
 export function selectWorkspace(path: string): Promise<void> {
-  return invoke<void>('select_workspace', { path })
+  return invoke<void>("select_workspace", { path });
 }
 
 /**
@@ -1359,7 +1567,7 @@ export function selectWorkspace(path: string): Promise<void> {
  * @returns Workspace info as a serialized string
  */
 export function getWorkspaceInfo(): Promise<string> {
-  return invoke<string>('get_workspace_info')
+  return invoke<string>("get_workspace_info");
 }
 
 // ---------------------------------------------------------------------------
@@ -1368,14 +1576,14 @@ export function getWorkspaceInfo(): Promise<string> {
 
 /** Lightweight reference to an authorized local directory. */
 export interface AuthorizedWorkspaceRef {
-  id: string
-  rootPath: string
-  displayName: string
+  id: string;
+  rootPath: string;
+  displayName: string;
 }
 
 interface PickLocalDirectoryOptions {
-  defaultPath?: string
-  title?: string
+  defaultPath?: string;
+  title?: string;
 }
 
 /**
@@ -1392,15 +1600,17 @@ export function pickLocalDirectory(
   // Mirrors `useChatAttachments::pickAttachments` mock pattern. Downstream
   // `authorizeLocalDirectory` IPC + state updates still run on the real path.
   if (import.meta.env.DEV) {
-    const mocked = (window as unknown as {
-      __aijia?: { _pickDirectoryMockQueue?: string[] }
-    }).__aijia?._pickDirectoryMockQueue?.shift()
-    if (mocked) return Promise.resolve(mocked)
+    const mocked = (
+      window as unknown as {
+        __aijia?: { _pickDirectoryMockQueue?: string[] };
+      }
+    ).__aijia?._pickDirectoryMockQueue?.shift();
+    if (mocked) return Promise.resolve(mocked);
   }
-  return invoke<string | null>('pick_local_directory', {
+  return invoke<string | null>("pick_local_directory", {
     defaultPath: options?.defaultPath ?? null,
     title: options?.title ?? null,
-  })
+  });
 }
 
 /**
@@ -1415,7 +1625,10 @@ export function authorizeLocalDirectory(
   path: string,
   sessionId: string,
 ): Promise<AuthorizedWorkspaceRef> {
-  return invoke<AuthorizedWorkspaceRef>('authorize_local_directory', { path, sessionId })
+  return invoke<AuthorizedWorkspaceRef>("authorize_local_directory", {
+    path,
+    sessionId,
+  });
 }
 
 /**
@@ -1427,7 +1640,9 @@ export function authorizeLocalDirectory(
 export function getAuthorizedWorkspace(
   sessionId: string,
 ): Promise<AuthorizedWorkspaceRef | null> {
-  return invoke<AuthorizedWorkspaceRef | null>('get_authorized_workspace', { sessionId })
+  return invoke<AuthorizedWorkspaceRef | null>("get_authorized_workspace", {
+    sessionId,
+  });
 }
 
 /**
@@ -1435,7 +1650,7 @@ export function getAuthorizedWorkspace(
  * Always returns a value; the directory is guaranteed to exist at startup.
  */
 export function getDefaultFolder(): Promise<AuthorizedWorkspaceRef> {
-  return invoke<AuthorizedWorkspaceRef>('get_default_folder')
+  return invoke<AuthorizedWorkspaceRef>("get_default_folder");
 }
 
 /**
@@ -1444,26 +1659,26 @@ export function getDefaultFolder(): Promise<AuthorizedWorkspaceRef> {
  * @param sessionId - The session whose authorization should be cleared
  */
 export function revokeAuthorizedWorkspace(sessionId: string): Promise<void> {
-  return invoke<void>('revoke_authorized_workspace', { sessionId })
+  return invoke<void>("revoke_authorized_workspace", { sessionId });
 }
 
 /**
  * Open the logs directory in the system file manager.
  */
 export function openLogsDirectory(): Promise<void> {
-  return invoke<void>('open_logs_directory')
+  return invoke<void>("open_logs_directory");
 }
 
 export interface UploadDiagnosticsResult {
-  session_id: string
-  chunks_uploaded: number
-  chunks_total: number
-  events_uploaded: number
-  app_log_lines_uploaded: number
-  bad_metrics_lines: number
+  session_id: string;
+  chunks_uploaded: number;
+  chunks_total: number;
+  events_uploaded: number;
+  app_log_lines_uploaded: number;
+  bad_metrics_lines: number;
   /** SLS console deep-link pre-filtered by upload_session_id, when the gateway
    * returned one. Empty string when the field is absent (older gateway). */
-  sls_url: string
+  sls_url: string;
 }
 
 /**
@@ -1472,24 +1687,24 @@ export interface UploadDiagnosticsResult {
  * by the settings panel to show a confirmation toast.
  */
 export function uploadDiagnosticLogs(): Promise<UploadDiagnosticsResult> {
-  return invoke<UploadDiagnosticsResult>('upload_diagnostic_logs')
+  return invoke<UploadDiagnosticsResult>("upload_diagnostic_logs");
 }
 
 /** Return the currently active log level (error | warn | info | debug | trace). */
 export function getLogLevel(): Promise<string> {
-  return invoke<string>('get_log_level')
+  return invoke<string>("get_log_level");
 }
 
 /** Change the active log level and persist it to global/config.json. */
 export function setLogLevel(level: string): Promise<void> {
-  return invoke<void>('set_log_level', { level })
+  return invoke<void>("set_log_level", { level });
 }
 
 /**
  * Open the workspace root directory in the system file manager.
  */
 export function openWorkspaceDirectory(): Promise<void> {
-  return invoke<void>('open_workspace_directory')
+  return invoke<void>("open_workspace_directory");
 }
 
 /**
@@ -1498,8 +1713,13 @@ export function openWorkspaceDirectory(): Promise<void> {
  * @param destPath - Absolute path for the exported file (from save dialog)
  * @returns Export result with path, entry count, and file size
  */
-export function exportMetrics(destPath: string): Promise<{ path: string; entryCount: number; fileSize: number }> {
-  return invoke<{ path: string; entryCount: number; fileSize: number }>('export_metrics', { destPath })
+export function exportMetrics(
+  destPath: string,
+): Promise<{ path: string; entryCount: number; fileSize: number }> {
+  return invoke<{ path: string; entryCount: number; fileSize: number }>(
+    "export_metrics",
+    { destPath },
+  );
 }
 
 /**
@@ -1508,7 +1728,7 @@ export function exportMetrics(destPath: string): Promise<{ path: string; entryCo
  * @returns Number of deleted files
  */
 export function clearMetrics(): Promise<{ deletedFiles: number }> {
-  return invoke<{ deletedFiles: number }>('clear_metrics')
+  return invoke<{ deletedFiles: number }>("clear_metrics");
 }
 
 /**
@@ -1516,10 +1736,12 @@ export function clearMetrics(): Promise<{ deletedFiles: number }> {
  *
  * @returns Metrics info with entry count and total bytes
  */
-export function getMetricsInfo(): Promise<{ entryCount: number; totalBytes: number }> {
-  return invoke<{ entryCount: number; totalBytes: number }>('get_metrics_info')
+export function getMetricsInfo(): Promise<{
+  entryCount: number;
+  totalBytes: number;
+}> {
+  return invoke<{ entryCount: number; totalBytes: number }>("get_metrics_info");
 }
-
 
 // ---------------------------------------------------------------------------
 // Plugin Commands
@@ -1527,56 +1749,83 @@ export function getMetricsInfo(): Promise<{ entryCount: number; totalBytes: numb
 
 /** Info about a registered tool */
 export interface ToolInfo {
-  name: string
-  description: string
-  source: string // "builtin" | "plugin"
+  name: string;
+  description: string;
+  source: string; // "builtin" | "plugin"
 }
 
 /** Info about a registered skill */
 export interface SkillInfo {
-  id: string
-  displayName: string
-  displayNameEn: string
-  description: string
-  source: string
-  enabled: boolean
-  hasWorkflow: boolean
-  icon: string
-  shortDescription: string
-  shortDescriptionEn: string
-  triggerText: string
-  category: string
+  id: string;
+  displayName: string;
+  displayNameEn: string;
+  description: string;
+  source: string;
+  enabled: boolean;
+  hasWorkflow: boolean;
+  icon: string;
+  shortDescription: string;
+  shortDescriptionEn: string;
+  triggerText: string;
+  category: string;
   /**
    * 技能"更新时间"。后端返回 RFC 3339 UTC 字符串；读不到时为 null。
    * 当前实现：技能根目录 mtime（见 src-tauri/src/plugin/skill/updated_at.rs）。
    */
-  updatedAt: string | null
+  updatedAt: string | null;
   /**
    * SKILL.md frontmatter `version:` 字段。前端把它作为 chip 显示在
    * 技能卡片标题旁；技能没声明 version 时为 null。
    */
-  version?: string | null
+  version?: string | null;
+}
+
+/** Full SKILL.md-backed detail for one skill. Kept out of listSkills so the
+ * skill center grid only loads summary data. */
+export interface SkillDetailInfo {
+  id: string;
+  whenToUse: string | null;
+  allowedTools: string[];
+  argumentHint: string | null;
+  arguments: string[];
+  model: string | null;
+  effort: string | null;
+  context: string | null;
+  agent: string | null;
+  userInvocable: boolean;
+  disableModelInvocation: boolean;
+  version: string | null;
+  category: string | null;
+  paths: string[];
+  shell: string | null;
+  body: string;
+  rawContent: string;
 }
 
 /** Combined plugin info (tools + skills) */
 export interface PluginInfo {
-  tools: ToolInfo[]
-  skills: SkillInfo[]
+  tools: ToolInfo[];
+  skills: SkillInfo[];
 }
 
 /** List all registered tools. */
 export function listTools(): Promise<ToolInfo[]> {
-  return invoke<ToolInfo[]>('list_tools')
+  return invoke<ToolInfo[]>("list_tools");
 }
 
 /** List all registered skills. */
 export function listSkills(): Promise<SkillInfo[]> {
-  return invoke<SkillInfo[]>('list_skills')
+  return invoke<SkillInfo[]>("list_skills");
+}
+
+/** Get full details for a single SKILL.md-backed skill. */
+export function getSkillDetail(skillId: string): Promise<SkillDetailInfo | null> {
+  return invoke<SkillDetailInfo | null>("get_skill_detail", { skillId });
 }
 
 /** Get combined tool + skill info. */
 export function getPluginInfo(): Promise<PluginInfo> {
-  return invoke<PluginInfo>('get_plugin_info')
+  return invoke<PluginInfo>("get_plugin_info");
 }
 
 // ---------------------------------------------------------------------------
@@ -1585,17 +1834,29 @@ export function getPluginInfo(): Promise<PluginInfo> {
 
 /** Cloud auth info returned from login/get_cloud_auth. */
 export interface CloudAuthInfo {
-  loggedIn: boolean
-  user: { id: number; name: string; username: string } | null
-  tenant: { id: number; name: string; balance: string; tenantType?: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
-  models: CloudModel[]
+  loggedIn: boolean;
+  user: { id: number; name: string; username: string } | null;
+  tenant: {
+    id: number;
+    name: string;
+    balance: string;
+    tenantType?: string;
+    productName?: string;
+    logoUrl?: string;
+    accentColor?: string;
+    primaryColor?: string;
+    bgColor?: string;
+    sidebarBgColor?: string;
+    fontFamily?: string;
+  } | null;
+  models: CloudModel[];
 }
 
 /** Cloud model info from /v1/models. */
 export interface CloudModel {
-  id: string
-  name: string
-  modelType: string
+  id: string;
+  name: string;
+  modelType: string;
 }
 
 /**
@@ -1603,13 +1864,13 @@ export interface CloudModel {
  * @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。
  */
 export interface PersonaSummary {
-  id: string
-  name: string
-  nameEn: string
-  icon: string
-  description: string
-  descriptionEn: string
-  builtin: boolean
+  id: string;
+  name: string;
+  nameEn: string;
+  icon: string;
+  description: string;
+  descriptionEn: string;
+  builtin: boolean;
 }
 
 /**
@@ -1617,18 +1878,18 @@ export interface PersonaSummary {
  * @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。
  */
 export interface Persona {
-  id: string
-  version: number
-  builtin: boolean
-  name: string
-  icon: string
-  description: string
-  identity: string
-  expertise: string[]
-  memoryHints: string[]
-  linkedCategories: string[]
-  createdAt: string
-  updatedAt: string
+  id: string;
+  version: number;
+  builtin: boolean;
+  name: string;
+  icon: string;
+  description: string;
+  identity: string;
+  expertise: string[];
+  memoryHints: string[];
+  linkedCategories: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -1636,31 +1897,37 @@ export interface Persona {
  *
  * @returns Auth info including user, tenant, and available models
  */
-export function cloudLogin(username: string, password: string): Promise<CloudAuthInfo> {
-  return invoke<CloudAuthInfo>('cloud_login', { username, password })
+export function cloudLogin(
+  username: string,
+  password: string,
+): Promise<CloudAuthInfo> {
+  return invoke<CloudAuthInfo>("cloud_login", { username, password });
 }
 
 /** Logout from cloud mode. */
 export function cloudLogout(): Promise<void> {
-  return invoke<void>('cloud_logout')
+  return invoke<void>("cloud_logout");
 }
 
 /** Get current cloud auth state (for app init / restore). */
 export function getCloudAuth(): Promise<CloudAuthInfo> {
-  return invoke<CloudAuthInfo>('get_cloud_auth')
+  return invoke<CloudAuthInfo>("get_cloud_auth");
 }
 
 /** Fetch available cloud models. */
 export function getCloudModels(): Promise<CloudModel[]> {
-  return invoke<CloudModel[]>('get_cloud_models')
+  return invoke<CloudModel[]>("get_cloud_models");
 }
 
 /**
  * Change password on the cloud server.
  * After success, the user is automatically logged out.
  */
-export function cloudChangePassword(oldPassword: string, newPassword: string): Promise<void> {
-  return invoke<void>('cloud_change_password', { oldPassword, newPassword })
+export function cloudChangePassword(
+  oldPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return invoke<void>("cloud_change_password", { oldPassword, newPassword });
 }
 
 /**
@@ -1668,33 +1935,33 @@ export function cloudChangePassword(oldPassword: string, newPassword: string): P
  * Used to re-apply the last tenant's branding on the login page after logout.
  */
 export interface BrandSnapshot {
-  productName?: string
-  logoUrl?: string
-  accentColor?: string
-  primaryColor?: string
-  bgColor?: string
-  sidebarBgColor?: string
-  fontFamily?: string
+  productName?: string;
+  logoUrl?: string;
+  accentColor?: string;
+  primaryColor?: string;
+  bgColor?: string;
+  sidebarBgColor?: string;
+  fontFamily?: string;
 }
 
 /** Read the cached brand snapshot for the last-active account on this machine. */
 export function getLastBrand(): Promise<BrandSnapshot | null> {
-  return invoke<BrandSnapshot | null>('get_last_brand')
+  return invoke<BrandSnapshot | null>("get_last_brand");
 }
 
 /** Persist the brand snapshot for the currently-active account. */
 export function saveLastBrand(brand: BrandSnapshot): Promise<void> {
-  return invoke<void>('save_last_brand', { brand })
+  return invoke<void>("save_last_brand", { brand });
 }
 
 /** Send an SMS verification code for personal registration. */
 export function cloudSendSmsCode(phone: string): Promise<void> {
-  return invoke<void>('cloud_send_sms_code', { phone })
+  return invoke<void>("cloud_send_sms_code", { phone });
 }
 
 /** Send an email verification code for personal registration. */
 export function cloudSendEmailCode(email: string): Promise<void> {
-  return invoke<void>('cloud_send_email_code', { email })
+  return invoke<void>("cloud_send_email_code", { email });
 }
 
 /**
@@ -1703,25 +1970,25 @@ export function cloudSendEmailCode(email: string): Promise<void> {
  * — registration does not auto-establish a session.
  */
 export function cloudRegister(args: {
-  method: 'phone' | 'email'
-  phone?: string
-  email?: string
-  code: string
-  password: string
-  name?: string
+  method: "phone" | "email";
+  phone?: string;
+  email?: string;
+  code: string;
+  password: string;
+  name?: string;
 }): Promise<void> {
-  return invoke<void>('cloud_register', args)
+  return invoke<void>("cloud_register", args);
 }
 
 /** Reset a personal account password via phone or email verification code. */
 export function cloudResetPassword(args: {
-  method: 'phone' | 'email'
-  phone?: string
-  email?: string
-  code: string
-  password: string
+  method: "phone" | "email";
+  phone?: string;
+  email?: string;
+  code: string;
+  password: string;
 }): Promise<void> {
-  return invoke<void>('cloud_reset_password', args)
+  return invoke<void>("cloud_reset_password", args);
 }
 
 // ---------------------------------------------------------------------------
@@ -1735,42 +2002,42 @@ export function cloudResetPassword(args: {
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function listPersonas(): Promise<PersonaSummary[]> {
-  return invoke<PersonaSummary[]>('list_personas')
+  return invoke<PersonaSummary[]>("list_personas");
 }
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function getPersona(id: string): Promise<Persona> {
-  return invoke<Persona>('get_persona', { id })
+  return invoke<Persona>("get_persona", { id });
 }
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function savePersona(persona: Persona): Promise<void> {
-  return invoke<void>('save_persona', { persona })
+  return invoke<void>("save_persona", { persona });
 }
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function deletePersona(id: string): Promise<void> {
-  return invoke<void>('delete_persona', { id })
+  return invoke<void>("delete_persona", { id });
 }
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function setActivePersona(id: string): Promise<void> {
-  return invoke<void>('set_active_persona', { id })
+  return invoke<void>("set_active_persona", { id });
 }
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function getActivePersona(): Promise<Persona> {
-  return invoke<Persona>('get_active_persona')
+  return invoke<Persona>("get_active_persona");
 }
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function exportPersonas(id: string): Promise<string> {
-  return invoke<string>('export_personas', { id })
+  return invoke<string>("export_personas", { id });
 }
 
 /** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function importPersonas(json: string): Promise<string> {
-  return invoke<string>('import_personas', { json })
+  return invoke<string>("import_personas", { json });
 }
 
 // ---------------------------------------------------------------------------
@@ -1778,21 +2045,22 @@ export function importPersonas(json: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 interface TauriEventEnvelope<T> {
-  payload: T
+  payload: T;
 }
 
 function getStringField(payload: unknown, key: string): string | undefined {
-  if (!payload || typeof payload !== 'object' || !(key in payload)) return undefined
-  const value = (payload as Record<string, unknown>)[key]
-  return typeof value === 'string' && value.length > 0 ? value : undefined
+  if (!payload || typeof payload !== "object" || !(key in payload))
+    return undefined;
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function getConversationIdFromPayload(payload: unknown): string | undefined {
-  return getStringField(payload, 'conversationId')
+  return getStringField(payload, "conversationId");
 }
 
 function getRunIdFromPayload(payload: unknown): string | undefined {
-  return getStringField(payload, 'runId')
+  return getStringField(payload, "runId");
 }
 
 export function createInstrumentedEventHandler<T>(
@@ -1800,45 +2068,48 @@ export function createInstrumentedEventHandler<T>(
   handler: (event: TauriEventEnvelope<T>) => void | Promise<void>,
 ): (event: TauriEventEnvelope<T>) => Promise<void> {
   return async (event) => {
-    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
-    const conversationId = getConversationIdFromPayload(event.payload)
-    const runId = getRunIdFromPayload(event.payload)
+    const startedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    const conversationId = getConversationIdFromPayload(event.payload);
+    const runId = getRunIdFromPayload(event.payload);
 
     recordDiagnostic({
-      event: 'event.received',
+      event: "event.received",
       conversationId,
       runId,
       payload: { eventName, payload: event.payload },
-    })
+    });
     recordDiagnostic({
-      event: 'event.handler.started',
+      event: "event.handler.started",
       conversationId,
       runId,
       payload: { eventName },
-    })
+    });
 
     try {
-      await handler(event)
-      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      await handler(event);
+      const endedAt =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
       recordDiagnostic({
-        event: 'event.handler.completed',
+        event: "event.handler.completed",
         ok: true,
         conversationId,
         runId,
         durationMs: Math.round(endedAt - startedAt),
         payload: { eventName },
-      })
+      });
     } catch (error) {
-      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
-      recordDiagnosticError('event.handler.failed', error, {
+      const endedAt =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      recordDiagnosticError("event.handler.failed", error, {
         conversationId,
         runId,
         durationMs: Math.round(endedAt - startedAt),
         payload: { eventName },
-      })
-      throw error
+      });
+      throw error;
     }
-  }
+  };
 }
 
 /**
@@ -1850,9 +2121,12 @@ export function createInstrumentedEventHandler<T>(
 export function onStreamingDelta(
   handler: (payload: StreamingDeltaPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingDeltaPayload>(TAURI_EVENTS.STREAMING_DELTA, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DELTA, (event) => {
-    handler(event.payload)
-  }))
+  return listen<StreamingDeltaPayload>(
+    TAURI_EVENTS.STREAMING_DELTA,
+    createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DELTA, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1864,9 +2138,12 @@ export function onStreamingDelta(
 export function onStreamingDone(
   handler: (payload: StreamingDonePayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingDonePayload>(TAURI_EVENTS.STREAMING_DONE, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DONE, (event) => {
-    handler(event.payload)
-  }))
+  return listen<StreamingDonePayload>(
+    TAURI_EVENTS.STREAMING_DONE,
+    createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DONE, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1878,25 +2155,37 @@ export function onStreamingDone(
 export function onStreamingError(
   handler: (payload: StreamingErrorPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingErrorPayload>(TAURI_EVENTS.STREAMING_ERROR, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_ERROR, (event) => {
-    handler(event.payload)
-  }))
+  return listen<StreamingErrorPayload>(
+    TAURI_EVENTS.STREAMING_ERROR,
+    createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_ERROR, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 export function onStreamingRetryReset(
   handler: (payload: StreamingRetryResetPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingRetryResetPayload>(TAURI_EVENTS.STREAMING_RETRY_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_RETRY_RESET, (event) => {
-    handler(event.payload)
-  }))
+  return listen<StreamingRetryResetPayload>(
+    TAURI_EVENTS.STREAMING_RETRY_RESET,
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.STREAMING_RETRY_RESET,
+      (event) => {
+        handler(event.payload);
+      },
+    ),
+  );
 }
 
 export function onStreamingNotice(
   handler: (payload: StreamingNoticePayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingNoticePayload>(TAURI_EVENTS.STREAMING_NOTICE, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_NOTICE, (event) => {
-    handler(event.payload)
-  }))
+  return listen<StreamingNoticePayload>(
+    TAURI_EVENTS.STREAMING_NOTICE,
+    createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_NOTICE, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1909,9 +2198,12 @@ export function onStreamingNotice(
 export function onMessageUpdated(
   handler: (payload: Message) => void,
 ): Promise<() => void> {
-  return listen<Message>(TAURI_EVENTS.MESSAGE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.MESSAGE_UPDATED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<Message>(
+    TAURI_EVENTS.MESSAGE_UPDATED,
+    createInstrumentedEventHandler(TAURI_EVENTS.MESSAGE_UPDATED, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1923,9 +2215,12 @@ export function onMessageUpdated(
 export function onNotification(
   handler: (payload: { level: string; title: string; message: string }) => void,
 ): Promise<() => void> {
-  return listen<{ level: string; title: string; message: string }>(TAURI_EVENTS.NOTIFICATION, createInstrumentedEventHandler(TAURI_EVENTS.NOTIFICATION, (event) => {
-    handler(event.payload)
-  }))
+  return listen<{ level: string; title: string; message: string }>(
+    TAURI_EVENTS.NOTIFICATION,
+    createInstrumentedEventHandler(TAURI_EVENTS.NOTIFICATION, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1937,9 +2232,12 @@ export function onNotification(
 export function onToolExecuting(
   handler: (payload: ToolExecutingPayload) => void,
 ): Promise<() => void> {
-  return listen<ToolExecutingPayload>(TAURI_EVENTS.TOOL_EXECUTING, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_EXECUTING, (event) => {
-    handler(event.payload)
-  }))
+  return listen<ToolExecutingPayload>(
+    TAURI_EVENTS.TOOL_EXECUTING,
+    createInstrumentedEventHandler(TAURI_EVENTS.TOOL_EXECUTING, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1951,9 +2249,12 @@ export function onToolExecuting(
 export function onToolProgress(
   handler: (payload: ToolProgressPayload) => void,
 ): Promise<() => void> {
-  return listen<ToolProgressPayload>(TAURI_EVENTS.TOOL_PROGRESS, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_PROGRESS, (event) => {
-    handler(event.payload)
-  }))
+  return listen<ToolProgressPayload>(
+    TAURI_EVENTS.TOOL_PROGRESS,
+    createInstrumentedEventHandler(TAURI_EVENTS.TOOL_PROGRESS, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1965,9 +2266,12 @@ export function onToolProgress(
 export function onToolCompleted(
   handler: (payload: Message) => void,
 ): Promise<() => void> {
-  return listen<Message>(TAURI_EVENTS.TOOL_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<Message>(
+    TAURI_EVENTS.TOOL_COMPLETED,
+    createInstrumentedEventHandler(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -1979,15 +2283,21 @@ export function onToolCompleted(
 export function onConversationTitleUpdated(
   handler: (payload: { conversationId: string; title: string }) => void,
 ): Promise<() => void> {
-  return listen<{ conversationId: string; title: string }>(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<{ conversationId: string; title: string }>(
+    TAURI_EVENTS.CONVERSATION_TITLE_UPDATED,
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.CONVERSATION_TITLE_UPDATED,
+      (event) => {
+        handler(event.payload);
+      },
+    ),
+  );
 }
 
 export interface ConversationCreatedPayload {
-  conversationId: string
-  source: 'user' | 'agenda' | 'employee' | 'schedule' | string
-  title: string | null
+  conversationId: string;
+  source: "user" | "agenda" | "employee" | "schedule" | string;
+  title: string | null;
 }
 
 /**
@@ -2002,10 +2312,13 @@ export function onConversationCreated(
 ): Promise<() => void> {
   return listen<ConversationCreatedPayload>(
     TAURI_EVENTS.CONVERSATION_CREATED,
-    createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_CREATED, (event) => {
-      handler(event.payload)
-    }),
-  )
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.CONVERSATION_CREATED,
+      (event) => {
+        handler(event.payload);
+      },
+    ),
+  );
 }
 
 /**
@@ -2017,12 +2330,13 @@ export function onConversationCreated(
 export function onAgentIdle(
   handler: (payload: AgentIdlePayload) => void,
 ): Promise<() => void> {
-  return listen<AgentIdlePayload>(TAURI_EVENTS.AGENT_IDLE, createInstrumentedEventHandler(TAURI_EVENTS.AGENT_IDLE, (event) => {
-    handler(event.payload)
-  }))
+  return listen<AgentIdlePayload>(
+    TAURI_EVENTS.AGENT_IDLE,
+    createInstrumentedEventHandler(TAURI_EVENTS.AGENT_IDLE, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
-
-
 
 /**
  * Listen for file:generated events (emitted directly by the tool execution layer,
@@ -2034,9 +2348,12 @@ export function onAgentIdle(
 export function onFileGenerated(
   handler: (payload: FileGeneratedPayload) => void,
 ): Promise<() => void> {
-  return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, createInstrumentedEventHandler(TAURI_EVENTS.FILE_GENERATED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<FileGeneratedPayload>(
+    TAURI_EVENTS.FILE_GENERATED,
+    createInstrumentedEventHandler(TAURI_EVENTS.FILE_GENERATED, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 /**
@@ -2048,49 +2365,90 @@ export function onFileGenerated(
 export function onTaskStatusChanged(
   handler: (payload: TaskStatusChangedPayload) => void,
 ): Promise<() => void> {
-  return listen<TaskStatusChangedPayload>(TAURI_EVENTS.TASK_STATUS_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.TASK_STATUS_CHANGED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<TaskStatusChangedPayload>(
+    TAURI_EVENTS.TASK_STATUS_CHANGED,
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.TASK_STATUS_CHANGED,
+      (event) => {
+        handler(event.payload);
+      },
+    ),
+  );
 }
 
 export function onPermissionAsk(
   handler: (payload: PermissionAskPayload) => void,
 ): Promise<() => void> {
-  return listen<PermissionAskPayload>(TAURI_EVENTS.PERMISSION_ASK, createInstrumentedEventHandler(TAURI_EVENTS.PERMISSION_ASK, (event) => {
-    handler(event.payload)
-  }))
+  return listen<PermissionAskPayload>(
+    TAURI_EVENTS.PERMISSION_ASK,
+    createInstrumentedEventHandler(TAURI_EVENTS.PERMISSION_ASK, (event) => {
+      handler(event.payload);
+    }),
+  );
+}
+
+export function onPermissionResolved(
+  handler: (payload: PermissionResolvedPayload) => void,
+): Promise<() => void> {
+  return listen<PermissionResolvedPayload>(
+    TAURI_EVENTS.PERMISSION_RESOLVED,
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.PERMISSION_RESOLVED,
+      (event) => {
+        handler(event.payload);
+      },
+    ),
+  );
 }
 
 export function onInteractionRequired(
   handler: (payload: InteractionRequiredPayload) => void,
 ): Promise<() => void> {
-  return listen<InteractionRequiredPayload>(TAURI_EVENTS.INTERACTION_REQUIRED, createInstrumentedEventHandler(TAURI_EVENTS.INTERACTION_REQUIRED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<InteractionRequiredPayload>(
+    TAURI_EVENTS.INTERACTION_REQUIRED,
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.INTERACTION_REQUIRED,
+      (event) => {
+        handler(event.payload);
+      },
+    ),
+  );
 }
 
 export function onInteractionResolved(
   handler: (payload: InteractionResolvedPayload) => void,
 ): Promise<() => void> {
-  return listen<InteractionResolvedPayload>(TAURI_EVENTS.INTERACTION_RESOLVED, createInstrumentedEventHandler(TAURI_EVENTS.INTERACTION_RESOLVED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<InteractionResolvedPayload>(
+    TAURI_EVENTS.INTERACTION_RESOLVED,
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.INTERACTION_RESOLVED,
+      (event) => {
+        handler(event.payload);
+      },
+    ),
+  );
 }
 
 export function onTurnCompleted(
   handler: (payload: TurnCompletedPayload) => void,
 ): Promise<() => void> {
-  return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TURN_COMPLETED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<TurnCompletedPayload>(
+    TAURI_EVENTS.TURN_COMPLETED,
+    createInstrumentedEventHandler(TAURI_EVENTS.TURN_COMPLETED, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 export function onTurnStage(
   handler: (payload: TurnStagePayload) => void,
 ): Promise<() => void> {
-  return listen<TurnStagePayload>(TAURI_EVENTS.TURN_STAGE, createInstrumentedEventHandler(TAURI_EVENTS.TURN_STAGE, (event) => {
-    handler(event.payload)
-  }))
+  return listen<TurnStagePayload>(
+    TAURI_EVENTS.TURN_STAGE,
+    createInstrumentedEventHandler(TAURI_EVENTS.TURN_STAGE, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 export function onCompactCompleted(
@@ -2099,24 +2457,27 @@ export function onCompactCompleted(
   return listen<CompactCompletedPayload>(
     TAURI_EVENTS.COMPACT_COMPLETED,
     createInstrumentedEventHandler(TAURI_EVENTS.COMPACT_COMPLETED, (event) => {
-      handler(event.payload)
+      handler(event.payload);
     }),
-  )
+  );
 }
 
 export function onTurnHeartbeat(
   handler: (payload: TurnHeartbeatPayload) => void,
 ): Promise<() => void> {
-  return listen<TurnHeartbeatPayload>(TAURI_EVENTS.TURN_HEARTBEAT, createInstrumentedEventHandler(TAURI_EVENTS.TURN_HEARTBEAT, (event) => {
-    handler(event.payload)
-  }))
+  return listen<TurnHeartbeatPayload>(
+    TAURI_EVENTS.TURN_HEARTBEAT,
+    createInstrumentedEventHandler(TAURI_EVENTS.TURN_HEARTBEAT, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 // ── LTR: lead:has-pending-messages ──────────────────────────────────────────
 
 export interface LeadHasPendingMessagesPayload {
-  conversationId: string
-  agentId?: string
+  conversationId: string;
+  agentId?: string;
 }
 
 /**
@@ -2132,27 +2493,36 @@ export function onLeadHasPendingMessages(
 ): Promise<() => void> {
   return listen<LeadHasPendingMessagesPayload>(
     TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES,
-    createInstrumentedEventHandler(TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES, (event) => {
-      recordDiagnostic({
-        event: 'event.received',
-        conversationId: event.payload.conversationId,
-        payload: { eventName: TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES, agentId: event.payload.agentId },
-      })
-      if (handler) handler(event.payload)
-    }),
-  )
+    createInstrumentedEventHandler(
+      TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES,
+      (event) => {
+        recordDiagnostic({
+          event: "event.received",
+          conversationId: event.payload.conversationId,
+          payload: {
+            eventName: TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES,
+            agentId: event.payload.agentId,
+          },
+        });
+        if (handler) handler(event.payload);
+      },
+    ),
+  );
 }
 
 export function onDiagnosticsEvent(
   handler: (payload: DiagnosticsEventPayload) => void,
 ): Promise<() => void> {
-  return listen<DiagnosticsEventPayload>(TAURI_EVENTS.DIAGNOSTICS_EVENT, (event) => {
-    handler(event.payload)
-  })
+  return listen<DiagnosticsEventPayload>(
+    TAURI_EVENTS.DIAGNOSTICS_EVENT,
+    (event) => {
+      handler(event.payload);
+    },
+  );
 }
 
 export interface AuthExpiredPayload {
-  message: string
+  message: string;
 }
 
 /**
@@ -2163,9 +2533,12 @@ export interface AuthExpiredPayload {
 export function onAuthExpired(
   handler: (payload: AuthExpiredPayload) => void,
 ): Promise<() => void> {
-  return listen<AuthExpiredPayload>(TAURI_EVENTS.AUTH_EXPIRED, createInstrumentedEventHandler(TAURI_EVENTS.AUTH_EXPIRED, (event) => {
-    handler(event.payload)
-  }))
+  return listen<AuthExpiredPayload>(
+    TAURI_EVENTS.AUTH_EXPIRED,
+    createInstrumentedEventHandler(TAURI_EVENTS.AUTH_EXPIRED, (event) => {
+      handler(event.payload);
+    }),
+  );
 }
 
 export function onSkillEnablementChanged(
@@ -2196,17 +2569,17 @@ export function onSkillRegistryRefreshed(
 
 /** Info about a custom (user-installed) skill. */
 export interface CustomSkillInfo {
-  id: string
-  name: string
-  description: string
-  path: string
-  enabled: boolean
-  version?: string | null
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  enabled: boolean;
+  version?: string | null;
 }
 
 /** List all custom skills installed by the user. */
 export function listCustomSkills(): Promise<CustomSkillInfo[]> {
-  return invoke<CustomSkillInfo[]>('list_custom_skills')
+  return invoke<CustomSkillInfo[]>("list_custom_skills");
 }
 
 /** Install a custom skill from a local directory. */
@@ -2214,12 +2587,12 @@ export async function installCustomSkill(
   sourcePath: string,
   force: boolean = false,
 ): Promise<string> {
-  return invoke<string>('install_custom_skill', { sourcePath, force })
+  return invoke<string>("install_custom_skill", { sourcePath, force });
 }
 
 /** Uninstall a custom skill by ID. */
 export function uninstallCustomSkill(skillId: string): Promise<string> {
-  return invoke<string>('uninstall_custom_skill', { skillId })
+  return invoke<string>("uninstall_custom_skill", { skillId });
 }
 
 /** Enable or disable a skill without uninstalling it. */
@@ -2228,20 +2601,31 @@ export function setSkillEnabled(skillId: string, enabled: boolean): Promise<void
 }
 
 /** Create a new skill template directory with scaffolding files. */
-export async function initSkillTemplate(targetDir: string, skillId: string, skillName: string): Promise<string> {
-  return invoke<string>('init_skill_template', { targetDir, skillId, skillName })
+export async function initSkillTemplate(
+  targetDir: string,
+  skillId: string,
+  skillName: string,
+): Promise<string> {
+  return invoke<string>("init_skill_template", {
+    targetDir,
+    skillId,
+    skillName,
+  });
 }
 
 /** Export a skill's SKILL.md to a destination file path. */
-export async function packSkill(skillDir: string, destPath: string): Promise<string> {
-  return invoke<string>('pack_skill', { skillDir, destPath })
+export async function packSkill(
+  skillDir: string,
+  destPath: string,
+): Promise<string> {
+  return invoke<string>("pack_skill", { skillDir, destPath });
 }
 
 /** 触发后端重扫 user_skills_dir + global_skills_dir，把新增 SKILL.md 同步到内存 registry。
  *  Used by SkillCenterPage on mount + 任何"装完想立刻看到"的场景。
  *  调用 refresh_skill_registry_cmd Tauri command。 */
 export function refreshSkillRegistry(): Promise<void> {
-  return invoke<void>('refresh_skill_registry_cmd')
+  return invoke<void>("refresh_skill_registry_cmd");
 }
 
 // ---------------------------------------------------------------------------
@@ -2250,28 +2634,28 @@ export function refreshSkillRegistry(): Promise<void> {
 
 /** A skill package from the cloud marketplace. */
 export interface MarketplaceSkillItem {
-  id: number
-  pluginId: string
-  name: string
-  description: string
-  category: string
-  icon: string
-  version: string
-  scope: string
-  status: string
-  downloads: number
-  featured: boolean
-  packageSize: number
-  tenantName: string
-  createdAt: string
+  id: number;
+  pluginId: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  version: string;
+  scope: string;
+  status: string;
+  downloads: number;
+  featured: boolean;
+  packageSize: number;
+  tenantName: string;
+  createdAt: string;
 }
 
 /** Paginated marketplace response. */
 export interface MarketplaceResponse {
-  items: MarketplaceSkillItem[]
-  total: number
-  page: number
-  size: number
+  items: MarketplaceSkillItem[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 /** List skill packages from the cloud marketplace. */
@@ -2281,12 +2665,12 @@ export function listMarketplaceSkills(
   category?: string,
   search?: string,
 ): Promise<MarketplaceResponse> {
-  return invoke<MarketplaceResponse>('list_marketplace_skills', {
+  return invoke<MarketplaceResponse>("list_marketplace_skills", {
     page,
     size,
     category: category || null,
     search: search || null,
-  })
+  });
 }
 
 /** Download and install a skill package from the marketplace. */
@@ -2294,10 +2678,10 @@ export function installMarketplaceSkill(
   packageId: number,
   pluginId: string,
 ): Promise<string> {
-  return invoke<string>('install_marketplace_skill', {
+  return invoke<string>("install_marketplace_skill", {
     packageId,
     pluginId,
-  })
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2306,39 +2690,39 @@ export function installMarketplaceSkill(
 // ---------------------------------------------------------------------------
 
 export interface McpServerConfig {
-  name: string
-  transportType: string
-  endpoint: string
-  envVars?: Record<string, string>
+  name: string;
+  transportType: string;
+  endpoint: string;
+  envVars?: Record<string, string>;
 }
 
 export interface McpServerStatus {
-  name: string
-  transportType: string
-  endpoint: string
-  state: 'configured' | 'connecting' | 'ready' | 'failed' | 'disconnected'
-  registeredToolIds: string[]
-  lastError: string | null
+  name: string;
+  transportType: string;
+  endpoint: string;
+  state: "configured" | "connecting" | "ready" | "failed" | "disconnected";
+  registeredToolIds: string[];
+  lastError: string | null;
 }
 
 export function listMcpServers(): Promise<McpServerStatus[]> {
-  return invoke<McpServerStatus[]>('list_mcp_servers')
+  return invoke<McpServerStatus[]>("list_mcp_servers");
 }
 
 export function addMcpServer(config: McpServerConfig): Promise<void> {
-  return invoke<void>('add_mcp_server', { config })
+  return invoke<void>("add_mcp_server", { config });
 }
 
 export function removeMcpServer(serverName: string): Promise<void> {
-  return invoke<void>('remove_mcp_server', { serverName })
+  return invoke<void>("remove_mcp_server", { serverName });
 }
 
 export function connectMcpServer(serverName: string): Promise<McpServerStatus> {
-  return invoke<McpServerStatus>('connect_mcp_server', { serverName })
+  return invoke<McpServerStatus>("connect_mcp_server", { serverName });
 }
 
 export function disconnectMcpServer(serverName: string): Promise<void> {
-  return invoke<void>('disconnect_mcp_server', { serverName })
+  return invoke<void>("disconnect_mcp_server", { serverName });
 }
 
 // ---------------------------------------------------------------------------
@@ -2346,22 +2730,26 @@ export function disconnectMcpServer(serverName: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export interface ProjectMemoryEntryDraft {
-  memoryType: 'user_preference' | 'project_constraint' | 'reference_info' | 'feedback'
-  name: string
-  description: string
-  content: string
-  source?: string
+  memoryType:
+    | "user_preference"
+    | "project_constraint"
+    | "reference_info"
+    | "feedback";
+  name: string;
+  description: string;
+  content: string;
+  source?: string;
 }
 
 export function saveProjectMemory(
   workspacePath: string,
   memory: ProjectMemoryEntryDraft,
 ): Promise<string> {
-  return invoke<string>('save_project_memory', { workspacePath, memory })
+  return invoke<string>("save_project_memory", { workspacePath, memory });
 }
 
 export function distillProjectMemory(workspacePath: string): Promise<number> {
-  return invoke<number>('distill_project_memory', { workspacePath })
+  return invoke<number>("distill_project_memory", { workspacePath });
 }
 
 // ---------------------------------------------------------------------------
@@ -2369,95 +2757,110 @@ export function distillProjectMemory(workspacePath: string): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export interface RuntimeToolHealth {
-  version: string
-  path: string
+  version: string;
+  path: string;
 }
 
 export interface RuntimeHealth {
-  bundleVersion: string
-  node: RuntimeToolHealth | null
-  npm: RuntimeToolHealth | null
-  npx: RuntimeToolHealth | null
-  python: RuntimeToolHealth | null
-  uv: RuntimeToolHealth | null
-  uvx: RuntimeToolHealth | null
+  bundleVersion: string;
+  node: RuntimeToolHealth | null;
+  npm: RuntimeToolHealth | null;
+  npx: RuntimeToolHealth | null;
+  python: RuntimeToolHealth | null;
+  uv: RuntimeToolHealth | null;
+  uvx: RuntimeToolHealth | null;
 }
 
-
-export type RuntimeOperationKind = 'ensure' | 'reinstall'
+export type RuntimeOperationKind = "ensure" | "reinstall";
 export type RuntimeOperationPhase =
-  | 'manifest'
-  | 'download'
-  | 'checksum'
-  | 'extract'
-  | 'smokeTest'
-  | 'promote'
-  | 'health'
-export type RuntimeOperationStatus = 'started' | 'progress' | 'retrying' | 'completed' | 'failed' | 'cancelled'
+  | "manifest"
+  | "download"
+  | "checksum"
+  | "extract"
+  | "smokeTest"
+  | "promote"
+  | "health";
+export type RuntimeOperationStatus =
+  | "started"
+  | "progress"
+  | "retrying"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export interface RuntimeOperationProgressPayload {
-  operationId: string
-  kind: RuntimeOperationKind
-  phase: RuntimeOperationPhase
-  downloadedBytes?: number | null
-  totalBytes?: number | null
-  percent?: number | null
-  attempt: number
-  maxAttempts: number
-  resumed: boolean
-  status: RuntimeOperationStatus
-  message?: string | null
-  error?: string | null
+  operationId: string;
+  kind: RuntimeOperationKind;
+  phase: RuntimeOperationPhase;
+  downloadedBytes?: number | null;
+  totalBytes?: number | null;
+  percent?: number | null;
+  attempt: number;
+  maxAttempts: number;
+  resumed: boolean;
+  status: RuntimeOperationStatus;
+  message?: string | null;
+  error?: string | null;
 }
 
 export interface RuntimeCleanupResult {
-  removedVersions: string[]
-  keptVersions: string[]
+  removedVersions: string[];
+  keptVersions: string[];
 }
 
-export const RUNTIME_OPERATION_PROGRESS = 'runtime:operation-progress'
+export const RUNTIME_OPERATION_PROGRESS = "runtime:operation-progress";
 
 export async function onRuntimeOperationProgress(
   handler: (payload: RuntimeOperationProgressPayload) => void,
 ): Promise<() => void> {
-  const { listen } = await import('@tauri-apps/api/event')
-  return listen<RuntimeOperationProgressPayload>(RUNTIME_OPERATION_PROGRESS, (event) => {
-    handler(event.payload)
-  })
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<RuntimeOperationProgressPayload>(
+    RUNTIME_OPERATION_PROGRESS,
+    (event) => {
+      handler(event.payload);
+    },
+  );
 }
 
 export function getRuntimeHealth(): Promise<RuntimeHealth> {
-  return invoke<RuntimeHealth>('runtime_get_health')
+  return invoke<RuntimeHealth>("runtime_get_health");
 }
 
 export function ensureRuntime(): Promise<RuntimeHealth> {
-  return invoke<RuntimeHealth>('runtime_ensure')
+  return invoke<RuntimeHealth>("runtime_ensure");
 }
 
 export function reinstallRuntime(): Promise<RuntimeHealth> {
-  return invoke<RuntimeHealth>('runtime_reinstall')
+  return invoke<RuntimeHealth>("runtime_reinstall");
 }
-
 
 export function cancelRuntimeOperation(operationId: string): Promise<boolean> {
-  return invoke<boolean>('runtime_cancel_operation', { operationId })
+  return invoke<boolean>("runtime_cancel_operation", { operationId });
 }
 
-export function cleanupOldRuntimeVersions(keepVersions: number): Promise<RuntimeCleanupResult> {
-  return invoke<RuntimeCleanupResult>('runtime_cleanup_old_versions', { keepVersions })
+export function cleanupOldRuntimeVersions(
+  keepVersions: number,
+): Promise<RuntimeCleanupResult> {
+  return invoke<RuntimeCleanupResult>("runtime_cleanup_old_versions", {
+    keepVersions,
+  });
 }
 
 export interface RuntimeDiagnostics {
-  activeResolver: 'bundled' | 'installed' | 'none'
-  bundledVersion: string | null
-  installedVersion: string | null
-  node: string
-  python: string
-  uv: string
+  activeResolver: "bundled" | "installed" | "none";
+  bundledVersion: string | null;
+  installedVersion: string | null;
+  node: string;
+  python: string;
+  uv: string;
 }
 
 export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
-  return invoke<RuntimeDiagnostics>('runtime_diagnostics')
+  return invoke<RuntimeDiagnostics>("runtime_diagnostics");
+}
+
+export function setAppMenuLanguage(language: AppLanguage): Promise<void> {
+  return invoke<void>("set_app_menu_language", { language });
 }
 
 // ---------------------------------------------------------------------------
@@ -2470,25 +2873,28 @@ export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
 
 export interface EnvironmentPreset {
   /** Stable, language-neutral id (`test` / `pre` / `prod`); translate for display. */
-  key: string
-  tenant: string
-  ops: string
+  key: string;
+  tenant: string;
+  ops: string;
 }
 
 export interface DevEnvironmentState {
-  currentTenant: string
-  currentOps: string
-  isOverride: boolean
-  presets: EnvironmentPreset[]
+  currentTenant: string;
+  currentOps: string;
+  isOverride: boolean;
+  presets: EnvironmentPreset[];
 }
 
 export function getDevEnvironment(): Promise<DevEnvironmentState> {
-  return invoke<DevEnvironmentState>('get_dev_environment')
+  return invoke<DevEnvironmentState>("get_dev_environment");
 }
 
 /** Switch the environment. Empty origins (or the production pair) reset to production. */
-export function setDevEnvironment(tenant: string, ops: string): Promise<DevEnvironmentState> {
-  return invoke<DevEnvironmentState>('set_dev_environment', { tenant, ops })
+export function setDevEnvironment(
+  tenant: string,
+  ops: string,
+): Promise<DevEnvironmentState> {
+  return invoke<DevEnvironmentState>("set_dev_environment", { tenant, ops });
 }
 
 // ---------------------------------------------------------------------------
@@ -2496,40 +2902,40 @@ export function setDevEnvironment(tenant: string, ops: string): Promise<DevEnvir
 // ---------------------------------------------------------------------------
 
 export interface DingtalkStatusInfo {
-  connected: boolean
-  userName: string | null
-  corpName: string | null
+  connected: boolean;
+  userName: string | null;
+  corpName: string | null;
 }
 
 /** Start DingTalk OAuth login (opens system browser). */
 export function dingtalkLogin(): Promise<DingtalkStatusInfo> {
-  return invoke<DingtalkStatusInfo>('dingtalk_login')
+  return invoke<DingtalkStatusInfo>("dingtalk_login");
 }
 
 /** Disconnect from DingTalk. */
 export function dingtalkLogout(): Promise<void> {
-  return invoke<void>('dingtalk_logout')
+  return invoke<void>("dingtalk_logout");
 }
 
 /** Get current DingTalk connection status (no network call). */
 export function dingtalkStatus(): Promise<DingtalkStatusInfo> {
-  return invoke<DingtalkStatusInfo>('dingtalk_status')
+  return invoke<DingtalkStatusInfo>("dingtalk_status");
 }
 
 /** Refresh DingTalk auth status from dws (network call). */
 export function dingtalkRefreshStatus(): Promise<DingtalkStatusInfo> {
-  return invoke<DingtalkStatusInfo>('dingtalk_refresh_status')
+  return invoke<DingtalkStatusInfo>("dingtalk_refresh_status");
 }
 
 export interface SyncBuiltinSkillsResult {
-  installed: string[]
-  updated: string[]
-  skipped: string[]
-  changed: string[]
+  installed: string[];
+  updated: string[];
+  skipped: string[];
+  changed: string[];
 }
 
 export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {
-  return invoke<SyncBuiltinSkillsResult>('sync_builtin_skills')
+  return invoke<SyncBuiltinSkillsResult>("sync_builtin_skills");
 }
 
 // ---------------------------------------------------------------------------
@@ -2537,68 +2943,68 @@ export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {
 // ---------------------------------------------------------------------------
 
 export interface WorkplaceDirectoryDisplayText {
-  name: string
-  description?: string
-  tagline?: string
-  examples?: string[]
+  name: string;
+  description?: string;
+  tagline?: string;
+  examples?: string[];
 }
 
 export interface WorkplaceDirectoryCategory {
-  categoryId: string
-  display: WorkplaceDirectoryDisplayText
-  icon?: string
-  color?: string
-  sortOrder: number
-  resourceCount: number
+  categoryId: string;
+  display: WorkplaceDirectoryDisplayText;
+  icon?: string;
+  color?: string;
+  sortOrder: number;
+  resourceCount: number;
 }
 
 export interface WorkplaceDirectoryRequiredSkill {
-  skillId: string
-  source: string
-  scope: string
-  display: WorkplaceDirectoryDisplayText
-  versionRange?: string
+  skillId: string;
+  source: string;
+  scope: string;
+  display: WorkplaceDirectoryDisplayText;
+  versionRange?: string;
 }
 
 export interface WorkplaceDirectoryItem {
-  resourceType: 'employee_template' | 'expert_team_template' | string
-  resourceId: string
-  version: string
-  scope?: string
-  category?: string
-  workplaceCategoryId?: string
-  featured?: boolean
-  sortOrder?: number
-  display: WorkplaceDirectoryDisplayText
-  icon?: string
-  manifestUrl?: string
-  manifestSha256?: string
-  manifestSize?: number
-  minDesktopVersion?: string
-  requiredSkills?: WorkplaceDirectoryRequiredSkill[]
+  resourceType: "employee_template" | "expert_team_template" | string;
+  resourceId: string;
+  version: string;
+  scope?: string;
+  category?: string;
+  workplaceCategoryId?: string;
+  featured?: boolean;
+  sortOrder?: number;
+  display: WorkplaceDirectoryDisplayText;
+  icon?: string;
+  manifestUrl?: string;
+  manifestSha256?: string;
+  manifestSize?: number;
+  minDesktopVersion?: string;
+  requiredSkills?: WorkplaceDirectoryRequiredSkill[];
 }
 
 export interface WorkplaceDirectoryResponse {
-  schemaVersion: number
-  categories: WorkplaceDirectoryCategory[]
-  items: WorkplaceDirectoryItem[]
+  schemaVersion: number;
+  categories: WorkplaceDirectoryCategory[];
+  items: WorkplaceDirectoryItem[];
 }
 
 export interface WorkplaceDirectoryCatalogOptions {
-  forceRefresh?: boolean
+  forceRefresh?: boolean;
 }
 
 export function workplaceDirectoryCatalog(
   lang?: string,
   options: WorkplaceDirectoryCatalogOptions = {},
 ): Promise<WorkplaceDirectoryResponse> {
-  const args: { lang?: string; forceRefresh?: boolean } = {}
-  if (lang) args.lang = lang
-  if (options.forceRefresh) args.forceRefresh = true
+  const args: { lang?: string; forceRefresh?: boolean } = {};
+  if (lang) args.lang = lang;
+  if (options.forceRefresh) args.forceRefresh = true;
   return invoke<WorkplaceDirectoryResponse>(
-    'workplace_directory_catalog',
+    "workplace_directory_catalog",
     args,
-  )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2606,39 +3012,39 @@ export function workplaceDirectoryCatalog(
 // ---------------------------------------------------------------------------
 
 export interface EmployeeRecord {
-  id: string
-  name: string
-  role: string
-  description: string
-  avatar: string
-  templateId: string | null
-  toolWhitelist: string[]
-  cron: string | null
-  timezone: string
-  lifecycle: 'active' | 'paused' | 'archived'
-  cronEnabled: boolean
-  resourceConfig: Record<string, unknown>
-  systemPromptExtra: string | null
-  defaultSkillId: string | null
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  avatar: string;
+  templateId: string | null;
+  toolWhitelist: string[];
+  cron: string | null;
+  timezone: string;
+  lifecycle: "active" | "paused" | "archived";
+  cronEnabled: boolean;
+  resourceConfig: Record<string, unknown>;
+  systemPromptExtra: string | null;
+  defaultSkillId: string | null;
   /**
    * Pointer to the template snapshot this instance was hired from. Present
    * on records hired/refreshed after PR3 (2026-05-10); older records have
    * `templateRef === null` until the backend stamps them on next read.
    */
-  templateRef: EmployeeTemplateRef | null
-  createdAt: string
-  updatedAt: string
-  lastRunAt: string | null
-  nextRunAt: string | null
+  templateRef: EmployeeTemplateRef | null;
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
 }
 
 /** Identifies which template snapshot an employee instance was hired from. */
 export interface EmployeeTemplateRef {
-  templateId: string
-  version: string
-  sha256: string
+  templateId: string;
+  version: string;
+  sha256: string;
   /** `"bootstrap"` (embedded) or `"ops:<url>"` (downloaded). */
-  source: string
+  source: string;
 }
 
 /**
@@ -2647,96 +3053,107 @@ export interface EmployeeTemplateRef {
  * `employee_templates` row. Returned by `employeeTemplateCatalog()`.
  */
 export interface EmployeeTemplateSnapshot {
-  templateId: string
-  version: string
-  name: string
-  avatar: string
-  avatarAssetKey?: string | null
-  avatarUrl?: string | null
-  role: string
-  description: string
-  badge: string
-  displayI18n?: Record<string, {
-    name?: string
-    role?: string
-    description?: string
-    badge?: string
-    avatarAssetKey?: string | null
-    avatarUrl?: string | null
-  }> | null
-  promptI18n?: Record<string, {
-    systemPromptExtra?: string
-  }> | null
-  schemaI18n?: Record<string, unknown> | null
-  systemPromptExtra: string
-  toolWhitelist: string[]
-  cron: string
-  defaultSkillId: string
-  requiresDingtalk: boolean
-  requiresAttachment: { accept: string; min: number; max: number } | null
-  resourceConfigSchema: Record<string, unknown> | null
-  resourceConfigUI: Record<string, unknown> | null
+  templateId: string;
+  version: string;
+  name: string;
+  avatar: string;
+  avatarAssetKey?: string | null;
+  avatarUrl?: string | null;
+  role: string;
+  description: string;
+  badge: string;
+  displayI18n?: Record<
+    string,
+    {
+      name?: string;
+      role?: string;
+      description?: string;
+      badge?: string;
+      avatarAssetKey?: string | null;
+      avatarUrl?: string | null;
+    }
+  > | null;
+  promptI18n?: Record<
+    string,
+    {
+      systemPromptExtra?: string;
+    }
+  > | null;
+  schemaI18n?: Record<string, unknown> | null;
+  systemPromptExtra: string;
+  toolWhitelist: string[];
+  cron: string;
+  defaultSkillId: string;
+  requiresDingtalk: boolean;
+  requiresAttachment: { accept: string; min: number; max: number } | null;
+  resourceConfigSchema: Record<string, unknown> | null;
+  resourceConfigUI: Record<string, unknown> | null;
 }
 
 export interface CreateEmployeeRequest {
-  name: string
-  role: string
-  description: string
-  avatar: string
-  templateId?: string
-  toolWhitelist?: string[]
-  cron?: string
-  timezone?: string
-  lifecycle?: 'active' | 'archived'
-  cronEnabled?: boolean
-  resourceConfig?: Record<string, unknown>
-  systemPromptExtra?: string
-  defaultSkillId?: string | null
+  name: string;
+  role: string;
+  description: string;
+  avatar: string;
+  templateId?: string;
+  toolWhitelist?: string[];
+  cron?: string;
+  timezone?: string;
+  lifecycle?: "active" | "archived";
+  cronEnabled?: boolean;
+  resourceConfig?: Record<string, unknown>;
+  systemPromptExtra?: string;
+  defaultSkillId?: string | null;
 }
 
 export interface UpdateEmployeeRequest {
-  name?: string
-  role?: string
-  description?: string
-  avatar?: string
-  toolWhitelist?: string[]
+  name?: string;
+  role?: string;
+  description?: string;
+  avatar?: string;
+  toolWhitelist?: string[];
   /** Pass null explicitly to clear cron; omit to leave unchanged. */
-  cron?: string | null
-  timezone?: string
-  lifecycle?: 'active' | 'archived'
-  cronEnabled?: boolean
-  resourceConfig?: Record<string, unknown>
-  systemPromptExtra?: string | null
-  defaultSkillId?: string | null
+  cron?: string | null;
+  timezone?: string;
+  lifecycle?: "active" | "archived";
+  cronEnabled?: boolean;
+  resourceConfig?: Record<string, unknown>;
+  systemPromptExtra?: string | null;
+  defaultSkillId?: string | null;
 }
 
 export function employeeList(): Promise<EmployeeRecord[]> {
-  return invoke<EmployeeRecord[]>('employee_list')
+  return invoke<EmployeeRecord[]>("employee_list");
 }
 
 export function employeeGet(id: string): Promise<EmployeeRecord> {
-  return invoke<EmployeeRecord>('employee_get', { id })
+  return invoke<EmployeeRecord>("employee_get", { id });
 }
 
-export function employeeCreate(request: CreateEmployeeRequest): Promise<EmployeeRecord> {
-  return invoke<EmployeeRecord>('employee_create', { request })
+export function employeeCreate(
+  request: CreateEmployeeRequest,
+): Promise<EmployeeRecord> {
+  return invoke<EmployeeRecord>("employee_create", { request });
 }
 
-export function employeeUpdate(id: string, request: UpdateEmployeeRequest): Promise<EmployeeRecord> {
-  return invoke<EmployeeRecord>('employee_update', { id, request })
+export function employeeUpdate(
+  id: string,
+  request: UpdateEmployeeRequest,
+): Promise<EmployeeRecord> {
+  return invoke<EmployeeRecord>("employee_update", { id, request });
 }
 
 export function employeeDelete(id: string): Promise<boolean> {
-  return invoke<boolean>('employee_delete', { id })
+  return invoke<boolean>("employee_delete", { id });
 }
 
 // ─── PR-12: manual template upgrade ──────────────────────────────────────────
 
 export interface TemplateUpgradeCheck {
-  currentVersion: string | null
-  latestVersion: string | null
-  hasUpgrade: boolean
-  changedFields: string[]
+  currentVersion: string | null;
+  latestVersion: string | null;
+  hasUpgrade: boolean;
+  changedFields: string[];
 }
 
 /**
@@ -2744,8 +3161,12 @@ export interface TemplateUpgradeCheck {
  * version available locally (in bootstrap or the global cache).
  * Returns metadata for the drawer to surface the "升级模板" button.
  */
-export function employeeTemplateCheckUpgrade(id: string): Promise<TemplateUpgradeCheck> {
-  return invoke<TemplateUpgradeCheck>('employee_template_check_upgrade', { id })
+export function employeeTemplateCheckUpgrade(
+  id: string,
+): Promise<TemplateUpgradeCheck> {
+  return invoke<TemplateUpgradeCheck>("employee_template_check_upgrade", {
+    id,
+  });
 }
 
 /**
@@ -2755,7 +3176,7 @@ export function employeeTemplateCheckUpgrade(id: string): Promise<TemplateUpgrad
  * fields (name / cron / cronEnabled / resourceConfig / lifecycle).
  */
 export function employeeTemplateUpgrade(id: string): Promise<EmployeeRecord> {
-  return invoke<EmployeeRecord>('employee_template_upgrade', { id })
+  return invoke<EmployeeRecord>("employee_template_upgrade", { id });
 }
 
 export function employeeTrigger(
@@ -2763,18 +3184,18 @@ export function employeeTrigger(
   promptOverride?: string,
   attachments?: ChatAttachmentPayload[],
 ): Promise<string> {
-  return invoke<string>('employee_trigger', {
+  return invoke<string>("employee_trigger", {
     id,
     promptOverride: promptOverride ?? null,
     attachments: attachments ?? [],
-  })
+  });
 }
 
 export interface EmployeeActiveRunInfo {
-  employeeId: string
-  conversationId: string
-  startedAt: string
-  triggerKind: 'on_demand' | 'cron'
+  employeeId: string;
+  conversationId: string;
+  startedAt: string;
+  triggerKind: "on_demand" | "cron";
 }
 
 /**
@@ -2783,15 +3204,17 @@ export interface EmployeeActiveRunInfo {
  * run was found and cancellation was requested, false if no active run.
  */
 export function employeeStopRun(id: string): Promise<boolean> {
-  return invoke<boolean>('employee_stop_run', { id })
+  return invoke<boolean>("employee_stop_run", { id });
 }
 
 /**
  * Returns the live ActiveRun info for an employee, or null if none.
  * Polled by useEmployees to drive UI state.
  */
-export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | null> {
-  return invoke<EmployeeActiveRunInfo | null>('employee_active_run', { id })
+export function employeeActiveRun(
+  id: string,
+): Promise<EmployeeActiveRunInfo | null> {
+  return invoke<EmployeeActiveRunInfo | null>("employee_active_run", { id });
 }
 
 /**
@@ -2802,7 +3225,7 @@ export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | n
  * `workplaceDirectoryCatalog()`.
  */
 export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
-  return invoke<EmployeeTemplateSnapshot[]>('employee_template_catalog')
+  return invoke<EmployeeTemplateSnapshot[]>("employee_template_catalog");
 }
 
 /**
@@ -2818,68 +3241,70 @@ export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
  * better than a hard failure.
  */
 export function employeeTemplateRefresh(): Promise<number> {
-  return invoke<number>('employee_template_refresh')
+  return invoke<number>("employee_template_refresh");
 }
 
 export interface ExpertTeamTemplateDisplayText {
-  name?: string
-  description?: string
-  tagline?: string
-  examples?: string[]
-  composerPlaceholder?: string
+  name?: string;
+  description?: string;
+  tagline?: string;
+  examples?: string[];
+  composerPlaceholder?: string;
 }
 
 export interface ExpertTeamTemplatePromptText {
-  template?: string
-  summary?: string
+  template?: string;
+  summary?: string;
 }
 
 export interface ExpertTeamTemplateExpertDisplayText {
-  name?: string
-  persona?: string
+  name?: string;
+  persona?: string;
 }
 
 export interface ExpertTeamTemplateAvatarAtlas {
-  kind: 'atlas'
-  url: string
-  x: number
-  y: number
-  w: number
-  h: number
-  atlasWidth: number
-  atlasHeight: number
+  kind: "atlas";
+  url: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  atlasWidth: number;
+  atlasHeight: number;
 }
 
-export type ExpertTeamTemplateAvatar = string | ExpertTeamTemplateAvatarAtlas
+export type ExpertTeamTemplateAvatar = string | ExpertTeamTemplateAvatarAtlas;
 
 export interface ExpertTeamTemplateExpert {
-  stableName?: string
-  name?: string
-  title?: string
-  agentName?: string
-  persona?: string
-  avatar?: ExpertTeamTemplateAvatar
-  avatarName?: string
-  avatarText?: string
-  emoji?: string
-  displayI18n?: Record<string, ExpertTeamTemplateExpertDisplayText> | null
+  stableName?: string;
+  name?: string;
+  title?: string;
+  agentName?: string;
+  persona?: string;
+  avatar?: ExpertTeamTemplateAvatar;
+  avatarName?: string;
+  avatarText?: string;
+  emoji?: string;
+  displayI18n?: Record<string, ExpertTeamTemplateExpertDisplayText> | null;
 }
 
 export interface ExpertTeamTemplateSnapshot {
-  teamId: string
-  version: string
-  facilitationStyle?: string
-  displayI18n?: Record<string, ExpertTeamTemplateDisplayText> | null
-  experts?: ExpertTeamTemplateExpert[]
-  directorPromptI18n?: Record<string, ExpertTeamTemplatePromptText> | null
+  teamId: string;
+  version: string;
+  facilitationStyle?: string;
+  displayI18n?: Record<string, ExpertTeamTemplateDisplayText> | null;
+  experts?: ExpertTeamTemplateExpert[];
+  directorPromptI18n?: Record<string, ExpertTeamTemplatePromptText> | null;
 }
 
-export function expertTeamTemplateCatalog(): Promise<ExpertTeamTemplateSnapshot[]> {
-  return invoke<ExpertTeamTemplateSnapshot[]>('expert_team_template_catalog')
+export function expertTeamTemplateCatalog(): Promise<
+  ExpertTeamTemplateSnapshot[]
+> {
+  return invoke<ExpertTeamTemplateSnapshot[]>("expert_team_template_catalog");
 }
 
 export function expertTeamTemplateRefresh(): Promise<number> {
-  return invoke<number>('expert_team_template_refresh')
+  return invoke<number>("expert_team_template_refresh");
 }
 
 // ---------------------------------------------------------------------------
@@ -2887,71 +3312,84 @@ export function expertTeamTemplateRefresh(): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export interface PendingKnowledgeSource {
-  path: string
-  originalName: string
-  size: number
+  path: string;
+  originalName: string;
+  size: number;
 }
 
 export async function employeeIndexKnowledgeAsync(
   employeeId: string,
   sources: PendingKnowledgeSource[],
 ): Promise<void> {
-  await invoke('employee_index_knowledge_async', {
+  await invoke("employee_index_knowledge_async", {
     args: {
       employee_id: employeeId,
       sources: sources.map((s) => [s.path, s.originalName] as [string, string]),
     },
-  })
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Inbox Commands
 // ---------------------------------------------------------------------------
 
-export type InboxKind = 'report' | 'signal' | 'running' | 'error'
+export type InboxKind = "report" | "signal" | "running" | "error";
 
 export interface InboxEntry {
-  id: string
-  employeeId: string
-  kind: InboxKind
-  title: string
-  summary: string | null
-  reportPath: string | null
-  conversationId: string | null
-  read: boolean
-  catchupInfo: string | null
-  createdAt: string
+  id: string;
+  employeeId: string;
+  kind: InboxKind;
+  title: string;
+  summary: string | null;
+  reportPath: string | null;
+  conversationId: string | null;
+  read: boolean;
+  catchupInfo: string | null;
+  createdAt: string;
 }
 
-export function inboxList(employeeId?: string, limit?: number): Promise<InboxEntry[]> {
-  return invoke<InboxEntry[]>('inbox_list', {
+export function inboxList(
+  employeeId?: string,
+  limit?: number,
+): Promise<InboxEntry[]> {
+  return invoke<InboxEntry[]>("inbox_list", {
     employeeId: employeeId ?? null,
     limit: limit ?? null,
-  })
+  });
 }
 
-export function inboxMarkRead(employeeId: string, entryId: string): Promise<boolean> {
-  return invoke<boolean>('inbox_mark_read', { employeeId, entryId })
+export function inboxMarkRead(
+  employeeId: string,
+  entryId: string,
+): Promise<boolean> {
+  return invoke<boolean>("inbox_mark_read", { employeeId, entryId });
 }
 
 export function inboxMarkAllRead(employeeId: string): Promise<number> {
-  return invoke<number>('inbox_mark_all_read', { employeeId })
+  return invoke<number>("inbox_mark_all_read", { employeeId });
 }
 
 export function inboxUnreadCount(employeeId?: string): Promise<number> {
-  return invoke<number>('inbox_unread_count', { employeeId: employeeId ?? null })
+  return invoke<number>("inbox_unread_count", {
+    employeeId: employeeId ?? null,
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Pending Queue IPC + Listeners
 // ---------------------------------------------------------------------------
 
-export async function pendingSnapshotForSession(sessionId: string): Promise<PendingItem[]> {
-  return invoke<PendingItem[]>('pending_snapshot_for_session', { sessionId })
+export async function pendingSnapshotForSession(
+  sessionId: string,
+): Promise<PendingItem[]> {
+  return invoke<PendingItem[]>("pending_snapshot_for_session", { sessionId });
 }
 
-export async function pendingRemoveItem(sessionId: string, itemId: string): Promise<boolean> {
-  return invoke<boolean>('pending_remove_item', { sessionId, itemId })
+export async function pendingRemoveItem(
+  sessionId: string,
+  itemId: string,
+): Promise<boolean> {
+  return invoke<boolean>("pending_remove_item", { sessionId, itemId });
 }
 
 // ── Turn-stage persistence (spec docs/superpowers/specs/2026-05-17-turn-stages.md §5) ─
@@ -2961,18 +3399,28 @@ export async function pendingRemoveItem(sessionId: string, itemId: string): Prom
 export async function getActiveTurnStage(
   conversationId: string,
 ): Promise<PersistedTurnStage | null> {
-  const result = await invoke<PersistedTurnStage | null>('get_active_turn_stage', {
-    conversationId,
-  })
-  return result
+  const result = await invoke<PersistedTurnStage | null>(
+    "get_active_turn_stage",
+    {
+      conversationId,
+    },
+  );
+  return result;
+}
+
+export async function clearActiveTurnStage(
+  conversationId: string,
+): Promise<void> {
+  await invoke<void>("clear_active_turn_stage", { conversationId });
 }
 
 export function listenPendingSnapshot(
   handler: (payload: PendingSnapshotPayload) => void,
 ): Promise<() => void> {
-  return listen<PendingSnapshotPayload>(TAURI_EVENTS.PENDING_SNAPSHOT, (event) =>
-    handler(event.payload),
-  )
+  return listen<PendingSnapshotPayload>(
+    TAURI_EVENTS.PENDING_SNAPSHOT,
+    (event) => handler(event.payload),
+  );
 }
 
 export function listenPendingQueued(
@@ -2980,7 +3428,7 @@ export function listenPendingQueued(
 ): Promise<() => void> {
   return listen<PendingQueuedPayload>(TAURI_EVENTS.PENDING_QUEUED, (event) =>
     handler(event.payload),
-  )
+  );
 }
 
 export function listenPendingDrained(
@@ -2988,7 +3436,7 @@ export function listenPendingDrained(
 ): Promise<() => void> {
   return listen<PendingDrainedPayload>(TAURI_EVENTS.PENDING_DRAINED, (event) =>
     handler(event.payload),
-  )
+  );
 }
 
 export function listenPendingRemoved(
@@ -2996,7 +3444,7 @@ export function listenPendingRemoved(
 ): Promise<() => void> {
   return listen<PendingRemovedPayload>(TAURI_EVENTS.PENDING_REMOVED, (event) =>
     handler(event.payload),
-  )
+  );
 }
 
 // =====================================================================
@@ -3004,66 +3452,66 @@ export function listenPendingRemoved(
 // =====================================================================
 
 export interface BillingThisMonth {
-  year_month: string
-  request_count: number
-  input_tokens: number
-  output_tokens: number
-  cached_tokens: number
-  cost: string
+  year_month: string;
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cost: string;
 }
 
 export interface BillingSignupBonus {
-  granted: boolean
-  amount: string
-  granted_at?: string
+  granted: boolean;
+  amount: string;
+  granted_at?: string;
 }
 
 export interface BillingSummary {
-  balance: string
-  currency: string
-  this_month: BillingThisMonth
-  signup_bonus: BillingSignupBonus
+  balance: string;
+  currency: string;
+  this_month: BillingThisMonth;
+  signup_bonus: BillingSignupBonus;
 }
 
 export interface UsageRecord {
-  id: number
-  created_at: string
-  request_type: string
-  model_name: string
-  input_tokens: number
-  output_tokens: number
-  cached_tokens: number
-  cost: string
-  key_type: string
+  id: number;
+  created_at: string;
+  request_type: string;
+  model_name: string;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cost: string;
+  key_type: string;
 }
 
 export interface UsageRecordsPage {
-  page: number
-  size: number
-  total: number
-  records: UsageRecord[]
+  page: number;
+  size: number;
+  total: number;
+  records: UsageRecord[];
 }
 
 export function billingSummary(): Promise<BillingSummary> {
-  return invoke<BillingSummary>('billing_summary')
+  return invoke<BillingSummary>("billing_summary");
 }
 
 export function billingUsageRecords(
   page: number,
   size: number,
 ): Promise<UsageRecordsPage> {
-  return invoke<UsageRecordsPage>('billing_usage_records', { page, size })
+  return invoke<UsageRecordsPage>("billing_usage_records", { page, size });
 }
 
 // ─────────────────────────────────────────────────────────────
 // Updater Commands
 // ─────────────────────────────────────────────────────────────
 
-export type UpdaterCacheStatus = 'complete' | 'partial' | 'none'
+export type UpdaterCacheStatus = "complete" | "partial" | "none";
 
 export interface UpdaterCacheCheckResult {
-  status: UpdaterCacheStatus
-  downloaded_size: number
+  status: UpdaterCacheStatus;
+  downloaded_size: number;
 }
 
 export function updaterCheckCache(
@@ -3071,11 +3519,11 @@ export function updaterCheckCache(
   expectedSize: number,
   etag?: string,
 ): Promise<UpdaterCacheCheckResult> {
-  return invoke<UpdaterCacheCheckResult>('updater_check_cache', {
+  return invoke<UpdaterCacheCheckResult>("updater_check_cache", {
     version,
     expectedSize,
     etag,
-  })
+  });
 }
 
 export function updaterDownload(
@@ -3084,23 +3532,23 @@ export function updaterDownload(
   expectedSize: number,
   etag?: string,
 ): Promise<void> {
-  return invoke('updater_download', { url, version, expectedSize, etag })
+  return invoke("updater_download", { url, version, expectedSize, etag });
 }
 
 export function updaterReadCachedBytes(version: string): Promise<number[]> {
-  return invoke<number[]>('updater_read_cached_bytes', { version })
+  return invoke<number[]>("updater_read_cached_bytes", { version });
 }
 
 export function updaterClearCache(): Promise<void> {
-  return invoke('updater_clear_cache')
+  return invoke("updater_clear_cache");
 }
 
 export function updaterInstallCached(version: string): Promise<void> {
-  return invoke('updater_install_cached', { version })
+  return invoke("updater_install_cached", { version });
 }
 
 export function updaterPlatformKey(): Promise<string> {
-  return invoke<string>('updater_platform_key')
+  return invoke<string>("updater_platform_key");
 }
 
 // ---------------------------------------------------------------------------
@@ -3108,9 +3556,9 @@ export function updaterPlatformKey(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 export async function networkGetStatus(): Promise<NetworkStatusPayload | null> {
-  return invoke<NetworkStatusPayload | null>('network_get_status')
+  return invoke<NetworkStatusPayload | null>("network_get_status");
 }
 
 export async function networkForceProbe(): Promise<{ triggered: boolean }> {
-  return invoke<{ triggered: boolean }>('network_force_probe')
+  return invoke<{ triggered: boolean }>("network_force_probe");
 }

@@ -7,6 +7,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 interface SettingsShellProps {
   open: boolean
@@ -56,7 +57,7 @@ export function SettingsShell({
       >
         {menu}
         {content}
-        <button
+        <Button unstyled
           type="button"
           aria-label={t('common.close')}
           data-aijia-settings-action="close"
@@ -65,7 +66,7 @@ export function SettingsShell({
           className="absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
     </div>
   )

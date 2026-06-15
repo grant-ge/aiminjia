@@ -36,6 +36,8 @@ use super::dingtalk::download::{DingtalkFileDownloader, DownloadedFile};
 use super::types::AttachmentKind;
 use crate::runtime::chat::chat_turn_driver::{ChatAttachmentRef, IM_MOBILE_CHANNEL_CONTEXT};
 
+const DINGTALK_GREETING_PROMPT: &str = "你好";
+
 /// Per-platform runtime state. Each platform (dingtalk / feishu / ...) owns its
 /// own slot — disabling or reconnecting one MUST NOT touch another's slot.
 /// Prior to PR3.5 these fields were single-slot at the `ChannelManager` level
@@ -51,6 +53,30 @@ struct PerPlatformState {
     /// bail. Kept as `Arc<AtomicU64>` so closures spawned at connect-time
     /// retain access even after the map entry is replaced.
     stream_generation: Arc<AtomicU64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DingtalkGreetingTarget {
+    session_id: String,
+    external_conversation_key: String,
+}
+
+fn select_dingtalk_greeting_target(
+    conversations: &[ChannelConversation],
+    current_robot_code: &str,
+) -> Option<DingtalkGreetingTarget> {
+    conversations
+        .iter()
+        .find(|conversation| {
+            conversation.platform == Platform::Dingtalk
+                && conversation.conversation_type == ConversationType::Private
+                && conversation.is_active_robot
+                && conversation.robot_code == current_robot_code
+        })
+        .map(|conversation| DingtalkGreetingTarget {
+            session_id: conversation.session_id.clone(),
+            external_conversation_key: conversation.external_id.clone(),
+        })
 }
 
 impl PerPlatformState {
@@ -144,6 +170,46 @@ pub struct ChannelManager {
 /// wechat's `appid::resolve_app_id` to honor the optional override.
 fn aijia_config_path() -> PathBuf {
     AiJiaHome::from_home().global_config_path()
+}
+
+async fn handle_pending_action_pre_dispatch(
+    ask_coordinator: Option<&Arc<super::shared::ask_coordinator::IMAskCoordinator>>,
+    session_id: &crate::runtime::ids::SessionId,
+    content: &str,
+) -> anyhow::Result<super::shared::ask_coordinator::HandleOutcome> {
+    if let Some(coordinator) = ask_coordinator {
+        coordinator
+            .try_handle_reply(session_id, content.to_string())
+            .await
+    } else {
+        Ok(super::shared::ask_coordinator::HandleOutcome::NotPending)
+    }
+}
+
+async fn send_pending_action_text_ack(
+    connector: &Arc<dyn IMConnector>,
+    session_id: &str,
+    conv_key: &str,
+    marker: &str,
+    message: String,
+) {
+    if let Err(err) = connector
+        .send(
+            crate::connector::im::trait_def::ReplyTarget {
+                session_id: session_id.to_string(),
+                external_conversation_key: conv_key.to_string(),
+            },
+            crate::connector::im::trait_def::ReplyContent::Text(message),
+        )
+        .await
+    {
+        log::warn!(
+            "{} pending approval ACK text send failed session={}: {:#}",
+            marker,
+            session_id,
+            err
+        );
+    }
 }
 
 impl ChannelManager {
@@ -611,6 +677,7 @@ impl ChannelManager {
         let channel_session_ids_ref = Arc::clone(&self.channel_session_ids);
         let inactive_ref = Arc::clone(&self.inactive);
         let on_status_for_worker = Arc::clone(&on_status);
+        let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
         let pending_manager_ref = Arc::clone(&self.pending_manager);
         let platform_state_for_worker = Arc::clone(&self.platform_state);
         let connector_for_worker = {
@@ -809,6 +876,41 @@ impl ChannelManager {
                     },
                 );
 
+                let session_for_ask = crate::runtime::ids::SessionId::new(session_id.clone());
+                match handle_pending_action_pre_dispatch(
+                    ask_coordinator_ref.as_ref(),
+                    &session_for_ask,
+                    &text,
+                )
+                .await
+                {
+                    Ok(super::shared::ask_coordinator::HandleOutcome::NotPending)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::NewTurnAfterAbandon) => {}
+                    Ok(super::shared::ask_coordinator::HandleOutcome::ApprovalResolved)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::AnswerResolved) => {
+                        continue;
+                    }
+                    Ok(super::shared::ask_coordinator::HandleOutcome::InvalidApprovalAction {
+                        message,
+                    }) => {
+                        send_pending_action_text_ack(
+                            &connector_for_worker,
+                            &session_id,
+                            &conv_key,
+                            "[channel/telegram]",
+                            message,
+                        )
+                        .await;
+                        continue;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "[channel/telegram] IM ask coordinator failed, falling back to normal turn: {:#}",
+                            err
+                        );
+                    }
+                };
+
                 // Download attachments (photos / documents) via Bot API getFile.
                 let (chat_attachments, download_failures) = if msg.attachments.is_empty() {
                     (Vec::<ChatAttachmentRef>::new(), Vec::<String>::new())
@@ -821,7 +923,6 @@ impl ChannelManager {
                     );
                     download_specs_for_turn_telegram(&telegram_downloader, &msg.attachments).await
                 };
-
                 // All-attachments-failed + empty text → fallback reply (mirror wecom)
                 if chat_attachments.is_empty()
                     && text.trim().is_empty()
@@ -859,6 +960,8 @@ impl ChannelManager {
 
                 let request = build_channel_chat_request(
                     session_id.clone(),
+                    crate::runtime::human_interaction::ImPlatform::Telegram,
+                    conv_key.clone(),
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -867,6 +970,8 @@ impl ChannelManager {
                 );
                 let pending_item = super::shared::pending_adapter::build_pending_item_from_telegram(
                     &msg.msg_id,
+                    &session_id,
+                    &conv_key,
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -896,6 +1001,11 @@ impl ChannelManager {
                                     session_for_log,
                                     e
                                 );
+                                pending_manager_for_send
+                                    .release_direct_dispatch(&crate::runtime::ids::SessionId::new(
+                                        session_for_log.clone(),
+                                    ))
+                                    .await;
                             }
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Queued { snapshot }) => {
@@ -903,6 +1013,15 @@ impl ChannelManager {
                                 "[channel/telegram] message queued session={} queue_size={}",
                                 session_for_log,
                                 snapshot.len()
+                            );
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::HeldForHumanInteraction {
+                            interaction_id,
+                        }) => {
+                            log::info!(
+                                "[channel/telegram] message held for human interaction session={} interaction_id={:?}",
+                                session_for_log,
+                                interaction_id
                             );
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Rejected { reason }) => {
@@ -1348,6 +1467,7 @@ impl ChannelManager {
         let channel_session_ids_ref = Arc::clone(&self.channel_session_ids);
         let inactive_ref = Arc::clone(&self.inactive);
         let on_status_for_worker = Arc::clone(&on_status);
+        let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
         let pending_manager_ref = Arc::clone(&self.pending_manager);
         let platform_state_for_worker = Arc::clone(&self.platform_state);
         let connector_for_worker = {
@@ -1552,6 +1672,41 @@ impl ChannelManager {
                     },
                 );
 
+                let session_for_ask = crate::runtime::ids::SessionId::new(session_id.clone());
+                match handle_pending_action_pre_dispatch(
+                    ask_coordinator_ref.as_ref(),
+                    &session_for_ask,
+                    &text,
+                )
+                .await
+                {
+                    Ok(super::shared::ask_coordinator::HandleOutcome::NotPending)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::NewTurnAfterAbandon) => {}
+                    Ok(super::shared::ask_coordinator::HandleOutcome::ApprovalResolved)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::AnswerResolved) => {
+                        continue;
+                    }
+                    Ok(super::shared::ask_coordinator::HandleOutcome::InvalidApprovalAction {
+                        message,
+                    }) => {
+                        send_pending_action_text_ack(
+                            &connector_for_worker,
+                            &session_id,
+                            &conv_key,
+                            "[channel/wecom]",
+                            message,
+                        )
+                        .await;
+                        continue;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "[channel/wecom] IM ask coordinator failed, falling back to normal turn: {:#}",
+                            err
+                        );
+                    }
+                };
+
                 // Wecom 附件下载：HTTP GET 加密文件 + AES-256-CBC 解密 → 落盘。
                 // 实现走 `wecom::media::download_and_save`；error 收进 failures
                 // 让 `build_compound_content` 给 LLM 加一段 "[注意：下列附件下载
@@ -1572,7 +1727,6 @@ impl ChannelManager {
                     )
                     .await
                 };
-
                 // All-attachments-failed + empty text → reply to user with
                 // a hint; do NOT push a half-empty turn to the LLM (mirror
                 // feishu's `all-attachments-failed` branch).
@@ -1612,6 +1766,8 @@ impl ChannelManager {
 
                 let request = build_channel_chat_request(
                     session_id.clone(),
+                    crate::runtime::human_interaction::ImPlatform::Wecom,
+                    conv_key.clone(),
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -1620,6 +1776,8 @@ impl ChannelManager {
                 );
                 let pending_item = super::shared::pending_adapter::build_pending_item_from_wecom(
                     &msg.msg_id,
+                    &session_id,
+                    &conv_key,
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -1649,6 +1807,11 @@ impl ChannelManager {
                                     session_for_log,
                                     e
                                 );
+                                pending_manager_for_send
+                                    .release_direct_dispatch(&crate::runtime::ids::SessionId::new(
+                                        session_for_log.clone(),
+                                    ))
+                                    .await;
                             }
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Queued { snapshot }) => {
@@ -1656,6 +1819,15 @@ impl ChannelManager {
                                 "[channel/wecom] message queued session={} queue_size={}",
                                 session_for_log,
                                 snapshot.len()
+                            );
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::HeldForHumanInteraction {
+                            interaction_id,
+                        }) => {
+                            log::info!(
+                                "[channel/wecom] message held for human interaction session={} interaction_id={:?}",
+                                session_for_log,
+                                interaction_id
                             );
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Rejected { reason }) => {
@@ -2448,6 +2620,62 @@ impl ChannelManager {
         }
     }
 
+    /// Trigger a small self-test turn in the current DingTalk private bot session.
+    ///
+    /// We cannot spoof a DingTalk user inbound event from the outside. Instead,
+    /// reuse the active private channel session that was created by a real
+    /// inbound message, register a DingTalk AI card target, and send a normal
+    /// chat request with a small greeting. The resulting assistant response is
+    /// delivered to the same DingTalk bot conversation.
+    pub async fn send_dingtalk_greeting(&self) -> Result<()> {
+        let config = self
+            .config_store
+            .read_dingtalk_config()?
+            .ok_or_else(|| anyhow::anyhow!("钉钉频道尚未配置"))?;
+        if !config.enabled {
+            anyhow::bail!("钉钉频道已停用，请先启用后再发送问候");
+        }
+        let app_secret = self.config_store.reveal_dingtalk_secret()?;
+        let robot_code = config.bot.robot_code.clone();
+        let target = {
+            let conversations = self.conversations.read().await;
+            select_dingtalk_greeting_target(&conversations, &robot_code).ok_or_else(|| {
+                anyhow::anyhow!("还没有当前钉钉机器人的私聊会话，请先在钉钉里给机器人发送一条消息")
+            })?
+        };
+
+        let request = build_channel_chat_request(
+            target.session_id.clone(),
+            crate::runtime::human_interaction::ImPlatform::Dingtalk,
+            target.external_conversation_key.clone(),
+            &ConversationType::Private,
+            "我",
+            DINGTALK_GREETING_PROMPT,
+            vec![],
+            &[],
+        );
+        let run_id = request.run_id.as_str().to_string();
+
+        self.reply_manager
+            .register(
+                target.session_id,
+                run_id,
+                config.credentials.app_key,
+                app_secret,
+                robot_code,
+                CardTarget::Private {
+                    user_id: target.external_conversation_key,
+                },
+            )
+            .await;
+
+        self.chat_adapter
+            .send_chat_request(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("发送钉钉问候失败：{e}"))?;
+        Ok(())
+    }
+
     /// 创建钉钉 OPEN_CLAW 一键注册会话，返回用户需要打开的授权 URL。
     pub async fn begin_dingtalk_registration(&self) -> Result<ChannelRegistrationBeginResult> {
         if self.is_inactive() {
@@ -2886,7 +3114,9 @@ impl ChannelManager {
         let app_handle = self.app_handle.clone();
         let channel_session_ids_ref = Arc::clone(&self.channel_session_ids);
         let inactive_ref = Arc::clone(&self.inactive);
+        let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
         let pending_manager_ref = Arc::clone(&self.pending_manager);
+        let connector_for_worker = Arc::clone(&connector);
         // Grab the concrete WhatsApp connector handle before spawning so the
         // worker can call remember_inbound (not on the dyn trait surface).
         // Option<Arc<_>>::clone() is cheap.
@@ -3039,19 +3269,57 @@ impl ChannelManager {
                     },
                 );
 
+                let session_for_ask = crate::runtime::ids::SessionId::new(session_id.clone());
+                match handle_pending_action_pre_dispatch(
+                    ask_coordinator_ref.as_ref(),
+                    &session_for_ask,
+                    &text,
+                )
+                .await
+                {
+                    Ok(super::shared::ask_coordinator::HandleOutcome::NotPending)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::NewTurnAfterAbandon) => {}
+                    Ok(super::shared::ask_coordinator::HandleOutcome::ApprovalResolved)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::AnswerResolved) => {
+                        continue;
+                    }
+                    Ok(super::shared::ask_coordinator::HandleOutcome::InvalidApprovalAction {
+                        message,
+                    }) => {
+                        send_pending_action_text_ack(
+                            &connector_for_worker,
+                            &session_id,
+                            &conv_key,
+                            "[channel/whatsapp]",
+                            message,
+                        )
+                        .await;
+                        continue;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "[channel/whatsapp] IM ask coordinator failed, falling back to normal turn: {:#}",
+                            err
+                        );
+                    }
+                };
+
                 let (chat_attachments, download_failures) =
                     whatsapp_specs_to_chat_attachments(&msg.attachments);
-
                 let request = build_channel_chat_request(
                     session_id.clone(),
+                    crate::runtime::human_interaction::ImPlatform::Whatsapp,
+                    conv_key.clone(),
                     &conv_type,
                     &sender_nick,
                     &text,
                     chat_attachments.clone(),
                     &download_failures,
                 );
-                let pending_item = super::shared::pending_adapter::build_pending_item_from_telegram(
+                let pending_item = super::shared::pending_adapter::build_pending_item_from_whatsapp(
                     &msg.msg_id,
+                    &session_id,
+                    &conv_key,
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -3074,6 +3342,11 @@ impl ChannelManager {
                                     session_for_log,
                                     e
                                 );
+                                pending_manager_for_send
+                                    .release_direct_dispatch(&crate::runtime::ids::SessionId::new(
+                                        session_for_log.clone(),
+                                    ))
+                                    .await;
                             }
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Queued { snapshot }) => {
@@ -3081,6 +3354,15 @@ impl ChannelManager {
                                 "[channel/whatsapp] message queued session={} queue_size={}",
                                 session_for_log,
                                 snapshot.len()
+                            );
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::HeldForHumanInteraction {
+                            interaction_id,
+                        }) => {
+                            log::info!(
+                                "[channel/whatsapp] message held for human interaction session={} interaction_id={:?}",
+                                session_for_log,
+                                interaction_id
                             );
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Rejected { reason }) => {
@@ -3392,6 +3674,7 @@ impl ChannelManager {
         let downloader_ref = concrete_feishu
             .make_downloader(self.feishu_downloads_dir())
             .await;
+        let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
         let pending_manager_ref = Arc::clone(&self.pending_manager);
         // Snapshot at `connect_feishu` time so the worker can later decide
         // whether an inbound message is a server replay from before this
@@ -3631,6 +3914,41 @@ impl ChannelManager {
                     },
                 );
 
+                let session_for_ask = crate::runtime::ids::SessionId::new(session_id.clone());
+                match handle_pending_action_pre_dispatch(
+                    ask_coordinator_ref.as_ref(),
+                    &session_for_ask,
+                    &text,
+                )
+                .await
+                {
+                    Ok(super::shared::ask_coordinator::HandleOutcome::NotPending)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::NewTurnAfterAbandon) => {}
+                    Ok(super::shared::ask_coordinator::HandleOutcome::ApprovalResolved)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::AnswerResolved) => {
+                        continue;
+                    }
+                    Ok(super::shared::ask_coordinator::HandleOutcome::InvalidApprovalAction {
+                        message,
+                    }) => {
+                        send_pending_action_text_ack(
+                            &connector_for_worker,
+                            &session_id,
+                            &conv_key,
+                            "[channel/feishu]",
+                            message,
+                        )
+                        .await;
+                        continue;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "[channel/feishu] IM ask coordinator failed, falling back to normal turn: {:#}",
+                            err
+                        );
+                    }
+                };
+
                 // PR6: download attachments before building the chat turn.
                 // Sequential per-message (matches dingtalk); the helper logs
                 // per-failure and returns parallel vecs.
@@ -3650,7 +3968,6 @@ impl ChannelManager {
                     )
                     .await
                 };
-
                 // All-attachments-failed + empty text → reply to user with
                 // a hint; do NOT push a half-empty turn to the LLM.
                 if chat_attachments.is_empty()
@@ -3692,6 +4009,8 @@ impl ChannelManager {
                 // queue-full). Same dual-construction pattern as dingtalk.
                 let request = build_channel_chat_request(
                     session_id.clone(),
+                    crate::runtime::human_interaction::ImPlatform::Feishu,
+                    conv_key.clone(),
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -3700,6 +4019,8 @@ impl ChannelManager {
                 );
                 let pending_item = super::shared::pending_adapter::build_pending_item_from_feishu(
                     &msg.msg_id,
+                    &session_id,
+                    &conv_key,
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -3739,6 +4060,11 @@ impl ChannelManager {
                                     session_for_log,
                                     e
                                 );
+                                pending_manager_for_send
+                                    .release_direct_dispatch(&crate::runtime::ids::SessionId::new(
+                                        session_for_log.clone(),
+                                    ))
+                                    .await;
                             }
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Queued { snapshot }) => {
@@ -3746,6 +4072,15 @@ impl ChannelManager {
                                 "[channel/feishu] message queued session={} queue_size={}",
                                 session_for_log,
                                 snapshot.len()
+                            );
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::HeldForHumanInteraction {
+                            interaction_id,
+                        }) => {
+                            log::info!(
+                                "[channel/feishu] message held for human interaction session={} interaction_id={:?}",
+                                session_for_log,
+                                interaction_id
                             );
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Rejected { reason }) => {
@@ -3937,6 +4272,7 @@ impl ChannelManager {
         let channel_session_ids_ref = Arc::clone(&self.channel_session_ids);
         let inactive_ref = Arc::clone(&self.inactive);
         let on_status_for_worker = Arc::clone(&on_status);
+        let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
         let pending_manager_ref = Arc::clone(&self.pending_manager);
         let platform_state_for_worker = Arc::clone(&self.platform_state);
         let connector_for_worker = {
@@ -4113,6 +4449,41 @@ impl ChannelManager {
                     },
                 );
 
+                let session_for_ask = crate::runtime::ids::SessionId::new(session_id.clone());
+                match handle_pending_action_pre_dispatch(
+                    ask_coordinator_ref.as_ref(),
+                    &session_for_ask,
+                    &text,
+                )
+                .await
+                {
+                    Ok(super::shared::ask_coordinator::HandleOutcome::NotPending)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::NewTurnAfterAbandon) => {}
+                    Ok(super::shared::ask_coordinator::HandleOutcome::ApprovalResolved)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::AnswerResolved) => {
+                        continue;
+                    }
+                    Ok(super::shared::ask_coordinator::HandleOutcome::InvalidApprovalAction {
+                        message,
+                    }) => {
+                        send_pending_action_text_ack(
+                            &connector_for_worker,
+                            &session_id,
+                            &conv_key,
+                            "[channel/wechat]",
+                            message,
+                        )
+                        .await;
+                        continue;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "[channel/wechat] IM ask coordinator failed, falling back to normal turn: {:#}",
+                            err
+                        );
+                    }
+                };
+
                 // Wechat 附件下载：HTTP GET 加密文件 + AES-128-ECB 解密 → 落盘。
                 // 实现走 `wechat::media::download_and_save`，error 收进 failures
                 // 让 `build_compound_content` 给 LLM 加一段 "[注意：下列附件下载
@@ -4133,7 +4504,6 @@ impl ChannelManager {
                     )
                     .await
                 };
-
                 // All-attachments-failed + empty text → reply to user with
                 // a hint; do NOT push a half-empty turn to the LLM.
                 if chat_attachments.is_empty()
@@ -4172,14 +4542,18 @@ impl ChannelManager {
 
                 let request = build_channel_chat_request(
                     session_id.clone(),
+                    crate::runtime::human_interaction::ImPlatform::Wechat,
+                    conv_key.clone(),
                     &conv_type,
                     &sender_nick,
                     &text,
                     chat_attachments.clone(),
                     &download_failures,
                 );
-                let pending_item = super::shared::pending_adapter::build_pending_item_from_wecom(
+                let pending_item = super::shared::pending_adapter::build_pending_item_from_wechat(
                     &msg.msg_id,
+                    &session_id,
+                    &conv_key,
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -4209,6 +4583,11 @@ impl ChannelManager {
                                     session_for_log,
                                     e
                                 );
+                                pending_manager_for_send
+                                    .release_direct_dispatch(&crate::runtime::ids::SessionId::new(
+                                        session_for_log.clone(),
+                                    ))
+                                    .await;
                             }
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Queued { snapshot }) => {
@@ -4216,6 +4595,15 @@ impl ChannelManager {
                                 "[channel/wechat] message queued session={} queue_size={}",
                                 session_for_log,
                                 snapshot.len()
+                            );
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::HeldForHumanInteraction {
+                            interaction_id,
+                        }) => {
+                            log::info!(
+                                "[channel/wechat] message held for human interaction session={} interaction_id={:?}",
+                                session_for_log,
+                                interaction_id
                             );
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Rejected { reason }) => {
@@ -4612,92 +5000,35 @@ impl ChannelManager {
                 if !is_current_stream(&message_stream_generation, generation, &message_cancel) {
                     break;
                 }
-                // 先让 ask_coordinator 尝试处理这条消息：
-                // - NotPending → 继续正常流程
-                // - Consumed   → 消息已被用来 resolve 某个 pending ask，跳过本次 turn
-                // - Reroute    → 用户切换了话题，以新 turn 重新发起
-                if let Some(coordinator) = ask_coordinator_ref.as_ref() {
-                    log::info!(
-                        "[channel] dispatch to im-ask coordinator session={} text_len={}",
-                        session_id,
-                        text.len()
-                    );
-                    match coordinator
-                        .try_handle_reply(
-                            &crate::runtime::ids::SessionId::new(session_id.clone()),
-                            text.clone(),
-                        )
-                        .await
-                    {
-                        Ok(super::shared::ask_coordinator::HandleOutcome::NotPending) => {}
-                        Ok(super::shared::ask_coordinator::HandleOutcome::Consumed) => continue,
-                        Ok(super::shared::ask_coordinator::HandleOutcome::Reroute { content }) => {
-                            log::info!(
-                                "[channel] IM ask abandoned, rerouting message session={}",
-                                session_id
-                            );
-                            let text = content;
-                            let content = match &conv_type {
-                                ConversationType::Group => format!("[{}]: {}", sender_nick, text),
-                                ConversationType::Private => text,
-                            };
-                            let request = ChatTurnRequest::new(session_id.clone(), content, vec![]);
-                            let run_id = request.run_id.as_str().to_string();
-                            let card_target = match &conv_type {
-                                ConversationType::Group => CardTarget::Group {
-                                    open_conversation_id: conv_key.clone(),
-                                },
-                                ConversationType::Private => CardTarget::Private {
-                                    user_id: msg.sender_id.clone(),
-                                },
-                            };
-                            reply_manager_ref
-                                .register(
-                                    session_id.clone(),
-                                    run_id,
-                                    reply_app_key.clone(),
-                                    reply_app_secret.clone(),
-                                    reply_robot_code.clone(),
-                                    card_target,
-                                )
-                                .await;
-                            // 也把本会话的钉钉特定回复参数喂给 concrete connector：
-                            // 后续若���何路径走 `connector.send(ReplyTarget, ReplyContent::Text)`
-                            // 都能查到 session_webhook（Reroute 路径自身不发 text，但
-                            // 保持入参对称，避免后续 reroute 跨 turn 后 fallback 路径
-                            // 拿不到 webhook）。
-                            let dingtalk_target =
-                                super::dingtalk::connector::DingtalkSessionTarget {
-                                    robot_code: msg.robot_code.clone(),
-                                    reply_group_id: msg.reply_group_id.clone(),
-                                    session_webhook: msg.session_webhook.clone(),
-                                };
-                            concrete_dingtalk_for_worker
-                                .remember_session(session_id.clone(), dingtalk_target)
-                                .await;
-                            // 同样不能 await — 见下方主路径的死锁说明
-                            let adapter_for_reroute = Arc::clone(&adapter);
-                            let session_for_log = session_id.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = adapter_for_reroute.send_chat_request(request).await
-                                {
-                                    log::error!(
-                                        "[channel] rerouted send_chat_request failed session={}: {}",
-                                        session_for_log,
-                                        e
-                                    );
-                                }
-                            });
-                            continue;
-                        }
-                        Err(error) => {
-                            log::warn!(
-                                "[channel] IM ask coordinator failed, falling back to normal turn: {:#}",
-                                error
-                            );
-                        }
+                let session_for_ask = crate::runtime::ids::SessionId::new(session_id.clone());
+                match handle_pending_action_pre_dispatch(
+                    ask_coordinator_ref.as_ref(),
+                    &session_for_ask,
+                    &text,
+                )
+                .await
+                {
+                    Ok(super::shared::ask_coordinator::HandleOutcome::NotPending)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::NewTurnAfterAbandon) => {}
+                    Ok(super::shared::ask_coordinator::HandleOutcome::ApprovalResolved)
+                    | Ok(super::shared::ask_coordinator::HandleOutcome::AnswerResolved) => {
+                        continue;
                     }
-                }
+                    Ok(super::shared::ask_coordinator::HandleOutcome::InvalidApprovalAction {
+                        message,
+                    }) => {
+                        let _ = reply_manager_ref
+                            .deliver_pending_approval_ack(&session_for_ask, &message)
+                            .await;
+                        continue;
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "[channel/dingtalk] IM ask coordinator failed, falling back to normal turn: {:#}",
+                            error
+                        );
+                    }
+                };
 
                 // 构造 AI 输入（群聊带发送者前缀）
                 let (chat_attachments, download_failures) = if msg.attachments.is_empty() {
@@ -4717,7 +5048,6 @@ impl ChannelManager {
                     )
                     .await
                 };
-
                 if chat_attachments.is_empty()
                     && text.trim().is_empty()
                     && !msg.attachments.is_empty()
@@ -4764,6 +5094,8 @@ impl ChannelManager {
 
                 let request = build_channel_chat_request(
                     session_id.clone(),
+                    crate::runtime::human_interaction::ImPlatform::Dingtalk,
+                    conv_key.clone(),
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -4777,6 +5109,8 @@ impl ChannelManager {
                 // directly to preserve the legacy IM `[sender]: text` formatting.
                 let pending_item = super::shared::pending_adapter::build_pending_item_from_dingtalk(
                     &msg.msg_id,
+                    &session_id,
+                    &conv_key,
                     &conv_type,
                     &sender_nick,
                     &text,
@@ -4797,8 +5131,8 @@ impl ChannelManager {
                     break;
                 }
                 // 记住本 session 的钉钉凭证（不管这条消息直发还是入队都记）。
-                // drain 触发的 LLM turn 没有 worker context，必须靠 reply_manager
-                // 在 StreamDelta 到达时懒建 card —— lazy register 依赖这份缓存。
+                // 这份缓存只用于显式反馈卡或 connector send(AiCardChunk) 回到原钉钉会话；
+                // RuntimeEventBus 普通流不能凭缓存懒建 IM 卡，避免 APP-only 输出串到 RM。
                 reply_manager_ref
                     .remember_credentials(
                         session_id.clone(),
@@ -4831,8 +5165,6 @@ impl ChannelManager {
                 // register（建钉钉 AI 卡片）只在 SentDirectly 分支后做；
                 // Queued 分支完全不建卡（否则会有"处理中..."占位卡永远转圈，
                 // 因为 drain 路径触发的是新 run_id、和这张卡的 run_id 对不上）。
-                // drain 的 LLM turn 由 reply_manager 在 StreamDelta 到达时
-                // 用上面缓存的凭证懒建 card。
                 let adapter_for_turn = Arc::clone(&adapter);
                 let session_for_log = session_id.clone();
                 let pending_manager_for_send = Arc::clone(&pending_manager_ref);
@@ -4874,6 +5206,11 @@ impl ChannelManager {
                                     session_for_log,
                                     e
                                 );
+                                pending_manager_for_send
+                                    .release_direct_dispatch(&crate::runtime::ids::SessionId::new(
+                                        session_for_log.clone(),
+                                    ))
+                                    .await;
                             }
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Queued { snapshot }) => {
@@ -4885,6 +5222,15 @@ impl ChannelManager {
                                 "[channel] message queued session={} queue_size={} (no card)",
                                 session_for_log,
                                 snapshot.len()
+                            );
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::HeldForHumanInteraction {
+                            interaction_id,
+                        }) => {
+                            log::info!(
+                                "[channel] message held for human interaction session={} interaction_id={:?}",
+                                session_for_log,
+                                interaction_id
                             );
                         }
                         Ok(crate::runtime::pending::EnqueueOutcome::Rejected { reason }) => {
@@ -5055,7 +5401,63 @@ fn claim_first_subscription(flag: &AtomicBool) -> bool {
         .is_ok()
 }
 
-/// Stream-based variant of the legacy `recv_current_generation_message`, used after the
+#[cfg(test)]
+async fn stop_stream_components(
+    stream_generation: &Arc<AtomicU64>,
+    stream_cancel: &Arc<RwLock<Option<CancellationToken>>>,
+    message_task: &Arc<RwLock<Option<JoinHandle<()>>>>,
+) {
+    stream_generation.fetch_add(1, Ordering::SeqCst);
+    let token = stream_cancel.write().await.take();
+    if let Some(token) = token {
+        log::info!("[channel] cancelling previous stream connection");
+        token.cancel();
+    }
+    if let Some(handle) = message_task.write().await.take() {
+        if let Err(error) = handle.await {
+            log::warn!("[channel] message worker join failed: {}", error);
+        }
+    }
+}
+
+#[cfg(test)]
+async fn recv_current_generation_message(
+    msg_rx: &mut tokio::sync::mpsc::Receiver<ChannelMessage>,
+    stream_generation: &Arc<AtomicU64>,
+    generation: u64,
+    cancel_token: &CancellationToken,
+) -> Option<ChannelMessage> {
+    let current_gen = stream_generation.load(Ordering::SeqCst);
+    if current_gen != generation {
+        log::warn!(
+            "[channel] worker pre-recv: generation drift my_gen={} current_gen={}, exiting",
+            generation,
+            current_gen
+        );
+        return None;
+    }
+
+    let msg = tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => {
+            log::info!("[channel] worker recv: cancel token fired, exiting");
+            return None;
+        },
+        msg = msg_rx.recv() => msg?,
+    };
+    let current_gen = stream_generation.load(Ordering::SeqCst);
+    if current_gen != generation {
+        log::warn!(
+            "[channel] worker post-recv: generation drift my_gen={} current_gen={} msg_id={}, dropping message",
+            generation, current_gen, msg.msg_id
+        );
+        return None;
+    }
+
+    Some(msg)
+}
+
+/// Stream-based variant of `recv_current_generation_message` used after the
 /// PR5 trait rewire. Same generation/cancel semantics, but the source is now
 /// the `BoxStream<ChannelMessage>` returned by `IMConnector::start`.
 async fn recv_current_generation_message_stream(
@@ -5197,6 +5599,8 @@ fn path_to_file_url(path: &str) -> String {
 
 fn build_channel_chat_request(
     session_id: String,
+    platform: crate::runtime::human_interaction::ImPlatform,
+    external_conversation_key: String,
     conv_type: &ConversationType,
     sender_nick: &str,
     text: &str,
@@ -5210,8 +5614,22 @@ fn build_channel_chat_request(
         &attachments,
         download_failures,
     );
-    let mut request = ChatTurnRequest::new(session_id, content, attachments);
+    let mut request = ChatTurnRequest::new(session_id.clone(), content, attachments);
     request.channel_context = Some(IM_MOBILE_CHANNEL_CONTEXT.to_string());
+    request.turn_origin = crate::runtime::human_interaction::TurnOrigin::Im {
+        platform,
+        external_conversation_key: external_conversation_key.clone(),
+        sender_id: None,
+        sender_label: Some(sender_nick.to_string()),
+        account_id: None,
+        thread_id: None,
+    };
+    request.output_binding = crate::runtime::human_interaction::OutputBinding::im(
+        platform,
+        session_id,
+        external_conversation_key,
+        true,
+    );
     request.session_attachment_dirs =
         crate::runtime::path_auth::derive_working_dirs_from_attachments(
             &request
@@ -6280,6 +6698,8 @@ mod hydrate_tests {
     fn im_request_sets_mobile_channel_context_without_polluting_content() {
         let request = build_channel_chat_request(
             "sess-im".to_string(),
+            crate::runtime::human_interaction::ImPlatform::Dingtalk,
+            "conv-im".to_string(),
             &ConversationType::Private,
             "Alice",
             "帮我处理一下 AI 表格",
@@ -6293,12 +6713,23 @@ mod hydrate_tests {
         assert!(channel_context.contains("IM/移动端渠道"));
         assert!(channel_context.contains("完整授权链接"));
         assert!(!request.content.contains("浏览器已打开"));
+        assert_eq!(
+            request.output_binding,
+            crate::runtime::human_interaction::OutputBinding::im(
+                crate::runtime::human_interaction::ImPlatform::Dingtalk,
+                "sess-im",
+                "conv-im",
+                true,
+            )
+        );
     }
 
     #[test]
     fn im_request_sets_mobile_channel_context_for_unrelated_text_too() {
         let request = build_channel_chat_request(
             "sess-normal".to_string(),
+            crate::runtime::human_interaction::ImPlatform::Feishu,
+            "conv-normal".to_string(),
             &ConversationType::Private,
             "Alice",
             "帮我总结一下这个文件",
@@ -6312,6 +6743,48 @@ mod hydrate_tests {
             .as_deref()
             .unwrap_or_default()
             .contains("IM/移动端渠道"));
+    }
+
+    #[test]
+    fn dingtalk_greeting_target_uses_current_active_private_session() {
+        let conversations = vec![
+            ChannelConversation {
+                session_id: "old-private".into(),
+                platform: Platform::Dingtalk,
+                conversation_type: ConversationType::Private,
+                external_id: "old-user".into(),
+                display_name: "旧机器人".into(),
+                unread_count: 0,
+                robot_code: "old-robot".into(),
+                is_active_robot: false,
+            },
+            ChannelConversation {
+                session_id: "current-group".into(),
+                platform: Platform::Dingtalk,
+                conversation_type: ConversationType::Group,
+                external_id: "group-id".into(),
+                display_name: "群聊".into(),
+                unread_count: 0,
+                robot_code: "robot-current".into(),
+                is_active_robot: true,
+            },
+            ChannelConversation {
+                session_id: "current-private".into(),
+                platform: Platform::Dingtalk,
+                conversation_type: ConversationType::Private,
+                external_id: "user-001".into(),
+                display_name: "姚斌权".into(),
+                unread_count: 0,
+                robot_code: "robot-current".into(),
+                is_active_robot: true,
+            },
+        ];
+
+        let target = select_dingtalk_greeting_target(&conversations, "robot-current")
+            .expect("current private dingtalk session should be selected");
+
+        assert_eq!(target.session_id, "current-private");
+        assert_eq!(target.external_conversation_key, "user-001");
     }
 
     #[test]

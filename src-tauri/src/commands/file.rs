@@ -4,11 +4,12 @@ use crate::storage::AiJiaHome;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::collections::HashSet;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 
 const MAX_PREVIEW_BYTES: u64 = 5 * 1024 * 1024;
+const FILE_RECORD_NOT_FOUND: &str = "File not found or does not belong to this conversation";
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -69,6 +70,8 @@ struct ResolvedFileRecord {
     stored_path: String,
     file_type: String,
     file_size: u64,
+    storage_scope: String,
+    storage_root_path: Option<PathBuf>,
 }
 
 fn resolve_file_record(
@@ -92,7 +95,7 @@ fn resolve_file_record(
         return record_to_resolved_file(record, false);
     }
 
-    Err("File not found or does not belong to this conversation".to_string())
+    Err(FILE_RECORD_NOT_FOUND.to_string())
 }
 
 fn record_to_resolved_file(
@@ -110,6 +113,17 @@ fn record_to_resolved_file(
         .unwrap_or("unknown")
         .to_string();
     let file_size = record.get("fileSize").and_then(|v| v.as_u64()).unwrap_or(0);
+    let storage_scope = record
+        .get("storageScope")
+        .and_then(|v| v.as_str())
+        .unwrap_or("conversation")
+        .to_string();
+    let storage_root_path = record
+        .get("storageRoot")
+        .and_then(|v| v.get("path"))
+        .and_then(|v| v.as_str())
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from);
     let file_name = if is_uploaded {
         record
             .get("originalName")
@@ -127,6 +141,8 @@ fn record_to_resolved_file(
         stored_path,
         file_type,
         file_size,
+        storage_scope,
+        storage_root_path,
     })
 }
 
@@ -279,6 +295,23 @@ fn resolve_record_full_path(
     conversation_id: &str,
     record: &ResolvedFileRecord,
 ) -> Result<std::path::PathBuf, String> {
+    if record.storage_scope == "workspace" {
+        if let Some(root) = &record.storage_root_path {
+            return FileManager::resolve_existing_file_under_root(root, &record.stored_path)
+                .map_err(|e| e.to_string());
+        }
+        if let Some(root) = conversation_workspace_root(facade, conversation_id) {
+            if let Ok(path) =
+                FileManager::resolve_existing_file_under_root(&root, &record.stored_path)
+            {
+                return Ok(path);
+            }
+        }
+        return file_mgr
+            .resolve_existing_file(&record.stored_path)
+            .map_err(|e| e.to_string());
+    }
+
     if let Some(base_dir) = facade.storage_base_dir() {
         let conv_dir = base_dir.join("conversations").join(conversation_id);
         if let Ok(path) =
@@ -291,6 +324,34 @@ fn resolve_record_full_path(
     file_mgr
         .resolve_existing_file(&record.stored_path)
         .map_err(|e| e.to_string())
+}
+
+fn conversation_workspace_root(
+    facade: &RuntimeRepositoryFacade,
+    conversation_id: &str,
+) -> Option<PathBuf> {
+    let base_dir = facade.storage_base_dir()?;
+    crate::storage::file_store::conversations::get_conversation(base_dir, conversation_id)
+        .ok()
+        .and_then(|meta| {
+            meta.authorized_workspace
+                .map(|workspace| workspace.root_path)
+        })
+}
+
+fn is_conversation_file_available(
+    facade: &RuntimeRepositoryFacade,
+    file_mgr: &FileManager,
+    file_id: &str,
+    conversation_id: &str,
+) -> Result<bool, String> {
+    let record = match resolve_file_record(facade, file_id, conversation_id) {
+        Ok(record) => record,
+        Err(err) if err == FILE_RECORD_NOT_FOUND => return Ok(false),
+        Err(err) => return Err(err),
+    };
+
+    Ok(resolve_record_full_path(facade, file_mgr, conversation_id, &record).is_ok())
 }
 
 #[cfg(test)]
@@ -674,6 +735,22 @@ pub async fn reveal_file_in_folder(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn is_generated_file_available(
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_id: String,
+    conversation_id: String,
+) -> Result<bool, String> {
+    is_conversation_file_available(&facade, &file_mgr, &file_id, &conversation_id)
+}
+
+#[tauri::command]
+pub async fn is_local_file_available(path: String) -> Result<bool, String> {
+    let p = Path::new(&path);
+    Ok(p.is_absolute() && p.is_file())
+}
+
 /// Save a generated/uploaded conversation file to a user-selected destination.
 /// Searches both uploaded_files and generated_files tables.
 #[tauri::command]
@@ -1023,6 +1100,27 @@ mod tests {
         assert_eq!(saved_path, destination.to_string_lossy().to_string());
         assert_eq!(std::fs::read(destination).unwrap(), vec![1_u8, 2, 3, 4]);
     }
+
+    #[tokio::test]
+    async fn local_file_available_requires_absolute_regular_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let source = tmp.path().join("source.png");
+        std::fs::write(&source, [1_u8, 2, 3, 4]).expect("write source");
+
+        assert!(
+            is_local_file_available(source.to_string_lossy().to_string())
+                .await
+                .expect("absolute file availability")
+        );
+        assert!(!is_local_file_available("relative/source.png".to_string())
+            .await
+            .expect("relative file availability"));
+        assert!(
+            !is_local_file_available(tmp.path().to_string_lossy().to_string())
+                .await
+                .expect("directory availability")
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1167,6 +1265,8 @@ mod preview_tests {
             stored_path: stored_path.to_string(),
             file_type: "markdown".to_string(),
             file_size: 10,
+            storage_scope: "conversation".to_string(),
+            storage_root_path: None,
         };
 
         let preview = preview_from_record(&file_mgr, record);
@@ -1194,6 +1294,8 @@ mod preview_tests {
             stored_path: stored_path.to_string(),
             file_type: "markdown".to_string(),
             file_size: 10,
+            storage_scope: "conversation".to_string(),
+            storage_root_path: None,
         };
 
         let preview = preview_from_record(&file_mgr, record);
@@ -1238,6 +1340,8 @@ mod preview_tests {
             stored_path: stored_path.to_string(),
             file_type: "jpeg".to_string(),
             file_size: 12,
+            storage_scope: "conversation".to_string(),
+            storage_root_path: None,
         };
 
         let resolved =
@@ -1246,6 +1350,129 @@ mod preview_tests {
         assert_eq!(
             std::fs::read(resolved).expect("read resolved"),
             b"conversation"
+        );
+    }
+
+    #[test]
+    fn conversation_file_available_requires_index_record_and_existing_file() {
+        let storage_dir = TempDir::new().expect("storage tempdir");
+        let workspace_dir = TempDir::new().expect("workspace tempdir");
+        let storage = Arc::new(AppStorage::new(storage_dir.path()).expect("storage"));
+        storage
+            .create_conversation("conv-1", "Availability test")
+            .expect("create conversation");
+        storage
+            .insert_generated_file(
+                "gf-present",
+                "conv-1",
+                None,
+                "result.png",
+                "generated/images/result.png",
+                "png",
+                4,
+                "image",
+                None,
+                1,
+                true,
+                None,
+                None,
+                None,
+            )
+            .expect("insert generated file");
+        storage
+            .insert_generated_file(
+                "gf-missing",
+                "conv-1",
+                None,
+                "missing.png",
+                "generated/images/missing.png",
+                "png",
+                4,
+                "image",
+                None,
+                1,
+                true,
+                None,
+                None,
+                None,
+            )
+            .expect("insert missing generated file");
+        let present = storage_dir
+            .path()
+            .join("conversations")
+            .join("conv-1")
+            .join("generated/images/result.png");
+        std::fs::create_dir_all(present.parent().expect("parent")).expect("create parent");
+        std::fs::write(&present, [1_u8, 2, 3, 4]).expect("write generated file");
+
+        let facade = RuntimeRepositoryFacade::from_storage(storage);
+        let file_mgr = FileManager::new(workspace_dir.path());
+
+        assert!(
+            is_conversation_file_available(&facade, &file_mgr, "gf-present", "conv-1")
+                .expect("present availability")
+        );
+        assert!(
+            !is_conversation_file_available(&facade, &file_mgr, "gf-missing", "conv-1")
+                .expect("missing availability")
+        );
+        assert!(
+            !is_conversation_file_available(&facade, &file_mgr, "gf-absent", "conv-1")
+                .expect("absent availability")
+        );
+    }
+
+    #[test]
+    fn workspace_scoped_generated_file_uses_recorded_storage_root() {
+        let storage_dir = TempDir::new().expect("storage tempdir");
+        let original_workspace = TempDir::new().expect("original workspace");
+        let current_workspace = TempDir::new().expect("current workspace");
+        let storage = Arc::new(AppStorage::new(storage_dir.path()).expect("storage"));
+        storage
+            .create_conversation("conv-1", "Workspace scope test")
+            .expect("create conversation");
+        let stored_path = "generated/conv-1/images/result.png";
+        let full_path = original_workspace.path().join(stored_path);
+        std::fs::create_dir_all(full_path.parent().expect("parent")).expect("create parent");
+        std::fs::write(&full_path, [1_u8, 2, 3, 4]).expect("write generated file");
+        storage
+            .insert_generated_file_with_storage(
+                "gf-workspace",
+                "conv-1",
+                None,
+                "result.png",
+                stored_path,
+                "png",
+                4,
+                "image",
+                None,
+                1,
+                true,
+                None,
+                None,
+                None,
+                "workspace",
+                Some(crate::storage::file_store::types::FileStorageRoot {
+                    kind: "authorizedWorkspace".to_string(),
+                    path: original_workspace.path().to_path_buf(),
+                    display_name: Some("Original".to_string()),
+                }),
+            )
+            .expect("insert generated file");
+
+        let facade = RuntimeRepositoryFacade::from_storage(storage);
+        let file_mgr = FileManager::new(current_workspace.path());
+        let record = resolve_file_record(&facade, "gf-workspace", "conv-1").expect("record");
+        let resolved =
+            resolve_record_full_path(&facade, &file_mgr, "conv-1", &record).expect("resolve");
+
+        assert_eq!(
+            resolved.canonicalize().expect("canonical resolved"),
+            full_path.canonicalize().expect("canonical expected")
+        );
+        assert!(
+            is_conversation_file_available(&facade, &file_mgr, "gf-workspace", "conv-1")
+                .expect("availability")
         );
     }
 
@@ -1262,6 +1489,8 @@ mod preview_tests {
             stored_path: stored_path.to_string(),
             file_type: "markdown".to_string(),
             file_size: 8,
+            storage_scope: "conversation".to_string(),
+            storage_root_path: None,
         };
 
         let preview = preview_from_record_with_reader(&file_mgr, record, |path| {
@@ -1297,6 +1526,8 @@ mod preview_tests {
             stored_path: stored_path.to_string(),
             file_type: "text".to_string(),
             file_size: MAX_PREVIEW_BYTES + 1,
+            storage_scope: "conversation".to_string(),
+            storage_root_path: None,
         };
 
         let preview = preview_from_record_with_reader(&file_mgr, record, |_path| {

@@ -12,8 +12,8 @@ describe('uiStore prefillText', () => {
   })
 
   it('setPrefillText stores the value', () => {
-    useUiStore.getState().setPrefillText('/create-skill ')
-    expect(useUiStore.getState().prefillText).toBe('/create-skill ')
+    useUiStore.getState().setPrefillText('draft message')
+    expect(useUiStore.getState().prefillText).toBe('draft message')
   })
 
   it('consumePrefillText returns and clears the value', () => {

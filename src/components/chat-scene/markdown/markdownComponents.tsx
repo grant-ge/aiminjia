@@ -1,5 +1,5 @@
 import type { Components } from 'react-markdown'
-import { MarkdownCodeBlock } from './MarkdownCodeBlock'
+import { AijiaCardCodeBlock } from '@/components/chat-scene/result-cards/AijiaCardCodeBlock'
 import { MarkdownTable } from './MarkdownTable'
 import { FileLink, FileImage } from './FileLink'
 import type { GeneratedFile } from '@/types/message'
@@ -45,7 +45,7 @@ export function createMarkdownComponents({
         />
       )
     },
-    code: MarkdownCodeBlock,
+    code: AijiaCardCodeBlock,
   }
 }
 

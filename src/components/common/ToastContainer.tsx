@@ -5,6 +5,7 @@
  */
 import { useNotificationStore } from '@/stores/notificationStore'
 import type { Notification, NotificationLevel } from '@/stores/notificationStore'
+import { Button } from '@/components/ui/button'
 
 const LEVEL_STYLES: Record<NotificationLevel, { accent: string; icon: string }> = {
   error: {
@@ -66,7 +67,7 @@ function Toast({ notification }: { notification: Notification }) {
 
       {/* Dismiss */}
       {notification.dismissible && (
-        <button
+        <Button unstyled
           className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-transparent transition-colors hover:bg-muted"
           style={{ color: 'var(--color-text-muted)' }}
           onClick={() => dismiss(notification.id)}
@@ -74,7 +75,7 @@ function Toast({ notification }: { notification: Notification }) {
           <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
           </svg>
-        </button>
+        </Button>
       )}
     </div>
   )

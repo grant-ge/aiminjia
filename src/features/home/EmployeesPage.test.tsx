@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import type {
@@ -103,15 +103,15 @@ import { EmployeesPage } from './EmployeesPage'
 
 function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): EmployeeTemplateSnapshot {
   return {
-    templateId: 'builtin:xiaocheng',
+    templateId: 'builtin:xiaoyuan',
     version: '1.0.0',
-    name: '程砚舟',
-    avatar: '🛠️',
-    role: '流程设计师',
-    description: '通过对话拆解你的工作流程。',
+    name: '林知远',
+    avatar: '🔍',
+    role: '行业情报分析师',
+    description: '每周汇总竞品动态。',
     badge: '开箱即用',
-    systemPromptExtra: '你是流程设计师。',
-    toolWhitelist: ['Skill'],
+    systemPromptExtra: '你是行业情报分析师。',
+    toolWhitelist: ['WebSearch'],
     cron: '',
     defaultSkillId: '',
     requiresDingtalk: false,
@@ -128,21 +128,21 @@ function makeDirectory(): WorkplaceDirectoryResponse {
     categories: [{
       categoryId: 'delivery',
       display: { name: '研发交付', description: '把流程和交付事项同步下来。' },
-      icon: '🛠️',
+      icon: '🔍',
       color: '#2563eb',
       sortOrder: 10,
       resourceCount: 1,
     }],
     items: [{
       resourceType: 'employee_template',
-      resourceId: 'builtin:xiaocheng',
+      resourceId: 'builtin:xiaoyuan',
       version: '1.0.0',
       workplaceCategoryId: 'delivery',
       sortOrder: 10,
-      display: { name: '小程', description: '通过对话拆解你的工作流程。' },
-      icon: '🛠️',
+      display: { name: '小研', description: '每周汇总竞品动态。' },
+      icon: '🔍',
       requiredSkills: [{
-        skillId: 'workflow-design',
+        skillId: 'market-research',
         source: 'platform',
         scope: 'public',
         display: { name: '流程设计' },
@@ -156,18 +156,18 @@ function makeEmployee(overrides: Partial<EmployeeRecord> = {}): EmployeeRecord {
   const now = '2026-06-05T12:00:00Z'
   return {
     id: 'emp-created',
-    name: '程砚舟',
-    role: '流程设计师',
-    description: '通过对话拆解你的工作流程。',
-    avatar: '🛠️',
-    templateId: 'builtin:xiaocheng',
-    toolWhitelist: ['Skill'],
+    name: '林知远',
+    role: '行业情报分析师',
+    description: '每周汇总竞品动态。',
+    avatar: '🔍',
+    templateId: 'builtin:xiaoyuan',
+    toolWhitelist: ['WebSearch'],
     cron: null,
     timezone: 'Asia/Shanghai',
     lifecycle: 'active',
     cronEnabled: false,
     resourceConfig: {},
-    systemPromptExtra: '你是流程设计师。',
+    systemPromptExtra: '你是行业情报分析师。',
     defaultSkillId: null,
     templateRef: null,
     createdAt: now,
@@ -245,7 +245,7 @@ describe('EmployeesPage', () => {
     render(<EmployeesPage />)
 
     expect(await screen.findByText('研发交付')).toBeInTheDocument()
-    expect(screen.getByText('程砚舟')).toBeInTheDocument()
+    expect(screen.getByText('林知远')).toBeInTheDocument()
     expect(screen.getByText('流程设计')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '员工市场' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '更新内容' })).toBeInTheDocument()
@@ -258,7 +258,7 @@ describe('EmployeesPage', () => {
         {
           categoryId: 'delivery',
           display: { name: '研发交付', description: '把流程和交付事项同步下来。' },
-          icon: '🛠️',
+          icon: '🔍',
           color: '#2563eb',
           sortOrder: 10,
           resourceCount: 1,
@@ -275,12 +275,12 @@ describe('EmployeesPage', () => {
       items: [
         {
           resourceType: 'employee_template',
-          resourceId: 'builtin:xiaocheng',
+          resourceId: 'builtin:xiaoyuan',
           version: '1.0.0',
           workplaceCategoryId: 'delivery',
           sortOrder: 10,
-          display: { name: '小程', description: '通过对话拆解你的工作流程。' },
-          icon: '🛠️',
+          display: { name: '小研', description: '每周汇总竞品动态。' },
+          icon: '🔍',
           requiredSkills: [],
         },
         {
@@ -311,12 +311,12 @@ describe('EmployeesPage', () => {
     expect(await screen.findByRole('button', { name: '全部' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '研发交付' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '法务合规' })).toBeInTheDocument()
-    expect(screen.getByText('程砚舟')).toBeInTheDocument()
+    expect(screen.getByText('林知远')).toBeInTheDocument()
     expect(screen.getByText('陈景律')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '法务合规' }))
 
-    expect(screen.queryByText('程砚舟')).not.toBeInTheDocument()
+    expect(screen.queryByText('林知远')).not.toBeInTheDocument()
     expect(screen.getByText('陈景律')).toBeInTheDocument()
     expect(screen.getByText('合同和合规事项。')).toBeInTheDocument()
   })
@@ -326,29 +326,50 @@ describe('EmployeesPage', () => {
 
     render(<EmployeesPage />)
 
-    expect(await screen.findByText('程砚舟')).toBeInTheDocument()
+    expect(await screen.findByText('林知远')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '数字员工' })).not.toBeInTheDocument()
     expect(screen.queryByText('其他员工')).not.toBeInTheDocument()
   })
 
-  it('only reveals the employee template detail action on card hover or focus', async () => {
+  it('does not render the employee template detail action chip on cards', async () => {
     render(<EmployeesPage />)
 
-    const action = await screen.findByText('查看详情')
-    expect(action).toHaveClass('opacity-0')
-    expect(action).toHaveClass('group-hover:opacity-100')
-    expect(action).toHaveClass('group-focus-visible:opacity-100')
+    expect(await screen.findByRole('button', { name: '查看 林知远 详情' })).toBeInTheDocument()
+    expect(screen.queryByText('查看详情')).not.toBeInTheDocument()
   })
 
   it('renders employee template cards in a four-column desktop grid', async () => {
     render(<EmployeesPage />)
 
-    const card = await screen.findByRole('button', { name: '查看 程砚舟 详情' })
+    const card = await screen.findByRole('button', { name: '查看 林知远 详情' })
     expect(card).toHaveClass('w-full')
     expect(card).toHaveClass('h-[154px]')
+    expect(card).toHaveClass('border-border/50')
+    expect(card).toHaveClass('shadow-[0_1px_3px_rgba(0,0,0,0.035)]')
+    expect(card).toHaveClass('hover:border-border/70')
+    expect(card).toHaveClass('hover:bg-muted/20')
+    expect(card).not.toHaveClass('border-border')
+    expect(card).not.toHaveClass('shadow-[var(--shadow-card)]')
+    expect(card).not.toHaveClass('hover:border-primary/50')
+    expect(card).not.toHaveClass('hover:shadow-[var(--shadow-card-hover)]')
     expect(card.closest('.grid')).toHaveClass('xl:grid-cols-4')
     expect(card.querySelector('.h-9.w-9')).toBeInTheDocument()
     expect(card.querySelector('.line-clamp-2')).toHaveClass('mt-1')
+  })
+
+  it('uses tokenized employee template card typography sizes', async () => {
+    render(<EmployeesPage />)
+
+    const card = await screen.findByRole('button', { name: '查看 林知远 详情' })
+    const title = within(card).getByText('行业情报分析师')
+    const name = within(card).getByText('林知远')
+    const description = within(card).getByText('每周汇总竞品动态。')
+
+    expect(title).toHaveClass('text-sm')
+    expect(title).not.toHaveClass('text-[15px]')
+    expect(name).toHaveClass('text-xs')
+    expect(description).toHaveClass('text-xs')
+    expect(description).not.toHaveClass('text-[13px]')
   })
 
   it('strips emoji from employee template chips', async () => {
@@ -356,7 +377,7 @@ describe('EmployeesPage', () => {
     directory.items[0] = {
       ...directory.items[0],
       requiredSkills: [{
-        skillId: 'workflow-design',
+        skillId: 'market-research',
         source: 'platform',
         scope: 'public',
         display: { name: '⚙️ 自动巡检' },
@@ -386,9 +407,12 @@ describe('EmployeesPage', () => {
     ]
 
     for (const chip of chips) {
-      expect(chip).toHaveClass('rounded-md')
+      expect(chip).toHaveClass('rounded-[2px]')
+      expect(chip).not.toHaveClass('rounded-md')
       expect(chip).toHaveClass('bg-muted')
+      expect(chip).toHaveClass('text-2xs')
       expect(chip).toHaveClass('text-muted-foreground')
+      expect(chip).not.toHaveClass('text-xs')
       expect(chip).not.toHaveClass('bg-accent')
       expect(chip).not.toHaveClass('bg-secondary')
       expect(chip).not.toHaveClass('text-accent-foreground')
@@ -398,7 +422,7 @@ describe('EmployeesPage', () => {
   it('opens employee details first, then creates and dispatches from the detail action', async () => {
     render(<EmployeesPage />)
 
-    fireEvent.click(await screen.findByRole('button', { name: '查看 程砚舟 详情' }))
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
     expect(screen.getByText('适合交给 TA 的任务')).toBeInTheDocument()
     expect(mocks.employeeCreate).not.toHaveBeenCalled()
 
@@ -406,8 +430,8 @@ describe('EmployeesPage', () => {
 
     await waitFor(() => {
       expect(mocks.employeeCreate).toHaveBeenCalledWith(expect.objectContaining({
-        templateId: 'builtin:xiaocheng',
-        name: '程砚舟',
+        templateId: 'builtin:xiaoyuan',
+        name: '林知远',
         cronEnabled: false,
         resourceConfig: {},
       }))
@@ -416,9 +440,9 @@ describe('EmployeesPage', () => {
     expect(mocks.setConversations).toHaveBeenCalledWith([
       expect.objectContaining({
         id: 'conv-created',
-        title: '派活: 程砚舟',
+        title: '派活: 林知远',
         kind: 'employee',
-        sourceLabel: '程砚舟',
+        sourceLabel: '林知远',
       }),
     ])
     expect(mocks.setMessages).toHaveBeenCalledWith([])
@@ -426,11 +450,50 @@ describe('EmployeesPage', () => {
     expect(mocks.setRoute).toHaveBeenCalledWith({ kind: 'chat', conversationId: 'conv-created' })
   })
 
+  it('renders employee detail as a refined profile modal', async () => {
+    render(<EmployeesPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
+
+    const dialog = document.querySelector('[data-aijia-employee-detail]')
+    expect(dialog).toHaveClass('max-w-[680px]')
+    expect(dialog).toHaveClass('rounded-md')
+    expect(dialog).toHaveClass('gap-0')
+
+    const chrome = document.querySelector('[data-aijia-employee-detail-chrome]')
+    expect(chrome).toHaveClass('px-5')
+    expect(chrome).toHaveClass('py-5')
+    expect(chrome).toHaveClass('border-b')
+
+    const avatar = document.querySelector('[data-aijia-employee-detail-avatar]')
+    expect(avatar).toHaveClass('h-14')
+    expect(avatar).toHaveClass('w-14')
+    expect(avatar).toHaveClass('rounded-md')
+
+    expect(screen.getByText('基础信息')).toBeInTheDocument()
+    expect(screen.getByText('分组')).toBeInTheDocument()
+    expect(screen.getByText('模板版本')).toBeInTheDocument()
+    expect(screen.getByText('触发方式')).toBeInTheDocument()
+    expect(screen.getByText('平台技能')).toBeInTheDocument()
+    expect(screen.getByText('能力介绍')).toBeInTheDocument()
+    expect(screen.getByText('能力侧重')).toBeInTheDocument()
+    expect(screen.getByText('适合交给 TA 的任务')).toBeInTheDocument()
+    expect(document.querySelector('.lucide-sparkles')).not.toBeInTheDocument()
+    expect(document.querySelectorAll('[data-aijia-employee-strength-row]')[0]).toHaveClass('items-center')
+    expect(document.querySelectorAll('[data-aijia-employee-strength-index]')).toHaveLength(3)
+    expect(document.querySelectorAll('[data-aijia-employee-strength-index]')[0]).not.toHaveClass('mt-0.5')
+
+    const cta = screen.getByRole('button', { name: '召唤' })
+    expect(cta).toHaveClass('h-8')
+    expect(cta).not.toHaveClass('min-w-[128px]')
+    expect(cta).not.toHaveClass('w-full')
+  })
+
   it('reuses an existing employee instead of creating a duplicate', async () => {
     mocks.employees = [makeEmployee({ id: 'emp-existing' })]
     render(<EmployeesPage />)
 
-    fireEvent.click(await screen.findByRole('button', { name: '查看 程砚舟 详情' }))
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
     fireEvent.click(screen.getByRole('button', { name: '派活' }))
 
     await waitFor(() => {
@@ -451,7 +514,7 @@ describe('EmployeesPage', () => {
     }
     render(<EmployeesPage />)
 
-    fireEvent.click(await screen.findByRole('button', { name: '查看 程砚舟 详情' }))
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
     fireEvent.click(screen.getByRole('button', { name: '进入会话' }))
 
     await waitFor(() => {
@@ -467,8 +530,8 @@ describe('EmployeesPage', () => {
       id: 'entry-1',
       employeeId: 'emp-1',
       kind: 'report',
-      title: '小程 已完成任务',
-      summary: '我是小程，流程设计师。',
+      title: '小研 已完成任务',
+      summary: '我是小研，行业情报分析师。',
       reportPath: null,
       conversationId: 'conv-1',
       read: false,
@@ -479,7 +542,7 @@ describe('EmployeesPage', () => {
     render(<EmployeesPage />)
 
     await screen.findByText('研发交付')
-    fireEvent.click(screen.getByRole('button', { name: /小程 已完成任务/ }))
+    fireEvent.click(screen.getByRole('button', { name: /小研 已完成任务/ }))
 
     expect(mocks.markRead).toHaveBeenCalledWith('emp-1', 'entry-1')
     expect(mocks.setSidebarTab).toHaveBeenCalledWith('employee')

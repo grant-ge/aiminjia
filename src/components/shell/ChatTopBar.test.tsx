@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ChatTopBar } from './ChatTopBar'
 
 describe('ChatTopBar — employee identity card', () => {
@@ -19,9 +20,8 @@ describe('ChatTopBar — employee identity card', () => {
     )
     const chip = screen.getByTestId('chat-topbar-employee')
     expect(chip).toBeInTheDocument()
-    expect(chip).toHaveTextContent('小工')
-    expect(chip).toHaveTextContent('技术支持')
-    expect(chip).toHaveTextContent('🛠')
+    expect(chip).toHaveTextContent('技术支持 · 小工')
+    expect(screen.getByTestId('chat-avatar')).toBeInTheDocument()
   })
 
   it('invokes onClick when chip is pressed', () => {
@@ -45,5 +45,46 @@ describe('ChatTopBar — employee identity card', () => {
     )
     const chip = screen.getByTestId('chat-topbar-employee') as HTMLButtonElement
     expect(chip.disabled).toBe(true)
+  })
+
+  it('renders expert team identity with avatar and suppresses duplicate source chip', () => {
+    render(
+      <ChatTopBar
+        title="专家团: 招聘评审团"
+        kind="expertTeam"
+        sourceLabel="招聘评审团"
+        expertTeam={{
+          avatar: <span data-testid="expert-team-avatar" />,
+          name: '招聘评审团',
+          tagline: '岗位画像 / 候选人评审 / 面试设计',
+        }}
+      />,
+    )
+
+    expect(screen.getByTestId('chat-topbar-expert-team')).toHaveTextContent('专家团 · 招聘评审团')
+    expect(screen.getByTestId('expert-team-avatar')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-source-label')).not.toBeInTheDocument()
+  })
+
+  it('renders more menu items through AppDropdown', async () => {
+    const onSelect = vi.fn()
+
+    render(
+      <ChatTopBar
+        title="新对话"
+        moreMenuItems={[
+          {
+            id: 'copy-id',
+            label: '复制对话 ID',
+            onSelect: () => onSelect(),
+          },
+        ]}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: '更多' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '复制对话 ID' }))
+
+    expect(onSelect).toHaveBeenCalledTimes(1)
   })
 })

@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { LoginCard } from '@/components/auth/LoginCard'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cloudRegister, cloudSendEmailCode, cloudSendSmsCode } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 const PHONE_REGEX = /^1[3-9]\d{9}$/
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
@@ -146,7 +146,7 @@ export function RegisterCard({ productName, onBack, onSuccess }: RegisterCardPro
         <div className="text-sm text-muted-foreground">{t('register.subtitle')}</div>
       </div>
       <div className="flex w-full gap-2 rounded-md bg-muted p-1">
-        <button
+        <Button unstyled
           type="button"
           onClick={() => switchMethod('phone')}
           className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
@@ -154,8 +154,8 @@ export function RegisterCard({ productName, onBack, onSuccess }: RegisterCardPro
           }`}
         >
           {t('register.methodPhone')}
-        </button>
-        <button
+        </Button>
+        <Button unstyled
           type="button"
           onClick={() => switchMethod('email')}
           className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
@@ -163,7 +163,7 @@ export function RegisterCard({ productName, onBack, onSuccess }: RegisterCardPro
           }`}
         >
           {t('register.methodEmail')}
-        </button>
+        </Button>
       </div>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         {method === 'phone' ? (
@@ -252,13 +252,13 @@ export function RegisterCard({ productName, onBack, onSuccess }: RegisterCardPro
         </Button>
         <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
           <span>{t('login.haveAccount')}</span>
-          <button
+          <Button unstyled
             type="button"
             className="font-medium text-primary underline-offset-4 hover:underline"
             onClick={onBack}
           >
             {t('login.backToLogin')}
-          </button>
+          </Button>
         </div>
         <div className="text-center text-xs text-muted-foreground">
           {t('register.personalRegisterOnly')}

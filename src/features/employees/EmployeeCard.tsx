@@ -8,9 +8,9 @@ import {
   type EmployeeRecord,
   type InboxEntry,
 } from '@/lib/tauri'
-import { Button } from '@/components/ui/button'
 import { findTemplate, localizeEmployeeDisplay } from './templates'
 import { formatRelativeNextRun } from './timeFormat'
+import { Button } from '@/components/ui/button'
 
 // ─── status derivation ───────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
   }
 
   return (
-    <button
+    <Button unstyled
       type="button"
       data-aijia-employee-card
       data-aijia-employee-id={emp.id}
@@ -208,22 +208,18 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
           {emp.cron && (
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
               data-aijia-employee-action={emp.cronEnabled ? 'pause-cron' : 'resume-cron'}
-              className="h-6 w-6"
               disabled={busy}
               onClick={handleTogglePause}
+              aria-label={emp.cronEnabled ? t('employeeCard.pause') : t('employeeCard.resume')}
               title={emp.cronEnabled ? t('employeeCard.pause') : t('employeeCard.resume')}
-            >
-              {emp.cronEnabled
-                ? <Pause className="h-3 w-3" />
-                : <Play className="h-3 w-3" />
-              }
-            </Button>
+              icon={emp.cronEnabled ? <Pause /> : <Play />}
+            />
           )}
         </div>
       </div>
-    </button>
+    </Button>
   )
 }
 
@@ -236,7 +232,7 @@ interface AddEmployeeCardProps {
 export function AddEmployeeCard({ onClick }: AddEmployeeCardProps) {
   const { t } = useTranslation()
   return (
-    <button
+    <Button unstyled
       type="button"
       data-aijia-hire-button="add-card"
       onClick={onClick}
@@ -245,6 +241,6 @@ export function AddEmployeeCard({ onClick }: AddEmployeeCardProps) {
     >
       <span className="text-2xl text-muted-foreground/50">＋</span>
       <span className="text-xs text-muted-foreground">{t('employeeCard.hireNew')}</span>
-    </button>
+    </Button>
   )
 }

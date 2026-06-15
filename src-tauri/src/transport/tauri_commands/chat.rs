@@ -4,7 +4,7 @@
 // Migrate to CapabilityContext when the command layer is refactored.
 #![allow(deprecated)]
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -15,6 +15,9 @@ use tauri::{Emitter, Manager};
 use tracing::Instrument;
 
 use crate::auth::AuthManager;
+use crate::connector::im::shared::app_feedback::{
+    feedback_message, AppFeedbackDecision, IMAppFeedbackCoordinator,
+};
 use crate::llm::compact_summary_client::LlmCompactSummaryClient;
 use crate::llm::context_decay::resolve_context_window;
 use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
@@ -25,6 +28,7 @@ use crate::models::settings::AppSettings;
 use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::chat::chat_turn_driver::RunActivityController;
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::chat::compaction::{
     append_literal_anchor_hints, append_transcript_path_hint,
@@ -49,6 +53,7 @@ use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRunti
 use crate::storage::crypto::SecureStorage;
 use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::types::FileStorageRoot;
 use crate::storage::file_store::AppStorage;
 use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQueue};
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
@@ -60,13 +65,52 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
 static AUTO_TITLE_IN_FLIGHT: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
+static SEND_MESSAGE_IN_FLIGHT: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
 
 fn resolve_generated_file_display_path(
     db: &AppStorage,
     file_mgr: &FileManager,
     conversation_id: &str,
-    stored_path: &str,
+    record: &serde_json::Value,
 ) -> PathBuf {
+    let stored_path = record
+        .get("storedPath")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let storage_scope = record
+        .get("storageScope")
+        .and_then(|value| value.as_str())
+        .unwrap_or("conversation");
+    if storage_scope == "workspace" {
+        if let Some(root) = record
+            .get("storageRoot")
+            .and_then(|value| value.get("path"))
+            .and_then(|value| value.as_str())
+            .filter(|path| !path.trim().is_empty())
+            .map(PathBuf::from)
+        {
+            if let Ok(path) = FileManager::resolve_existing_file_under_root(&root, stored_path) {
+                return path;
+            }
+            return root.join(stored_path);
+        }
+        if let Ok(meta) = db.get_conversation(conversation_id) {
+            if let Some(workspace) = meta.authorized_workspace {
+                if let Ok(path) =
+                    FileManager::resolve_existing_file_under_root(&workspace.root_path, stored_path)
+                {
+                    return path;
+                }
+                return workspace.root_path.join(stored_path);
+            }
+        }
+        if let Ok(path) = file_mgr.resolve_existing_file(stored_path) {
+            return path;
+        }
+        return file_mgr.full_path(stored_path);
+    }
+
     let conv_dir = db.base_dir().join("conversations").join(conversation_id);
     if let Ok(path) = FileManager::resolve_existing_file_under_root(&conv_dir, stored_path) {
         return path;
@@ -75,6 +119,154 @@ fn resolve_generated_file_display_path(
         return path;
     }
     file_mgr.full_path(stored_path)
+}
+
+fn json_str<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(|value| value.as_str()))
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn generated_storage_root_for_conversation(
+    app: &tauri::AppHandle,
+    file_mgr: &FileManager,
+    conversation_id: &str,
+) -> FileStorageRoot {
+    if let Some(workspace) = chat_runtime_impl::load_authorized_workspace(app, conversation_id) {
+        let kind = if workspace.id == "default" {
+            "defaultFolder"
+        } else {
+            "authorizedWorkspace"
+        };
+        return FileStorageRoot {
+            kind: kind.to_string(),
+            path: workspace.root_path,
+            display_name: Some(workspace.display_name),
+        };
+    }
+
+    FileStorageRoot {
+        kind: "workspacePath".to_string(),
+        path: file_mgr.workspace_path(),
+        display_name: None,
+    }
+}
+
+fn normalize_workspace_stored_path(root: &Path, stored_path: &str) -> Option<String> {
+    let path = PathBuf::from(stored_path);
+    if path.is_absolute() {
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let full = path.canonicalize().unwrap_or(path);
+        return full
+            .strip_prefix(root)
+            .ok()
+            .map(|relative| relative.to_string_lossy().replace('\\', "/"));
+    }
+    Some(stored_path.replace('\\', "/"))
+}
+
+fn ensure_generated_file_records_from_metas(
+    db: &AppStorage,
+    app: &tauri::AppHandle,
+    file_mgr: &FileManager,
+    conversation_id: &str,
+    file_metas: &[serde_json::Value],
+) {
+    if file_metas.is_empty() {
+        return;
+    }
+
+    let storage_root = generated_storage_root_for_conversation(app, file_mgr, conversation_id);
+    for meta in file_metas {
+        let Some(file_id) = json_str(meta, &["fileId", "file_id"]) else {
+            continue;
+        };
+        if db
+            .get_generated_file_for_conversation(file_id, conversation_id)
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            continue;
+        }
+        let Some(raw_stored_path) = json_str(meta, &["storedPath", "stored_path"]) else {
+            continue;
+        };
+        let Some(stored_path) =
+            normalize_workspace_stored_path(&storage_root.path, raw_stored_path)
+        else {
+            log::warn!(
+                "[generated-files] skipping FileMeta outside storage root fileId={} path={}",
+                file_id,
+                raw_stored_path
+            );
+            continue;
+        };
+        let full_path =
+            match FileManager::resolve_existing_file_under_root(&storage_root.path, &stored_path) {
+                Ok(path) => path,
+                Err(err) => {
+                    log::warn!(
+                    "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
+                    file_id,
+                    stored_path,
+                    err
+                );
+                    continue;
+                }
+            };
+        let file_name = json_str(meta, &["fileName", "file_name"])
+            .map(ToString::to_string)
+            .or_else(|| {
+                full_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(ToString::to_string)
+            })
+            .unwrap_or_else(|| "generated-file".to_string());
+        let file_type = json_str(
+            meta,
+            &["actualFormat", "actual_format", "fileType", "file_type"],
+        )
+        .unwrap_or("file");
+        let file_size = meta
+            .get("fileSize")
+            .or_else(|| meta.get("file_size"))
+            .and_then(|value| value.as_i64())
+            .or_else(|| {
+                std::fs::metadata(&full_path)
+                    .ok()
+                    .map(|metadata| metadata.len() as i64)
+            })
+            .unwrap_or(0);
+        let category = json_str(meta, &["category"]).unwrap_or("file");
+
+        if let Err(err) = db.insert_generated_file_with_storage(
+            file_id,
+            conversation_id,
+            None,
+            &file_name,
+            &stored_path,
+            file_type,
+            file_size,
+            category,
+            None,
+            1,
+            true,
+            None,
+            None,
+            None,
+            "workspace",
+            Some(storage_root.clone()),
+        ) {
+            log::warn!(
+                "[generated-files] failed to register FileMeta fileId={} storedPath={}: {}",
+                file_id,
+                stored_path,
+                err
+            );
+        }
+    }
 }
 
 fn format_agenda_trigger_label(title: &str, planned_fire_at: DateTime<Utc>) -> String {
@@ -175,6 +367,69 @@ fn try_mark_auto_title_inflight(conversation_id: &str) -> bool {
 fn clear_auto_title_inflight(conversation_id: &str) {
     if let Ok(mut guard) = AUTO_TITLE_IN_FLIGHT.lock() {
         guard.remove(conversation_id);
+    }
+}
+
+fn send_message_inflight_key(
+    conversation_id: &str,
+    client_message_id: Option<&str>,
+) -> Option<String> {
+    let client_message_id = client_message_id?.trim();
+    if client_message_id.is_empty() {
+        return None;
+    }
+    Some(format!("{conversation_id}\u{0}{client_message_id}"))
+}
+
+fn try_mark_send_message_inflight(conversation_id: &str, client_message_id: Option<&str>) -> bool {
+    let Some(key) = send_message_inflight_key(conversation_id, client_message_id) else {
+        return true;
+    };
+    let mut guard = SEND_MESSAGE_IN_FLIGHT
+        .lock()
+        .expect("send-message in-flight mutex poisoned");
+    if !guard.insert(key) {
+        log::info!(
+            "[send_message] duplicate clientMessageId ignored conv={} client_message_id={}",
+            conversation_id,
+            client_message_id.unwrap_or_default()
+        );
+        return false;
+    }
+    true
+}
+
+fn clear_send_message_inflight(conversation_id: &str, client_message_id: &str) {
+    let Some(key) = send_message_inflight_key(conversation_id, Some(client_message_id)) else {
+        return;
+    };
+    if let Ok(mut guard) = SEND_MESSAGE_IN_FLIGHT.lock() {
+        guard.remove(&key);
+    }
+}
+
+struct SendMessageInFlightGuard {
+    conversation_id: String,
+    client_message_id: Option<String>,
+}
+
+impl SendMessageInFlightGuard {
+    fn enter(conversation_id: &str, client_message_id: Option<&str>) -> Option<Self> {
+        if !try_mark_send_message_inflight(conversation_id, client_message_id) {
+            return None;
+        }
+        Some(Self {
+            conversation_id: conversation_id.to_string(),
+            client_message_id: client_message_id.map(ToString::to_string),
+        })
+    }
+}
+
+impl Drop for SendMessageInFlightGuard {
+    fn drop(&mut self) {
+        if let Some(client_message_id) = self.client_message_id.as_deref() {
+            clear_send_message_inflight(&self.conversation_id, client_message_id);
+        }
     }
 }
 
@@ -781,13 +1036,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let mut system_prompt_segments = system_prompt_segments(&input.system_message);
         system_prompt_segments.extend(input.extra_system_segments.clone());
 
-        // --- Resolve masking level (always Strict; field kept for forward compat) ---
-        let masking_level = match input.masking_level.to_lowercase().as_str() {
-            "relaxed" => MaskingLevel::Relaxed,
-            "standard" => MaskingLevel::Standard,
-            _ => MaskingLevel::Strict,
-        };
-
         // --- Build effective tool defs (empty when force_no_tools) ---
         let effective_tools: Option<Vec<ToolDefinition>> = if input.force_no_tools {
             log::debug!(
@@ -838,7 +1086,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 .stream_message_with_segments(
                     &settings,
                     chat_messages.clone(),
-                    masking_level.clone(),
+                    MaskingLevel::Relaxed,
                     system_prompt_for_gateway.as_deref(),
                     dynamic_ctx_opt,
                     effective_tools.clone(),
@@ -1065,7 +1313,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             self.services.gateway.send_message_with_segments(
                                 &settings,
                                 chat_messages.clone(),
-                                masking_level.clone(),
+                                MaskingLevel::Relaxed,
                                 system_prompt_for_gateway.as_deref(),
                                 dynamic_ctx_opt,
                                 effective_tools.clone(),
@@ -1498,11 +1746,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
             context_window: settings.context_window,
-            masking_level: crate::llm::masking::MaskingLevel::from_str_or_strict(
-                &settings.data_masking_level,
-            )
-            .to_str()
-            .to_string(),
         })
     }
 
@@ -1709,6 +1952,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // --- Build content JSON, attaching generated files when present ---
         let mut content_value = if !generated_file_ids.is_empty() {
+            ensure_generated_file_records_from_metas(
+                self.services.db().as_ref(),
+                &self.services.app,
+                &self.services.file_mgr,
+                conversation_id,
+                file_metas,
+            );
             match self
                 .services
                 .db()
@@ -1718,12 +1968,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     let gen_files: Vec<serde_json::Value> = file_records
                         .iter()
                         .map(|f| {
-                            let stored_path = f["storedPath"].as_str().unwrap_or("");
                             let full_path = resolve_generated_file_display_path(
                                 self.services.db().as_ref(),
                                 &self.services.file_mgr,
                                 conversation_id,
-                                stored_path,
+                                f,
                             );
                             let file_id_str = f["id"].as_str().unwrap_or("");
                             // Look up FileMeta JSON to inject degradation info.
@@ -1738,6 +1987,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 "id": f["id"],
                                 "fileName": f["fileName"],
                                 "filePath": full_path.to_string_lossy(),
+                                "storageScope": f["storageScope"],
+                                "storageRoot": f["storageRoot"],
                                 "fileType": f["fileType"],
                                 "fileSize": f["fileSize"],
                                 "category": f["category"],
@@ -2013,7 +2264,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         };
 
         // 第二步：独立计算运行时权限白名单（与 schema 过滤是两回事）
-        let runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides {
+        let mut runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides
+        {
             Some(ov) if !ov.tool_whitelist.is_empty() => ov
                 .tool_whitelist
                 .iter()
@@ -2036,6 +2288,30 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &self.services.app,
             request.conversation_id.as_str(),
         );
+        let is_expert_team_conversation = {
+            let base = self.services.db().base_dir().to_path_buf();
+            match crate::storage::file_store::conversations::read_conversation_source(
+                &base,
+                request.conversation_id.as_str(),
+            ) {
+                Ok(crate::storage::file_store::types::ConversationSource::ExpertTeam {
+                    ..
+                }) => true,
+                Ok(_) => false,
+                Err(e) => {
+                    log::warn!(
+                        "[expert-team-tools] conv={} source unreadable: {e:#}",
+                        request.conversation_id
+                    );
+                    false
+                }
+            }
+        };
+        if is_expert_team_conversation {
+            chat_runtime_impl::filter_expert_team_director_allowed_tools(
+                &mut runtime_allowed_tools,
+            );
+        }
 
         // ── Build ToolDescriptionContext for this turn ──────────────────
         // Tools whose description depends on session state (notably
@@ -2080,7 +2356,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             log::debug!("[tool-desc-trace] built overrides: keys={:?}", keys);
         }
 
-        let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
+        let mut visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
             schema_filter,
@@ -2088,6 +2364,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &request_scoped_overrides,
         )
         .await;
+        if is_expert_team_conversation {
+            let before = visible_tool_defs.len();
+            chat_runtime_impl::filter_expert_team_director_tool_defs(&mut visible_tool_defs);
+            log::info!(
+                "[expert-team-tools] filtered director tools conv={} before={} after={}",
+                request.conversation_id,
+                before,
+                visible_tool_defs.len()
+            );
+        }
         {
             let agent_has_emp = visible_tool_defs
                 .iter()
@@ -3024,6 +3310,144 @@ pub struct TauriChatCommandAdapter {
     runtime: SessionRuntime,
     services: TauriChatServices,
     stopped_conversations_pending_drain: Arc<Mutex<HashSet<String>>>,
+    im_app_feedback: Option<Arc<IMAppFeedbackCoordinator>>,
+}
+
+struct GatewayRunActivityController {
+    gateway: Arc<LlmGateway>,
+}
+
+impl GatewayRunActivityController {
+    fn new(gateway: Arc<LlmGateway>) -> Self {
+        Self { gateway }
+    }
+}
+
+#[async_trait]
+impl RunActivityController for GatewayRunActivityController {
+    async fn suspend_for_user_interaction(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+    ) -> anyhow::Result<()> {
+        self.gateway.clear_task_for_run(session_id.as_str(), run_id);
+        Ok(())
+    }
+
+    async fn resume_after_user_interaction(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+        cancel: &CancellationToken,
+    ) -> anyhow::Result<()> {
+        loop {
+            if cancel.is_cancelled() {
+                return Ok(());
+            }
+            if self.gateway.active_run_id(session_id.as_str()).as_ref() == Some(run_id) {
+                return Ok(());
+            }
+            match self
+                .gateway
+                .set_busy_for_run(session_id.as_str(), run_id.clone())
+            {
+                Ok(()) => return Ok(()),
+                Err(err)
+                    if err.contains("already processing")
+                        || err.contains("Maximum concurrent conversations") =>
+                {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                Err(err) => return Err(anyhow::anyhow!(err)),
+            }
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionAskSnapshot {
+    pub conversation_id: String,
+    pub run_id: String,
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub message: String,
+    pub suggestions: Option<Vec<String>>,
+    pub mode: String,
+    pub remember_options: Option<Vec<String>>,
+    pub default_destination: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionRequiredSnapshot {
+    pub conversation_id: String,
+    pub run_id: String,
+    pub interaction_id: String,
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub kind: crate::runtime::interaction::InteractionKind,
+    pub payload: serde_json::Value,
+}
+
+fn permission_mode_to_frontend(mode: crate::runtime::tools::permission::PermissionMode) -> String {
+    match mode {
+        crate::runtime::tools::permission::PermissionMode::Default => "default",
+        crate::runtime::tools::permission::PermissionMode::Plan => "plan",
+        crate::runtime::tools::permission::PermissionMode::DontAsk => "dontAsk",
+        crate::runtime::tools::permission::PermissionMode::AcceptEdits => "acceptEdits",
+        crate::runtime::tools::permission::PermissionMode::FullAccess => "fullAccess",
+    }
+    .to_string()
+}
+
+fn permission_destination_to_frontend(
+    destination: crate::runtime::tools::permission::PermissionDestination,
+) -> String {
+    match destination {
+        crate::runtime::tools::permission::PermissionDestination::Session => "session",
+        crate::runtime::tools::permission::PermissionDestination::Workspace => "workspace",
+        crate::runtime::tools::permission::PermissionDestination::User => "user",
+    }
+    .to_string()
+}
+
+fn permission_request_to_snapshot(
+    request: crate::runtime::store::PendingPermissionRequest,
+) -> PermissionAskSnapshot {
+    PermissionAskSnapshot {
+        conversation_id: request.session_id.as_str().to_string(),
+        run_id: request.run_id.as_str().to_string(),
+        tool_call_id: request.tool_call_id.as_str().to_string(),
+        tool_name: request.tool_name,
+        message: request.message,
+        suggestions: Some(request.suggestions),
+        mode: permission_mode_to_frontend(request.mode),
+        remember_options: Some(
+            request
+                .remember_options
+                .into_iter()
+                .map(permission_destination_to_frontend)
+                .collect(),
+        ),
+        default_destination: request
+            .default_destination
+            .map(permission_destination_to_frontend),
+    }
+}
+
+fn interaction_request_to_snapshot(
+    request: crate::runtime::interaction::InteractionRequest,
+) -> InteractionRequiredSnapshot {
+    InteractionRequiredSnapshot {
+        conversation_id: request.session_id.as_str().to_string(),
+        run_id: request.run_id.as_str().to_string(),
+        interaction_id: request.interaction_id.as_str().to_string(),
+        tool_call_id: request.tool_call_id.as_str().to_string(),
+        tool_name: request.tool_name,
+        kind: request.kind,
+        payload: request.payload,
+    }
 }
 
 fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
@@ -3136,7 +3560,10 @@ impl TauriChatCommandAdapter {
             bus,
             llm_executor,
         )
-        .with_permission_store(permission_store);
+        .with_permission_store(permission_store)
+        .with_run_activity_controller(Arc::new(GatewayRunActivityController::new(
+            services.gateway.clone(),
+        )));
         if let Some(home) = services.app.try_state::<Arc<crate::storage::AiJiaHome>>() {
             runtime = runtime.with_default_folder(home.default_folder());
         }
@@ -3221,6 +3648,23 @@ impl TauriChatCommandAdapter {
             runtime,
             services,
             stopped_conversations_pending_drain: Arc::new(Mutex::new(HashSet::new())),
+            im_app_feedback: None,
+        }
+    }
+
+    pub fn with_im_app_feedback(mut self, feedback: Arc<IMAppFeedbackCoordinator>) -> Self {
+        self.im_app_feedback = Some(feedback);
+        self
+    }
+
+    async fn deliver_im_app_feedback(
+        feedback: Arc<IMAppFeedbackCoordinator>,
+        route: crate::connector::im::shared::app_feedback::AppFeedbackRoute,
+        decision: AppFeedbackDecision,
+    ) {
+        let message = feedback_message(decision);
+        if let Err(err) = feedback.deliver(route, message).await {
+            log::warn!("[chat] failed to deliver IM app feedback: {:#}", err);
         }
     }
 
@@ -3439,6 +3883,39 @@ impl TauriChatCommandAdapter {
         Ok(crate::runtime::agenda::AgendaStore::new(paths.base_dir()))
     }
 
+    fn fail_running_agenda_occurrences_for_conversation(&self, conversation_id: &str) {
+        let store = match self.agenda_store_for_current_user() {
+            Ok(store) => store,
+            Err(err) => {
+                log::warn!(
+                    "[agenda-dispatch] skip stop occurrence cleanup conv={} err={}",
+                    conversation_id,
+                    err
+                );
+                return;
+            }
+        };
+        match store
+            .fail_running_occurrences_for_conversation(conversation_id, "用户停止任务".to_string())
+        {
+            Ok(count) if count > 0 => {
+                log::info!(
+                    "[agenda-dispatch] marked {} running occurrence(s) failed for stopped conv={}",
+                    count,
+                    conversation_id
+                );
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!(
+                    "[agenda-dispatch] failed to mark stopped occurrence conv={} err={}",
+                    conversation_id,
+                    err
+                );
+            }
+        }
+    }
+
     /// 返回当前 workspace 根目录，供 ChannelManager 等调用方构造下载目录。
     pub fn workspace_path(&self) -> std::path::PathBuf {
         self.services.file_mgr.workspace_path().to_path_buf()
@@ -3576,6 +4053,17 @@ impl TauriChatCommandAdapter {
     /// 保留其中的 `run_id`，用于外部需要在发送前注册 run_id 的场景（如 DingtalkReplyManager）。
     #[tracing::instrument(skip_all)]
     pub async fn send_chat_request(&self, request: ChatTurnRequest) -> Result<(), String> {
+        if let Some(registry) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::human_interaction::RunOutputBindingRegistry>>()
+        {
+            registry.inner().register(
+                &request.conversation_id,
+                &request.run_id,
+                request.output_binding.clone(),
+            );
+        }
         let conversation_id = request.conversation_id.as_str().to_string();
         let run_id = request.run_id.clone();
         self.services
@@ -3642,6 +4130,21 @@ impl TauriChatCommandAdapter {
         result
     }
 
+    fn default_permission_mode_from_settings(
+        &self,
+    ) -> crate::runtime::tools::permission::PermissionMode {
+        let map = self.services.db().get_all_settings().unwrap_or_default();
+        let settings = if map.is_empty() {
+            AppSettings::default()
+        } else {
+            AppSettings::from_string_map(&map)
+        };
+        match settings.default_permission_mode.as_str() {
+            "fullAccess" => crate::runtime::tools::permission::PermissionMode::FullAccess,
+            _ => crate::runtime::tools::permission::PermissionMode::Default,
+        }
+    }
+
     pub async fn send_message(
         &self,
         conversation_id: String,
@@ -3659,6 +4162,11 @@ impl TauriChatCommandAdapter {
             content.len(),
             attachments.len()
         );
+        let Some(_send_message_inflight_guard) =
+            SendMessageInFlightGuard::enter(&conversation_id, client_message_id.as_deref())
+        else {
+            return Ok(());
+        };
         for att in &attachments {
             log::debug!(
                 "[send_message] attachment: name={} path={} kind={} type={}",
@@ -3672,6 +4180,7 @@ impl TauriChatCommandAdapter {
         // Pending queue gate: if the session is busy, enqueue this message
         // instead of returning "already processing". Chips will appear in the
         // UI; drain will merge it into the next turn.
+        let mut direct_dispatch_pending_mgr = None;
         if let Some(mgr_state) = self
             .services
             .app
@@ -3694,6 +4203,8 @@ impl TauriChatCommandAdapter {
                     .collect(),
                 skill_command: skill_command.clone(),
                 received_at: chrono::Utc::now().to_rfc3339(),
+                origin: Default::default(),
+                output_binding: Default::default(),
             };
             let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
             let outcome = pending_mgr
@@ -3704,6 +4215,7 @@ impl TauriChatCommandAdapter {
                 crate::runtime::pending::EnqueueOutcome::SentDirectly { .. } => {
                     // Fall through to the existing send path (which preserves
                     // skill_id / agent_name / permission_mode / client_message_id).
+                    direct_dispatch_pending_mgr = Some(pending_mgr.clone());
                 }
                 crate::runtime::pending::EnqueueOutcome::Queued { snapshot } => {
                     log::info!(
@@ -3712,6 +4224,9 @@ impl TauriChatCommandAdapter {
                         snapshot.len()
                     );
                     return Ok(());
+                }
+                crate::runtime::pending::EnqueueOutcome::HeldForHumanInteraction { .. } => {
+                    direct_dispatch_pending_mgr = Some(pending_mgr.clone());
                 }
                 crate::runtime::pending::EnqueueOutcome::Rejected { reason } => {
                     return Err(match reason {
@@ -3726,6 +4241,8 @@ impl TauriChatCommandAdapter {
             }
         }
 
+        let effective_permission_mode =
+            permission_mode.unwrap_or_else(|| self.default_permission_mode_from_settings());
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         request.skill_command = skill_command;
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
@@ -3746,10 +4263,16 @@ impl TauriChatCommandAdapter {
         );
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
-        if let Some(permission_mode) = permission_mode {
-            request.permission_mode = permission_mode;
+        request.permission_mode = effective_permission_mode;
+        let result = self.run_chat_request_internal(request).await;
+        if result.is_err() {
+            if let Some(pending_mgr) = direct_dispatch_pending_mgr {
+                pending_mgr
+                    .release_direct_dispatch(&crate::runtime::ids::SessionId::new(conversation_id))
+                    .await;
+            }
         }
-        self.run_chat_request_internal(request).await
+        result
     }
 
     pub async fn send_message_with_overrides(
@@ -3773,7 +4296,8 @@ impl TauriChatCommandAdapter {
         }
         request.agent_name = agent_name;
         request.persona_id_override = persona_id_override;
-        request.permission_mode = permission_mode.unwrap_or_default();
+        request.permission_mode =
+            permission_mode.unwrap_or_else(|| self.default_permission_mode_from_settings());
         request.client_message_id = client_message_id;
 
         let captured_run_id = request.run_id.clone();
@@ -3927,6 +4451,7 @@ impl TauriChatCommandAdapter {
             &session_id,
             crate::runtime::cancellation::CancellationReason::Interrupt,
         );
+        self.fail_running_agenda_occurrences_for_conversation(&conversation_id);
         conversation_service::stop_streaming(self.services.gateway.clone(), conversation_id).await
     }
 
@@ -3936,6 +4461,7 @@ impl TauriChatCommandAdapter {
         updated_input: Option<serde_json::Value>,
         remember: Option<bool>,
         destination: Option<PermissionDestination>,
+        message: Option<String>,
     ) -> Result<(), String> {
         log::info!(
             "[approve_permission_request] tool_call_id={} remember={:?} destination={:?}",
@@ -3943,16 +4469,35 @@ impl TauriChatCommandAdapter {
             remember,
             destination
         );
-        self.runtime
-            .resolve_permission_request(
-                &ToolCallId::new(tool_call_id),
-                PendingPermissionResolution::Allow {
-                    updated_input,
-                    remember: remember.unwrap_or(false),
-                    destination,
-                },
-            )
-            .map_err(|e| e.to_string())
+        let tool_call = ToolCallId::new(tool_call_id);
+        let pending_before = self.runtime.pending_permission_request_by_id(&tool_call);
+        let remember_value = remember.unwrap_or(false);
+        let result = self.runtime.resolve_permission_request(
+            &tool_call,
+            PendingPermissionResolution::Allow {
+                updated_input,
+                remember: remember_value,
+                destination,
+                message,
+                path_auth_scope_override: None,
+            },
+        );
+        if result.is_ok() {
+            if let (Some(feedback), Some(_pending)) = (self.im_app_feedback.clone(), pending_before)
+            {
+                if let Some(route) = feedback.take_permission(&tool_call) {
+                    Self::deliver_im_app_feedback(
+                        feedback,
+                        route,
+                        AppFeedbackDecision::PermissionAllow {
+                            remember: remember_value,
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn deny_permission_request(
@@ -3968,17 +4513,32 @@ impl TauriChatCommandAdapter {
             remember,
             destination
         );
-        self.runtime
-            .resolve_permission_request(
-                &ToolCallId::new(tool_call_id),
-                PendingPermissionResolution::Deny {
-                    message: message
-                        .unwrap_or_else(|| "Permission request denied by user.".to_string()),
-                    remember: remember.unwrap_or(false),
-                    destination,
-                },
-            )
-            .map_err(|e| e.to_string())
+        let tool_call = ToolCallId::new(tool_call_id);
+        let pending_before = self.runtime.pending_permission_request_by_id(&tool_call);
+        let result = self.runtime.resolve_permission_request(
+            &tool_call,
+            PendingPermissionResolution::Deny {
+                message: message
+                    .unwrap_or_else(|| "Permission request denied by user.".to_string()),
+                remember: remember.unwrap_or(false),
+                destination,
+                path_auth_scope_override: None,
+            },
+        );
+        if result.is_ok() {
+            if let (Some(feedback), Some(_pending)) = (self.im_app_feedback.clone(), pending_before)
+            {
+                if let Some(route) = feedback.take_permission(&tool_call) {
+                    Self::deliver_im_app_feedback(
+                        feedback,
+                        route,
+                        AppFeedbackDecision::PermissionDeny,
+                    )
+                    .await;
+                }
+            }
+        }
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn cancel_permission_request(
@@ -3986,15 +4546,55 @@ impl TauriChatCommandAdapter {
         tool_call_id: String,
         message: Option<String>,
     ) -> Result<(), String> {
-        self.runtime
-            .resolve_permission_request(
-                &ToolCallId::new(tool_call_id),
-                PendingPermissionResolution::Cancel {
-                    message: message
-                        .unwrap_or_else(|| "Permission request cancelled by user.".to_string()),
-                },
-            )
-            .map_err(|e| e.to_string())
+        let tool_call = ToolCallId::new(tool_call_id);
+        let pending_before = self.runtime.pending_permission_request_by_id(&tool_call);
+        let result = self.runtime.resolve_permission_request(
+            &tool_call,
+            PendingPermissionResolution::Cancel {
+                message: message
+                    .unwrap_or_else(|| "Permission request cancelled by user.".to_string()),
+            },
+        );
+        if result.is_ok() {
+            if let (Some(feedback), Some(_pending)) = (self.im_app_feedback.clone(), pending_before)
+            {
+                if let Some(route) = feedback.take_permission(&tool_call) {
+                    Self::deliver_im_app_feedback(
+                        feedback,
+                        route,
+                        AppFeedbackDecision::PermissionCancel,
+                    )
+                    .await;
+                }
+            }
+        }
+        result.map_err(|e| e.to_string())
+    }
+
+    pub async fn pending_permission_snapshot_for_session(
+        &self,
+        session_id: String,
+    ) -> Result<Vec<PermissionAskSnapshot>, String> {
+        let session_id = SessionId::new(session_id);
+        Ok(self
+            .runtime
+            .pending_permission_requests_for_session(&session_id)
+            .into_iter()
+            .map(permission_request_to_snapshot)
+            .collect())
+    }
+
+    pub async fn pending_interaction_snapshot_for_session(
+        &self,
+        session_id: String,
+    ) -> Result<Vec<InteractionRequiredSnapshot>, String> {
+        let session_id = SessionId::new(session_id);
+        Ok(self
+            .runtime
+            .pending_interaction_requests_for_session(&session_id)
+            .into_iter()
+            .map(interaction_request_to_snapshot)
+            .collect())
     }
 
     pub async fn submit_user_interaction(
@@ -4002,12 +4602,26 @@ impl TauriChatCommandAdapter {
         interaction_id: String,
         value: serde_json::Value,
     ) -> Result<(), String> {
-        self.runtime
-            .resolve_interaction_request(
-                &crate::runtime::interaction::InteractionId::new(interaction_id),
-                crate::runtime::interaction::InteractionResolution::Submit { value },
-            )
-            .map_err(|e| e.to_string())
+        let interaction = crate::runtime::interaction::InteractionId::new(interaction_id);
+        let pending_before = self.runtime.pending_interaction_request_by_id(&interaction);
+        let result = self.runtime.resolve_interaction_request(
+            &interaction,
+            crate::runtime::interaction::InteractionResolution::Submit { value },
+        );
+        if result.is_ok() {
+            if let (Some(feedback), Some(_pending)) = (self.im_app_feedback.clone(), pending_before)
+            {
+                if let Some(route) = feedback.take_interaction(&interaction) {
+                    Self::deliver_im_app_feedback(
+                        feedback,
+                        route,
+                        AppFeedbackDecision::InteractionSubmit,
+                    )
+                    .await;
+                }
+            }
+        }
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn cancel_user_interaction(
@@ -4015,14 +4629,28 @@ impl TauriChatCommandAdapter {
         interaction_id: String,
         message: Option<String>,
     ) -> Result<(), String> {
-        self.runtime
-            .resolve_interaction_request(
-                &crate::runtime::interaction::InteractionId::new(interaction_id),
-                crate::runtime::interaction::InteractionResolution::Cancel {
-                    message: message.unwrap_or_else(|| "User cancelled.".to_string()),
-                },
-            )
-            .map_err(|e| e.to_string())
+        let interaction = crate::runtime::interaction::InteractionId::new(interaction_id);
+        let pending_before = self.runtime.pending_interaction_request_by_id(&interaction);
+        let result = self.runtime.resolve_interaction_request(
+            &interaction,
+            crate::runtime::interaction::InteractionResolution::Cancel {
+                message: message.unwrap_or_else(|| "User cancelled.".to_string()),
+            },
+        );
+        if result.is_ok() {
+            if let (Some(feedback), Some(_pending)) = (self.im_app_feedback.clone(), pending_before)
+            {
+                if let Some(route) = feedback.take_interaction(&interaction) {
+                    Self::deliver_im_app_feedback(
+                        feedback,
+                        route,
+                        AppFeedbackDecision::InteractionCancel,
+                    )
+                    .await;
+                }
+            }
+        }
+        result.map_err(|e| e.to_string())
     }
 
     pub async fn get_messages(
@@ -4564,15 +5192,21 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
 
 #[cfg(test)]
 mod agenda_dispatch_prompt_tests {
-    use chrono::{TimeZone, Utc};
+    use chrono::{Datelike, Local, TimeZone, Utc};
 
     #[test]
     fn agenda_trigger_label_includes_local_planned_weekday() {
         let planned = Utc.with_ymd_and_hms(2026, 6, 9, 1, 43, 38).unwrap();
+        let local = planned.with_timezone(&Local);
+        let weekday_cn = crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(local.weekday());
         let label = super::format_agenda_trigger_label("门店巡检", planned);
 
         assert!(label.contains("计划触发时间（UTC）：2026-06-09 01:43:38 UTC"));
-        assert!(label.contains("计划触发时间（本地）：2026-06-09 09:43:38 星期二"));
+        assert!(label.contains(&format!(
+            "计划触发时间（本地）：{} {}",
+            local.format("%Y-%m-%d %H:%M:%S"),
+            weekday_cn
+        )));
         assert!(label.contains("任务描述中的每周几是规则描述，不代表本次触发当天星期"));
     }
 }
@@ -5296,5 +5930,39 @@ mod stop_reason_tests {
         clear_auto_title_inflight(conversation_id);
         assert!(try_mark_auto_title_inflight(conversation_id));
         clear_auto_title_inflight(conversation_id);
+    }
+}
+
+#[cfg(test)]
+mod send_message_idempotency_tests {
+    use super::{clear_send_message_inflight, try_mark_send_message_inflight};
+
+    #[test]
+    fn same_client_message_id_is_inflight_until_cleared() {
+        let conversation_id = "conv-send-idempotent";
+        let client_message_id = "client-message-1";
+        clear_send_message_inflight(conversation_id, client_message_id);
+
+        assert!(try_mark_send_message_inflight(
+            conversation_id,
+            Some(client_message_id),
+        ));
+        assert!(
+            !try_mark_send_message_inflight(conversation_id, Some(client_message_id)),
+            "second send_message with the same clientMessageId should be treated as a duplicate",
+        );
+
+        clear_send_message_inflight(conversation_id, client_message_id);
+        assert!(try_mark_send_message_inflight(
+            conversation_id,
+            Some(client_message_id),
+        ));
+        clear_send_message_inflight(conversation_id, client_message_id);
+    }
+
+    #[test]
+    fn missing_client_message_id_is_not_deduped() {
+        assert!(try_mark_send_message_inflight("conv-no-client-id", None));
+        assert!(try_mark_send_message_inflight("conv-no-client-id", None));
     }
 }

@@ -46,7 +46,6 @@ impl RuntimeLlmExecutor for CountingSettingsExecutor {
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
             context_window: None,
-            masking_level: "strict".to_string(),
         })
     }
 

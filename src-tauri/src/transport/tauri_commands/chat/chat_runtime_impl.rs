@@ -89,6 +89,25 @@ pub async fn build_visible_tool_defs(
     }
 }
 
+pub(crate) const EXPERT_TEAM_DIRECTOR_ALLOWED_TOOLS: &[&str] =
+    &["TeamCreate", "TeamDelete", "Agent", "SendMessage"];
+
+pub(crate) fn is_expert_team_director_allowed_tool(tool_name: &str) -> bool {
+    EXPERT_TEAM_DIRECTOR_ALLOWED_TOOLS.contains(&tool_name)
+}
+
+pub(crate) fn filter_expert_team_director_tool_defs(
+    defs: &mut Vec<crate::llm::streaming::ToolDefinition>,
+) {
+    defs.retain(|def| is_expert_team_director_allowed_tool(def.name.as_str()));
+}
+
+pub(crate) fn filter_expert_team_director_allowed_tools(
+    allowed_tools: &mut std::collections::HashSet<String>,
+) {
+    allowed_tools.retain(|name| is_expert_team_director_allowed_tool(name.as_str()));
+}
+
 /// Build a [`ToolDescriptionContext`] from app state.
 ///
 /// Reads:
@@ -483,6 +502,77 @@ mod tests {
             "all allowed tools are workspace-scoped, expect empty after double filter; got {:?}",
             names
         );
+    }
+
+    #[tokio::test]
+    async fn expert_team_director_filter_removes_task_polling_tools_but_keeps_team_tools() {
+        let registry = ToolRegistry::new();
+        register_builtin_tools(&registry).await;
+
+        let mut defs = build_visible_tool_defs(
+            &registry,
+            true,
+            ToolSchemaFilter::DailyWhitelist,
+            &crate::runtime::tools::ToolDescriptionContext::empty(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
+        filter_expert_team_director_tool_defs(&mut defs);
+
+        let names: std::collections::HashSet<&str> =
+            defs.iter().map(|def| def.name.as_str()).collect();
+        for blocked in [
+            "AskUserQuestion",
+            "TaskCreate",
+            "TaskUpdate",
+            "TaskList",
+            "TaskGet",
+            "TaskClaim",
+            "TaskStop",
+            "TaskOutput",
+            "Bash",
+            "Read",
+            "Write",
+            "Edit",
+            "Glob",
+            "Grep",
+        ] {
+            assert!(
+                !names.contains(blocked),
+                "expert-team Lead should not see {blocked}; got {names:?}"
+            );
+        }
+        for allowed in EXPERT_TEAM_DIRECTOR_ALLOWED_TOOLS {
+            assert!(
+                names.contains(allowed),
+                "expert-team Lead still needs {allowed}; got {names:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn expert_team_director_filter_removes_blocked_tools_from_runtime_allowlist() {
+        let mut allowed = std::collections::HashSet::from([
+            "Agent".to_string(),
+            "TaskOutput".to_string(),
+            "TaskCreate".to_string(),
+            "TeamCreate".to_string(),
+            "TeamDelete".to_string(),
+            "SendMessage".to_string(),
+            "Bash".to_string(),
+            "Read".to_string(),
+        ]);
+
+        filter_expert_team_director_allowed_tools(&mut allowed);
+
+        assert!(!allowed.contains("TaskOutput"));
+        assert!(!allowed.contains("TaskCreate"));
+        assert!(!allowed.contains("Bash"));
+        assert!(!allowed.contains("Read"));
+        assert!(allowed.contains("Agent"));
+        assert!(allowed.contains("TeamCreate"));
+        assert!(allowed.contains("TeamDelete"));
+        assert!(allowed.contains("SendMessage"));
     }
 
     #[test]

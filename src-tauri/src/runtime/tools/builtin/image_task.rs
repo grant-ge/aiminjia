@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 use crate::auth::AuthManager;
 use crate::plugin::tool_trait::FileMeta;
 use crate::runtime::path_auth::PathOp;
+use crate::runtime::store::AuthorizedWorkspaceRef;
 use crate::runtime::tools::builtin::workspace::{
     check_path_permission, resolve_and_authorize_path,
 };
@@ -25,6 +26,7 @@ use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::PermissionDecision;
 use crate::runtime::tools::RuntimeTool;
 use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::types::FileStorageRoot;
 use crate::storage::file_store::AppStorage;
 
 const TOOL_NAME: &str = "ImageTask";
@@ -38,6 +40,7 @@ pub struct ImageTaskDeps {
     pub storage: Arc<AppStorage>,
     pub file_manager: Arc<FileManager>,
     pub workspace_path: std::path::PathBuf,
+    pub authorized_workspace: Option<AuthorizedWorkspaceRef>,
     pub conversation_id: String,
     pub run_id: Option<String>,
     pub gateway_base_url: Option<String>,
@@ -151,31 +154,36 @@ impl ImageTaskRuntimeTool {
             .ok_or_else(|| {
                 validation_error("each input image requires file_path or file_id".to_string())
             })?;
-        let stored_path = self.resolve_file_id_stored_path(file_id)?.ok_or_else(|| {
+        let record = self.resolve_file_id_record(file_id)?.ok_or_else(|| {
             validation_error(format!(
                 "input image file_id not found in this conversation: {file_id}"
             ))
         })?;
-        self.resolve_stored_path_to_existing_file(&stored_path)
+        self.resolve_record_to_existing_file(&record)
     }
 
     fn resolve_file_id_stored_path(&self, file_id: &str) -> Result<Option<String>, ToolError> {
+        Ok(self
+            .resolve_file_id_record(file_id)?
+            .as_ref()
+            .and_then(stored_path_from_record))
+    }
+
+    fn resolve_file_id_record(&self, file_id: &str) -> Result<Option<Value>, ToolError> {
         let conversation_id = self.deps.conversation_id.as_str();
         let uploaded = self
             .deps
             .storage
             .get_uploaded_file_for_conversation(file_id, conversation_id)
             .map_err(|err| ToolError::ExecutionFailed(format!("file lookup failed: {err}")))?;
-        if let Some(path) = uploaded.as_ref().and_then(stored_path_from_record) {
-            return Ok(Some(path));
+        if uploaded.is_some() {
+            return Ok(uploaded);
         }
 
-        let generated = self
-            .deps
+        self.deps
             .storage
             .get_generated_file_for_conversation(file_id, conversation_id)
-            .map_err(|err| ToolError::ExecutionFailed(format!("file lookup failed: {err}")))?;
-        Ok(generated.as_ref().and_then(stored_path_from_record))
+            .map_err(|err| ToolError::ExecutionFailed(format!("file lookup failed: {err}")))
     }
 
     fn conversation_dir(&self) -> std::path::PathBuf {
@@ -184,6 +192,32 @@ impl ImageTaskRuntimeTool {
             .base_dir()
             .join("conversations")
             .join(&self.deps.conversation_id)
+    }
+
+    fn output_storage_root(&self) -> (std::path::PathBuf, FileStorageRoot) {
+        if let Some(workspace) = &self.deps.authorized_workspace {
+            let kind = if workspace.id == "default" {
+                "defaultFolder"
+            } else {
+                "authorizedWorkspace"
+            };
+            return (
+                workspace.root_path.clone(),
+                FileStorageRoot {
+                    kind: kind.to_string(),
+                    path: workspace.root_path.clone(),
+                    display_name: Some(workspace.display_name.clone()),
+                },
+            );
+        }
+        (
+            self.deps.workspace_path.clone(),
+            FileStorageRoot {
+                kind: "workspacePath".to_string(),
+                path: self.deps.workspace_path.clone(),
+                display_name: None,
+            },
+        )
     }
 
     fn resolve_stored_path_to_existing_file(
@@ -198,6 +232,28 @@ impl ImageTaskRuntimeTool {
             .file_manager
             .resolve_existing_file(stored_path)
             .map_err(|err| ToolError::ExecutionFailed(format!("stored file unavailable: {err}")))
+    }
+
+    fn resolve_record_to_existing_file(
+        &self,
+        record: &Value,
+    ) -> Result<std::path::PathBuf, ToolError> {
+        let stored_path = stored_path_from_record(record).ok_or_else(|| {
+            ToolError::ExecutionFailed("file record missing storedPath".to_string())
+        })?;
+        let storage_scope = record
+            .get("storageScope")
+            .or_else(|| record.get("storage_scope"))
+            .and_then(Value::as_str)
+            .unwrap_or("conversation");
+        if storage_scope == "workspace" {
+            if let Some(root) = record_storage_root_path(record) {
+                return FileManager::resolve_existing_file_under_root(&root, &stored_path).map_err(
+                    |err| ToolError::ExecutionFailed(format!("stored file unavailable: {err}")),
+                );
+            }
+        }
+        self.resolve_stored_path_to_existing_file(&stored_path)
     }
 
     async fn post_image_task(
@@ -273,9 +329,11 @@ impl ImageTaskRuntimeTool {
                 input.output.format.as_deref(),
             );
             let file_name = generated_file_name(response.task_id.as_deref(), idx, &ext);
+            let (output_root, storage_root) = self.output_storage_root();
+            let output_subdir = format!("generated/{}/images", self.deps.conversation_id);
             let info = FileManager::write_file_under_root(
-                self.conversation_dir(),
-                "generated/images",
+                &output_root,
+                &output_subdir,
                 &file_name,
                 &bytes,
             )
@@ -290,7 +348,7 @@ impl ImageTaskRuntimeTool {
             );
             self.deps
                 .storage
-                .insert_generated_file(
+                .insert_generated_file_with_storage(
                     &file_id,
                     &self.deps.conversation_id,
                     None,
@@ -305,6 +363,8 @@ impl ImageTaskRuntimeTool {
                     None,
                     None,
                     None,
+                    "workspace",
+                    Some(storage_root),
                 )
                 .map_err(|err| {
                     ToolError::ExecutionFailed(format!(
@@ -781,6 +841,16 @@ fn stored_path_from_record(record: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+fn record_storage_root_path(record: &Value) -> Option<std::path::PathBuf> {
+    record
+        .get("storageRoot")
+        .or_else(|| record.get("storage_root"))
+        .and_then(|value| value.get("path"))
+        .and_then(Value::as_str)
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+}
+
 fn decode_image_data(data: &str) -> Result<(Vec<u8>, Option<String>), ToolError> {
     let trimmed = data.trim();
     let (payload, mime_type) = if let Some(rest) = trimmed.strip_prefix("data:") {
@@ -1036,6 +1106,11 @@ mod tests {
             storage: storage.clone(),
             file_manager,
             workspace_path: workspace_dir.path().to_path_buf(),
+            authorized_workspace: Some(AuthorizedWorkspaceRef {
+                id: "test-workspace".to_string(),
+                root_path: workspace_dir.path().to_path_buf(),
+                display_name: "Test workspace".to_string(),
+            }),
             conversation_id: "conv-1".to_string(),
             run_id: Some("run-1".to_string()),
             gateway_base_url: None,
@@ -1066,15 +1141,20 @@ mod tests {
         let files = tool.persist_output_assets(&input, &response).await.unwrap();
 
         assert_eq!(files.len(), 1);
-        let full_path = storage_dir
-            .path()
-            .join("conversations")
-            .join("conv-1")
-            .join(&files[0].stored_path);
+        assert!(
+            files[0].stored_path.starts_with("generated/conv-1/images/"),
+            "ImageTask outputs should be conversation-namespaced inside the workspace"
+        );
+        let full_path = workspace_dir.path().join(&files[0].stored_path);
         assert_eq!(std::fs::read(full_path).unwrap(), vec![1_u8, 2, 3]);
         assert!(
-            !workspace_dir.path().join(&files[0].stored_path).exists(),
-            "new ImageTask outputs should not be written to the workspace root"
+            !storage_dir
+                .path()
+                .join("conversations")
+                .join("conv-1")
+                .join(&files[0].stored_path)
+                .exists(),
+            "new ImageTask outputs should not be written to the conversation directory"
         );
         let record = storage
             .get_generated_file_for_conversation(&files[0].file_id, "conv-1")
@@ -1082,6 +1162,12 @@ mod tests {
             .expect("registered generated file");
         assert_eq!(record["category"], "image");
         assert_eq!(record["fileType"], "png");
+        assert_eq!(record["storageScope"], "workspace");
+        let workspace_root = workspace_dir.path().to_string_lossy().to_string();
+        assert_eq!(
+            record["storageRoot"]["path"].as_str(),
+            Some(workspace_root.as_str())
+        );
     }
 
     #[tokio::test]
@@ -1098,6 +1184,11 @@ mod tests {
             storage: storage.clone(),
             file_manager,
             workspace_path: workspace_dir.path().to_path_buf(),
+            authorized_workspace: Some(AuthorizedWorkspaceRef {
+                id: "test-workspace".to_string(),
+                root_path: workspace_dir.path().to_path_buf(),
+                display_name: "Test workspace".to_string(),
+            }),
             conversation_id: "conv-1".to_string(),
             run_id: Some("run-1".to_string()),
             gateway_base_url: None,

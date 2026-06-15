@@ -5,6 +5,9 @@
 //!   no turn is active (no file, or file doesn't exist).  Source of truth is
 //!   in-memory in the driver; this disk read serves the cross-process /
 //!   webview-reload path.
+//! - `clear_active_turn_stage(conversationId)` — remove a stale snapshot after
+//!   the user chooses to stop a recovered turn that no longer has live runtime
+//!   state.
 //!
 //! Path is resolved user-scoped (`users/{scope}/turn_stages/{conv_id}.json`)
 //! via `CurrentUserStorage`; returns `None` when no user is logged in.
@@ -34,5 +37,21 @@ pub async fn get_active_turn_stage(
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("read turn_stage.json failed: {e}")),
+    }
+}
+
+#[tauri::command]
+pub async fn clear_active_turn_stage(
+    current_user: tauri::State<'_, Arc<CurrentUserStorage>>,
+    conversation_id: String,
+) -> Result<(), String> {
+    let Some(paths) = current_user.resolve_paths() else {
+        return Ok(());
+    };
+    let path = paths.turn_stage_path(&conversation_id);
+    match std::fs::remove_file(&path) {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("clear turn_stage.json failed: {e}")),
     }
 }

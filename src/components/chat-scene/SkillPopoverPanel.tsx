@@ -15,6 +15,7 @@ import { ChevronRight, CornerDownLeft, Search, Settings2 } from 'lucide-react'
 
 import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/skillVisual'
 import { useUiStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
 
 export interface SkillPopoverItem {
   id: string
@@ -156,7 +157,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
               const iconBg = getSkillCategoryBg(it.category)
               return (
                 <li key={it.id}>
-                  <button
+                  <Button unstyled
                     type="button"
                     role="option"
                     aria-selected={isActive}
@@ -196,14 +197,14 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
                         <CornerDownLeft className="h-3 w-3" />
                       </span>
                     ) : null}
-                  </button>
+                  </Button>
                 </li>
               )
             })}
           </ul>
         )}
       </div>
-      <button
+      <Button unstyled
         type="button"
         onClick={handleOpenSkillCenter}
         data-testid="skill-popover-explore"
@@ -212,7 +213,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
         <Settings2 className="h-4 w-4 shrink-0" />
         <span className="flex-1">{t('skillPopover.exploreAndManage')}</span>
         <ChevronRight className="h-4 w-4 shrink-0" />
-      </button>
+      </Button>
     </div>
   )
 }

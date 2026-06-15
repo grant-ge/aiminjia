@@ -55,6 +55,7 @@ const REC3 = { id: 'rec3', displayName: '推荐3', description: 'd', source: 'bu
 const REC4 = { id: 'rec4', displayName: '推荐4', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r4', shortDescriptionEn: 's', updatedAt: null, enabled: true }
 const TENANT_SKILL = { id: 'tenant-policy', displayName: '企业制度问答', description: '企业下发', source: 'tenant', hasWorkflow: false, icon: 'building', category: 'general', triggerText: '/tenant-policy', shortDescription: '制度问答', displayNameEn: 'Policy Q&A', shortDescriptionEn: 'policy', updatedAt: null, enabled: false }
 const USER_SKILL = { id: 'local-report', displayName: '本地日报', description: '本地导入', source: 'user', hasWorkflow: false, icon: 'file-text', category: 'ops', triggerText: '/local-report', shortDescription: '本地日报', displayNameEn: 'Local Report', shortDescriptionEn: 'local report', updatedAt: null, enabled: false }
+const BID_WRITING = { id: 'bid-writing', displayName: '标书撰写工作流', description: 'd', source: 'builtin', hasWorkflow: false, icon: '', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'Bid Writing', shortDescriptionEn: 's', updatedAt: null, enabled: true }
 
 const MARKET_NEW = { id: 101, pluginId: 'deep-research', name: '深入研究', description: '通过来源验证生成研究报告', category: 'general', icon: 'search', version: '1.0', scope: 'public', status: 'published', downloads: 22000, featured: true, packageSize: 128, tenantName: '', createdAt: '2026-06-10T00:00:00Z' }
 const MARKET_ADDED = { id: 102, pluginId: 'local-report', name: '本地日报', description: '已添加的市场技能', category: 'ops', icon: 'file-text', version: '1.0', scope: 'tenant', status: 'published', downloads: 100, featured: false, packageSize: 128, tenantName: 'ACME', createdAt: '2026-06-10T00:00:00Z' }
@@ -94,7 +95,8 @@ describe('SkillCenterPage', () => {
   it('顶栏渲染标题、技能数量徽章和搜索框', () => {
     const { container } = render(<SkillCenterPage />)
     const topBar = container.querySelector('header[data-tauri-drag-region]')
-    expect(topBar).toHaveClass('h-14')
+    expect(topBar).toHaveClass('h-12')
+    expect(topBar).not.toHaveClass('h-14')
     expect(topBar).not.toHaveClass('h-[45px]')
     expect(screen.getByText('技能中心')).toBeInTheDocument()
     expect(screen.getByText(/7 个技能/)).toBeInTheDocument()
@@ -212,6 +214,27 @@ describe('SkillCenterPage', () => {
 
     expect(screen.getAllByText('创建技能').length).toBeGreaterThan(0)
     expect(screen.queryByText('推荐1')).toBeNull()
+  })
+
+  it('按技能 id 命中本地图标资源', () => {
+    seedStore({ skills: [BID_WRITING], recommendedIds: ['bid-writing'] })
+
+    render(<SkillCenterPage />)
+    fireEvent.click(screen.getByRole('button', { name: '内置' }))
+
+    const card = screen.getByTestId('skill-card')
+    const image = card.querySelector('img')
+    expect(image).toHaveAttribute('src', '/skill-avatars/bid-writing.jpg')
+  })
+
+  it('未命中图标时使用浅金底和金色文字 fallback', () => {
+    seedStore({ skills: [REC1], recommendedIds: ['rec1'] })
+
+    render(<SkillCenterPage />)
+    fireEvent.click(screen.getByRole('button', { name: '内置' }))
+
+    expect(screen.getByTestId('skill-card-avatar')).toHaveClass('bg-[#fbeed8]', 'text-[#d19b00]')
+    expect(screen.getByTestId('skill-card-fallback-avatar')).toHaveTextContent('推')
   })
 
   it('英文环境下用技能英文名称和简介渲染卡片', async () => {

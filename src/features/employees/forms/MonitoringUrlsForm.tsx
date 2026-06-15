@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface Row {
   name: string
@@ -94,7 +94,7 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
               data-aijia-resource-field="tags"
               className="w-44"
             />
-            <button
+            <Button unstyled
               type="button"
               onClick={() => removeRow(i)}
               data-aijia-resource-action="remove-row"
@@ -102,19 +102,19 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
               className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-30"
             >
               <Trash2 className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         ))}
       </div>
 
-      <button
+      <Button unstyled
         type="button"
         onClick={addRow}
         data-aijia-resource-action="add-row"
         className="flex items-center gap-1 self-start text-xs text-primary hover:underline"
       >
         <Plus className="h-3 w-3" /> {t('employee.config.monitoringUrls.addRow')}
-      </button>
+      </Button>
 
       <div className="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" data-aijia-resource-action="cancel" onClick={onCancel}>

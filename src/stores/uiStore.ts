@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import type { PermissionMode } from '@/lib/tauri'
+
 export type Route =
   | { kind: 'home' }
   | { kind: 'employees' }
@@ -27,7 +29,6 @@ export type SettingsModalState = null | SettingsModalKey
 
 const DISABLED_SETTINGS_KEYS = new Set<SettingsModalKey>([
   'usage',
-  'permissions',
   'mcp',
   'sso',
   'shortcuts',
@@ -41,25 +42,50 @@ export interface PendingSkillSelection {
   trigger: string
 }
 
+export const DRAFT_PERMISSION_SESSION_ID = '__draft__'
+
 interface UiState {
   route: Route
+  backStack: Route[]
+  forwardStack: Route[]
   settingsModal: SettingsModalState
   sidebarTab: SidebarBodyTab
+  sidebarHidden: boolean
   prefillText: string | null
   pendingSkill: PendingSkillSelection | null
+  permissionModesBySession: Record<string, PermissionMode>
   setRoute: (route: Route) => void
+  replaceRoute: (route: Route) => void
+  goBack: () => void
+  goForward: () => void
+  canGoBack: () => boolean
+  canGoForward: () => boolean
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
   setSidebarTab: (tab: SidebarBodyTab) => void
+  setSidebarHidden: (hidden: boolean) => void
+  toggleSidebarHidden: () => void
   setPrefillText: (text: string) => void
   consumePrefillText: () => string | null
   setPendingSkill: (skill: PendingSkillSelection) => void
   consumePendingSkill: () => PendingSkillSelection | null
+  setPermissionModeForSession: (sessionId: string, mode: PermissionMode) => void
+  getPermissionModeForSession: (sessionId: string) => PermissionMode | undefined
 }
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
 const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
+const SIDEBAR_HIDDEN_STORAGE_KEY = 'aijia-sidebar-hidden'
+const PERMISSION_MODES_STORAGE_KEY = 'aijia-permission-modes-by-session'
 const DEFAULT_ROUTE: Route = { kind: 'home' }
+const MAX_ROUTE_HISTORY = 80
+const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
+  'default',
+  'plan',
+  'dontAsk',
+  'acceptEdits',
+  'fullAccess',
+])
 
 function isRoute(value: unknown): value is Route {
   if (!value || typeof value !== 'object') return false
@@ -104,6 +130,16 @@ function persistRoute(route: Route) {
   }
 }
 
+function routesEqual(a: Route, b: Route): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function pushRoute(stack: Route[], route: Route): Route[] {
+  const last = stack[stack.length - 1]
+  const next = last && routesEqual(last, route) ? stack : [...stack, route]
+  return next.length > MAX_ROUTE_HISTORY ? next.slice(next.length - MAX_ROUTE_HISTORY) : next
+}
+
 function loadPersistedSidebarTab(): SidebarBodyTab {
   if (typeof localStorage === 'undefined') return 'project'
   try {
@@ -123,16 +159,105 @@ function persistSidebarTab(tab: SidebarBodyTab) {
   }
 }
 
+function loadPersistedSidebarHidden(): boolean {
+  if (typeof localStorage === 'undefined') return false
+  try {
+    return localStorage.getItem(SIDEBAR_HIDDEN_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function persistSidebarHidden(hidden: boolean) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(SIDEBAR_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false')
+  } catch {
+    // Ignore storage failures; visibility still works in memory.
+  }
+}
+
+function isPermissionMode(value: unknown): value is PermissionMode {
+  return typeof value === 'string' && KNOWN_PERMISSION_MODES.has(value as PermissionMode)
+}
+
+function loadPersistedPermissionModes(): Record<string, PermissionMode> {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(PERMISSION_MODES_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const entries = Object.entries(parsed)
+      .filter((entry): entry is [string, PermissionMode] =>
+        typeof entry[0] === 'string' && isPermissionMode(entry[1]),
+      )
+    return Object.fromEntries(entries)
+  } catch {
+    return {}
+  }
+}
+
+function persistPermissionModes(modes: Record<string, PermissionMode>) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(PERMISSION_MODES_STORAGE_KEY, JSON.stringify(modes))
+  } catch {
+    // Ignore storage failures; current session still keeps the mode in memory.
+  }
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
+  backStack: [],
+  forwardStack: [],
   settingsModal: null,
   sidebarTab: loadPersistedSidebarTab(),
+  sidebarHidden: loadPersistedSidebarHidden(),
   prefillText: null,
   pendingSkill: null,
+  permissionModesBySession: loadPersistedPermissionModes(),
   setRoute: (route) => {
+    const current = get().route
+    if (routesEqual(current, route)) {
+      persistRoute(route)
+      return
+    }
+    persistRoute(route)
+    set({
+      route,
+      backStack: pushRoute(get().backStack, current),
+      forwardStack: [],
+    })
+  },
+  replaceRoute: (route) => {
     persistRoute(route)
     set({ route })
   },
+  goBack: () => {
+    const { backStack, route, forwardStack } = get()
+    const previous = backStack[backStack.length - 1]
+    if (!previous) return
+    persistRoute(previous)
+    set({
+      route: previous,
+      backStack: backStack.slice(0, -1),
+      forwardStack: pushRoute(forwardStack, route),
+    })
+  },
+  goForward: () => {
+    const { backStack, route, forwardStack } = get()
+    const next = forwardStack[forwardStack.length - 1]
+    if (!next) return
+    persistRoute(next)
+    set({
+      route: next,
+      backStack: pushRoute(backStack, route),
+      forwardStack: forwardStack.slice(0, -1),
+    })
+  },
+  canGoBack: () => get().backStack.length > 0,
+  canGoForward: () => get().forwardStack.length > 0,
   openSettings: (key) => {
     const normalized: SettingsModalKey =
       (key as string) === 'general' ? 'permissions' : (key as SettingsModalKey)
@@ -142,6 +267,15 @@ export const useUiStore = create<UiState>((set, get) => ({
   setSidebarTab: (tab) => {
     persistSidebarTab(tab)
     set({ sidebarTab: tab })
+  },
+  setSidebarHidden: (hidden) => {
+    persistSidebarHidden(hidden)
+    set({ sidebarHidden: hidden })
+  },
+  toggleSidebarHidden: () => {
+    const hidden = !get().sidebarHidden
+    persistSidebarHidden(hidden)
+    set({ sidebarHidden: hidden })
   },
   setPrefillText: (text) => set({ prefillText: text }),
   consumePrefillText: () => {
@@ -155,6 +289,12 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (skill !== null) set({ pendingSkill: null })
     return skill
   },
+  setPermissionModeForSession: (sessionId, mode) => {
+    const next = { ...get().permissionModesBySession, [sessionId]: mode }
+    persistPermissionModes(next)
+    set({ permissionModesBySession: next })
+  },
+  getPermissionModeForSession: (sessionId) => get().permissionModesBySession[sessionId],
 }))
 
 // ---------------------------------------------------------------------------

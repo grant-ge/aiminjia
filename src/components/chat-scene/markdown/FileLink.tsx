@@ -3,6 +3,7 @@ import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore
 import { getLocalFilePreview, openLocalFile } from '@/lib/tauri'
 import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
 import type { GeneratedFile } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 interface LocalMarkdownTarget {
   path: string
@@ -243,7 +244,7 @@ export function FileImage({
   }
 
   return (
-    <button
+    <Button unstyled
       type="button"
       aria-label={alt || target.fileName}
       title={alt || target.fileName}
@@ -251,6 +252,6 @@ export function FileImage({
       onClick={() => openMarkdownFile(target)}
     >
       <img src={dataUrl} alt={alt} className="h-40 max-w-[240px] rounded-md object-cover" />
-    </button>
+    </Button>
   )
 }

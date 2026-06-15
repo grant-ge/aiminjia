@@ -1,14 +1,16 @@
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Local, Utc};
+use chrono::{DateTime, Duration, Local, LocalResult, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use zip::write::SimpleFileOptions;
 
 use crate::storage::file_store::types::{ConversationMeta, StoredMessage};
 use crate::storage::file_store::AppStorage;
+
+const EXPORT_LOG_WINDOW_HOURS: i64 = 24;
 
 #[derive(Debug, Clone)]
 pub struct ExportPaths {
@@ -121,7 +123,8 @@ impl ConversationExporter {
             &render_conversation_html(conversation, messages, request),
         )?;
 
-        let metrics = read_metric_records(&self.paths.app_home.join("logs"))?;
+        let logs_dir = self.paths.app_home.join("logs");
+        let metrics = read_metric_records(&logs_dir)?;
         let current_diag =
             filter_current_conversation_diagnostics(&metrics, &request.conversation_id);
         let recent_warn_error = filter_recent_warn_error(&metrics);
@@ -144,17 +147,23 @@ impl ConversationExporter {
             ),
         )?;
 
-        let mut log_entries = Vec::new();
-        for (raw_name, source_name) in [
-            ("raw/renlijia.log", "renlijia.log"),
-            ("raw/gate.log", "gate.log"),
-        ] {
-            log_entries.push(copy_optional_log(
-                &self.paths.app_home.join("logs").join(source_name),
-                &temp_dir.join(raw_name),
-                raw_name,
-            ));
-        }
+        let log_window = Duration::hours(EXPORT_LOG_WINDOW_HOURS);
+        let app_log_paths = list_app_log_paths(&logs_dir);
+        let gate_log_paths = vec![logs_dir.join("gate.log")];
+        let log_entries = vec![
+            copy_recent_optional_logs(
+                &app_log_paths,
+                &temp_dir.join("raw/renlijia.log"),
+                "raw/renlijia.log",
+                log_window,
+            ),
+            copy_recent_optional_logs(
+                &gate_log_paths,
+                &temp_dir.join("raw/gate.log"),
+                "raw/gate.log",
+                log_window,
+            ),
+        ];
 
         write_string(
             &temp_dir.join("diagnostics-summary.html"),
@@ -258,7 +267,7 @@ fn write_string(path: &Path, content: &str) -> Result<()> {
 
 fn render_readme(conversation: &ConversationMeta) -> String {
     format!(
-        "AI小家对话导出\n\n会话：{}\n\n打开 conversation.html 可以查看对话过程。\nraw/ 目录包含排查问题所需的原始材料。此文件不会自动上传，只有你主动发送后他人才可看到。\n",
+        "AI小家对话导出\n\n会话：{}\n\n打开 conversation.html 可以查看对话过程。\nraw/ 目录包含排查问题所需的原始材料，其中运行日志仅保留最近 24 小时。此文件不会自动上传，只有你主动发送后他人才可看到。\n",
         conversation.title
     )
 }
@@ -615,55 +624,191 @@ fn filter_recent_warn_error(records: &[MetricRecord]) -> Vec<String> {
         .collect()
 }
 
-fn copy_optional_log(source: &Path, dest: &Path, name: &str) -> ManifestLog {
-    let source_path = source.to_string_lossy().to_string();
-    match fs::metadata(source) {
-        Ok(meta) => {
-            if let Some(parent) = dest.parent() {
-                if let Err(error) = fs::create_dir_all(parent) {
-                    return ManifestLog {
-                        name: name.to_string(),
-                        source_path,
-                        size_bytes: Some(meta.len()),
-                        modified_at: modified_at(&meta),
-                        included: false,
-                        error: Some(error.to_string()),
-                    };
-                }
-            }
-            match fs::copy(source, dest) {
-                Ok(_) => ManifestLog {
-                    name: name.to_string(),
-                    source_path,
-                    size_bytes: Some(meta.len()),
-                    modified_at: modified_at(&meta),
-                    included: true,
-                    error: None,
-                },
-                Err(error) => ManifestLog {
-                    name: name.to_string(),
-                    source_path,
-                    size_bytes: Some(meta.len()),
-                    modified_at: modified_at(&meta),
-                    included: false,
-                    error: Some(error.to_string()),
-                },
+fn list_app_log_paths(logs_dir: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(entries) = fs::read_dir(logs_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if name == "renlijia.log" || name.starts_with("renlijia.") {
+                paths.push(path);
             }
         }
-        Err(error) => ManifestLog {
+    }
+
+    if paths.is_empty() {
+        paths.push(logs_dir.join("renlijia.log"));
+    }
+    paths.sort_by_key(|path| path.file_name().map(|name| name.to_os_string()));
+    paths
+}
+
+fn copy_recent_optional_logs(
+    sources: &[PathBuf],
+    dest: &Path,
+    name: &str,
+    window: Duration,
+) -> ManifestLog {
+    let source_path = sources
+        .iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut readable_sources = Vec::new();
+    let mut source_size_bytes = 0_u64;
+    let mut latest_modified = None;
+
+    for source in sources {
+        let Ok(meta) = fs::metadata(source) else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        source_size_bytes = source_size_bytes.saturating_add(meta.len());
+        if let Ok(modified) = meta.modified() {
+            latest_modified = Some(match latest_modified {
+                Some(current) if current >= modified => current,
+                _ => modified,
+            });
+        }
+        readable_sources.push((source.clone(), meta));
+    }
+
+    if readable_sources.is_empty() {
+        return ManifestLog {
             name: name.to_string(),
             source_path,
             size_bytes: None,
             modified_at: None,
             included: false,
-            error: Some(error.to_string()),
+            error: Some("日志文件不存在。".to_string()),
+        };
+    }
+
+    if let Some(parent) = dest.parent() {
+        if let Err(error) = fs::create_dir_all(parent) {
+            return ManifestLog {
+                name: name.to_string(),
+                source_path,
+                size_bytes: Some(source_size_bytes),
+                modified_at: modified_time_to_rfc3339(latest_modified),
+                included: false,
+                error: Some(error.to_string()),
+            };
+        }
+    }
+
+    let result = File::create(dest)
+        .with_context(|| format!("create recent log export {}", dest.display()))
+        .and_then(|file| {
+            let now = Utc::now();
+            let since = now - window;
+            let mut writer = BufWriter::new(file);
+            for (source, meta) in &readable_sources {
+                append_recent_log_lines(source, meta, &mut writer, since, now)?;
+            }
+            writer.flush()?;
+            Ok(())
+        });
+
+    match result {
+        Ok(()) => ManifestLog {
+            name: name.to_string(),
+            source_path,
+            size_bytes: fs::metadata(dest).ok().map(|meta| meta.len()),
+            modified_at: modified_time_to_rfc3339(latest_modified),
+            included: true,
+            error: None,
         },
+        Err(error) => {
+            fs::remove_file(dest).ok();
+            ManifestLog {
+                name: name.to_string(),
+                source_path,
+                size_bytes: Some(source_size_bytes),
+                modified_at: modified_time_to_rfc3339(latest_modified),
+                included: false,
+                error: Some(error.to_string()),
+            }
+        }
     }
 }
 
-fn modified_at(meta: &fs::Metadata) -> Option<String> {
-    meta.modified()
+fn append_recent_log_lines(
+    source: &Path,
+    meta: &fs::Metadata,
+    writer: &mut BufWriter<File>,
+    since: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let file = File::open(source).with_context(|| format!("open log {}", source.display()))?;
+    let modified_recent = meta
+        .modified()
         .ok()
+        .map(DateTime::<Utc>::from)
+        .map(|modified| modified >= since && modified <= now)
+        .unwrap_or(false);
+    let mut saw_timestamp = false;
+    let mut include_continuation = false;
+
+    for line in BufReader::new(file).lines() {
+        let line = line?;
+        let include = if let Some(timestamp) = extract_log_timestamp(&line) {
+            saw_timestamp = true;
+            include_continuation = timestamp >= since && timestamp <= now;
+            include_continuation
+        } else if saw_timestamp {
+            include_continuation
+        } else {
+            modified_recent
+        };
+
+        if include {
+            writeln!(writer, "{line}")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_log_timestamp(line: &str) -> Option<DateTime<Utc>> {
+    extract_json_log_timestamp(line).or_else(|| extract_bracketed_log_timestamp(line))
+}
+
+fn extract_json_log_timestamp(line: &str) -> Option<DateTime<Utc>> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with('{') {
+        return None;
+    }
+    let key_start = trimmed.find("\"ts\"")?;
+    let after_key = trimmed.get(key_start + 4..)?.trim_start();
+    let after_colon = after_key.strip_prefix(':')?.trim_start();
+    let after_quote = after_colon.strip_prefix('"')?;
+    let ts = after_quote.split('"').next()?;
+    DateTime::parse_from_rfc3339(ts)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn extract_bracketed_log_timestamp(line: &str) -> Option<DateTime<Utc>> {
+    let rest = line.strip_prefix('[')?;
+    let (date, rest) = rest.split_once("][")?;
+    let (time, _) = rest.split_once(']')?;
+    let naive =
+        NaiveDateTime::parse_from_str(&format!("{date} {time}"), "%Y-%m-%d %H:%M:%S").ok()?;
+
+    match Local.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => Some(dt.with_timezone(&Utc)),
+        LocalResult::Ambiguous(first, _) => Some(first.with_timezone(&Utc)),
+        LocalResult::None => None,
+    }
+}
+
+fn modified_time_to_rfc3339(modified: Option<std::time::SystemTime>) -> Option<String> {
+    modified
         .map(DateTime::<Utc>::from)
         .map(|dt| dt.to_rfc3339())
 }

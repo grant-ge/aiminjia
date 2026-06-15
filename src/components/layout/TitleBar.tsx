@@ -1,8 +1,12 @@
 import React from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
 import { UpdateAvailableLink } from './UpdateAvailableLink'
 import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUpdaterStore } from '@/lib/updaterStore'
+import { useBrandingStore } from '@/stores/brandingStore'
+import { useUiStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
 
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 2) {
@@ -15,38 +19,119 @@ function handleDragStart(e: React.MouseEvent) {
 }
 
 function WindowControls() {
-  // hover bg uses primary-foreground/15 so it follows tenant theme; close
+  // Keep window controls readable on the sidebar-colored title bar; close
   // button hover routes to --destructive instead of hardcoded red.
-  const btnClass =
-    'flex h-7 w-11 items-center justify-center text-primary-foreground/70 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground'
   return (
     <div className="flex shrink-0 items-center" onMouseDown={(e) => e.stopPropagation()}>
-      <button className={btnClass} onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
+      <Button link type="button" className="titlebar-window-button" onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
         <svg width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>
-      </button>
-      <button className={btnClass} onClick={() => getCurrentWindow().toggleMaximize()} aria-label="Maximize">
+      </Button>
+      <Button link type="button" className="titlebar-window-button" onClick={() => getCurrentWindow().toggleMaximize()} aria-label="Maximize">
         <svg width="10" height="10" viewBox="0 0 10 10"><rect fill="none" stroke="currentColor" strokeWidth="1" x="0.5" y="0.5" width="9" height="9"/></svg>
-      </button>
-      <button
-        className={`${btnClass} hover:!bg-destructive hover:!text-destructive-foreground`}
+      </Button>
+      <Button
+        link
+        type="button"
+        className="titlebar-window-button titlebar-window-button-close"
         onClick={() => getCurrentWindow().close()}
         aria-label="Close"
       >
         <svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d="M1.7.3.3 1.7 3.6 5 .3 8.3l1.4 1.4L5 6.4l3.3 3.3 1.4-1.4L6.4 5l3.3-3.3L8.3.3 5 3.6 1.7.3z"/></svg>
-      </button>
+      </Button>
+    </div>
+  )
+}
+
+function SidebarToggleButton({ className = '' }: { className?: string }) {
+  const sidebarHidden = useUiStore((s) => s.sidebarHidden)
+  const toggleSidebarHidden = useUiStore((s) => s.toggleSidebarHidden)
+  const Icon = sidebarHidden ? PanelRight : PanelLeft
+  const label = sidebarHidden ? '显示侧栏' : '隐藏侧栏'
+
+  return (
+    <Button
+      link
+      type="button"
+      data-aijia-sidebar-toggle="true"
+      aria-label={label}
+      title={label}
+      className={`titlebar-sidebar-toggle ${className}`}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        toggleSidebarHidden()
+      }}
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+    </Button>
+  )
+}
+
+function TitleBarNavigationButtons() {
+  const canGoBack = useUiStore((s) => s.canGoBack())
+  const canGoForward = useUiStore((s) => s.canGoForward())
+  const goBack = useUiStore((s) => s.goBack)
+  const goForward = useUiStore((s) => s.goForward)
+
+  return (
+    <div className="ml-2 flex items-center" onMouseDown={(e) => e.stopPropagation()}>
+      <Button
+        link
+        type="button"
+        aria-label="后退"
+        title="后退"
+        className="titlebar-navigation-button"
+        disabled={!canGoBack}
+        onClick={(e) => {
+          e.stopPropagation()
+          goBack()
+        }}
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      </Button>
+      <Button
+        link
+        type="button"
+        aria-label="前进"
+        title="前进"
+        className="titlebar-navigation-button"
+        disabled={!canGoForward}
+        onClick={(e) => {
+          e.stopPropagation()
+          goForward()
+        }}
+      >
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </div>
+  )
+}
+
+function CompactTenantBrand() {
+  const productName = useBrandingStore((s) => s.productName)
+  const logoUrl = useBrandingStore((s) => s.logoUrl)
+
+  return (
+    <div
+      data-testid="titlebar-tenant-brand"
+      data-tauri-drag-region
+      className="ml-2 flex h-7 max-w-[140px] shrink-0 select-none items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-sidebar-foreground"
+      title={productName}
+    >
+      <span className="h-5 w-5 shrink-0 overflow-hidden rounded border border-sidebar-border bg-card">
+        <img src={logoUrl} alt="Brand logo" className="h-full w-full object-cover" />
+      </span>
+      <span className="truncate text-xs font-semibold">{productName}</span>
     </div>
   )
 }
 
 /**
- * dev 模式下：底色 --primary，斜纹另一档用运行时派生的 --primary-darken-10
- * （暗 10%），两条都是实色（不透明），不论租户 accent 是什么颜色都自动协调。
- * 45° 斜纹 + 中央 DEV 标签。
+ * The native drag strip uses the same surface color as the left sidebar so the
+ * window chrome and app navigation read as one continuous shell.
  */
-const DEV_STRIPE_STYLE: React.CSSProperties = {
-  backgroundColor: 'var(--primary)',
-  backgroundImage:
-    'repeating-linear-gradient(45deg, var(--primary) 0 10px, var(--primary-darken-10) 10px 20px)',
+const TITLE_BAR_STYLE: React.CSSProperties = {
+  backgroundColor: 'var(--sidebar)',
 }
 
 // "DEV" or "DEV 5174" when a vite dev port is detectable.  Including the port
@@ -71,9 +156,8 @@ function DevBadge() {
 }
 
 /**
- * Both macOS (Overlay titleBarStyle) and Windows render a 28px accent strip
- * at the top so tenant-branded accent color is visible at the most prominent
- * area of the window. macOS draws native traffic lights over this strip.
+ * Both macOS (Overlay titleBarStyle) and Windows render a 28px shell strip at
+ * the top. macOS draws native traffic lights over this strip.
  */
 export function TitleBar() {
   const showUpdateLink = useUpdaterStore((s) =>
@@ -82,25 +166,29 @@ export function TitleBar() {
   const isWindows = navigator.userAgent.includes('Windows')
   const isDev = import.meta.env.DEV
 
-  const barClass = isDev
-    ? 'flex h-8 w-full shrink-0 items-center'
-    : 'flex h-8 w-full shrink-0 items-center bg-primary text-primary-foreground'
-  const barStyle = isDev ? DEV_STRIPE_STYLE : undefined
+  const barClass = 'flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
+  const barStyle = TITLE_BAR_STYLE
 
   if (!isWindows) {
     return (
       <div
         data-tauri-drag-region
-        className={`${barClass} justify-end`}
+        className={`${barClass} justify-between`}
         style={barStyle}
       >
-        {showUpdateLink ? (
-          <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
-            <UpdateAvailableLink />
-          </div>
-        ) : null}
-        {isDev ? <TitleBarEnvSwitcher /> : null}
-        {isDev ? <DevBadge /> : null}
+        <div className="flex items-center pl-20">
+          <SidebarToggleButton />
+          <TitleBarNavigationButtons />
+        </div>
+        <div className="flex items-center">
+          {showUpdateLink ? (
+            <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
+              <UpdateAvailableLink />
+            </div>
+          ) : null}
+          {isDev ? <TitleBarEnvSwitcher /> : null}
+          {isDev ? <DevBadge /> : null}
+        </div>
       </div>
     )
   }
@@ -108,10 +196,13 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className={`${barClass} ${isDev ? '' : 'border-b border-primary-foreground/15'}`}
+      className={barClass}
       style={barStyle}
       onMouseDown={handleDragStart}
     >
+      <CompactTenantBrand />
+      <SidebarToggleButton className="ml-2" />
+      <TitleBarNavigationButtons />
       <div className="flex-1" data-tauri-drag-region />
       <div onMouseDown={(e) => e.stopPropagation()}>
         <UpdateAvailableLink />

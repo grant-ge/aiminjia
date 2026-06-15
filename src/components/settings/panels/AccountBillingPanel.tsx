@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Wallet, RefreshCw } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { useBillingStore } from '@/stores/billingStore'
+import { Button } from '@/components/ui/button'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)

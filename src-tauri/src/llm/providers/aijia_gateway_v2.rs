@@ -73,7 +73,14 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
             .bearer_auth(&self.session_key)
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|err| {
+                crate::llm::gate_log::record_request_error(
+                    &gate_log_id,
+                    &error_chain_diagnostics(&err),
+                );
+                err
+            })?;
 
         let status = response.status();
         let gateway_request_id = response
@@ -129,7 +136,14 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
             .bearer_auth(&self.session_key)
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|err| {
+                crate::llm::gate_log::record_request_error(
+                    &gate_log_id,
+                    &error_chain_diagnostics(&err),
+                );
+                err
+            })?;
 
         let status = response.status();
         let gateway_request_id = response
@@ -158,6 +172,45 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
 
     async fn validate_key(&self) -> Result<bool> {
         Ok(!self.session_key.trim().is_empty())
+    }
+}
+
+fn error_chain_diagnostics(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut parts = vec![error.to_string()];
+    append_reqwest_flags(error, &mut parts);
+
+    let mut idx = 1;
+    let mut source = error.source();
+    while let Some(cause) = source {
+        parts.push(format!("caused_by[{idx}]: {cause}"));
+        append_reqwest_flags(cause, &mut parts);
+        source = cause.source();
+        idx += 1;
+    }
+
+    parts.join("; ")
+}
+
+fn append_reqwest_flags(error: &(dyn std::error::Error + 'static), parts: &mut Vec<String>) {
+    if let Some(reqwest_err) = error.downcast_ref::<reqwest::Error>() {
+        let status = reqwest_err
+            .status()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let url = reqwest_err
+            .url()
+            .map(|u| u.as_str().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        parts.push(format!(
+            "reqwest: timeout={} connect={} request={} body={} decode={} status={} url={}",
+            reqwest_err.is_timeout(),
+            reqwest_err.is_connect(),
+            reqwest_err.is_request(),
+            reqwest_err.is_body(),
+            reqwest_err.is_decode(),
+            status,
+            url
+        ));
     }
 }
 

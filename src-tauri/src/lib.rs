@@ -22,9 +22,203 @@ use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
 use storage::UserScopedPathResolver;
+use tauri::menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu, SubmenuBuilder};
 use tauri::{Emitter, Manager};
 
 const APP_LOG_RETENTION_DAYS: u64 = 3;
+const NAVIGATION_MENU_EVENT: &str = "navigation:menu-command";
+const NAVIGATION_BACK_MENU_ID: &str = "navigation.back";
+const NAVIGATION_FORWARD_MENU_ID: &str = "navigation.forward";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AppMenuLabels {
+    file: &'static str,
+    edit: &'static str,
+    view: &'static str,
+    window: &'static str,
+    help: &'static str,
+    navigation: &'static str,
+    back: &'static str,
+    forward: &'static str,
+}
+
+fn app_menu_labels(language: &str) -> AppMenuLabels {
+    if language.to_ascii_lowercase().starts_with("en") {
+        AppMenuLabels {
+            file: "File",
+            edit: "Edit",
+            view: "View",
+            window: "Window",
+            help: "Help",
+            navigation: "Navigation",
+            back: "Back",
+            forward: "Forward",
+        }
+    } else {
+        AppMenuLabels {
+            file: "文件",
+            edit: "编辑",
+            view: "显示",
+            window: "窗口",
+            help: "帮助",
+            navigation: "导航",
+            back: "后退",
+            forward: "前进",
+        }
+    }
+}
+
+fn app_about_metadata<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+) -> AboutMetadata<'static> {
+    let pkg_info = app_handle.package_info();
+    let config = app_handle.config();
+    AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config
+            .bundle
+            .publisher
+            .clone()
+            .map(|publisher| vec![publisher]),
+        ..Default::default()
+    }
+}
+
+fn build_localized_app_menu<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    language: &str,
+) -> tauri::Result<Menu<R>> {
+    let labels = app_menu_labels(language);
+    let pkg_info = app_handle.package_info();
+    let about_metadata = app_about_metadata(app_handle);
+
+    let navigation_menu = SubmenuBuilder::new(app_handle, labels.navigation)
+        .text(NAVIGATION_BACK_MENU_ID, labels.back)
+        .text(NAVIGATION_FORWARD_MENU_ID, labels.forward)
+        .build()?;
+
+    let window_menu = Submenu::with_id_and_items(
+        app_handle,
+        tauri::menu::WINDOW_SUBMENU_ID,
+        labels.window,
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app_handle, None)?,
+            &PredefinedMenuItem::maximize(app_handle, None)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::close_window(app_handle, None)?,
+        ],
+    )?;
+
+    let help_menu = Submenu::with_id_and_items(
+        app_handle,
+        tauri::menu::HELP_SUBMENU_ID,
+        labels.help,
+        true,
+        &[
+            #[cfg(not(target_os = "macos"))]
+            &PredefinedMenuItem::about(app_handle, None, Some(about_metadata))?,
+        ],
+    )?;
+
+    Menu::with_items(
+        app_handle,
+        &[
+            #[cfg(target_os = "macos")]
+            &Submenu::with_items(
+                app_handle,
+                pkg_info.name.clone(),
+                true,
+                &[
+                    &PredefinedMenuItem::about(app_handle, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::services(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::hide(app_handle, None)?,
+                    &PredefinedMenuItem::hide_others(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::quit(app_handle, None)?,
+                ],
+            )?,
+            #[cfg(not(any(
+                target_os = "linux",
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "netbsd",
+                target_os = "openbsd"
+            )))]
+            &Submenu::with_items(
+                app_handle,
+                labels.file,
+                true,
+                &[
+                    &PredefinedMenuItem::close_window(app_handle, None)?,
+                    #[cfg(not(target_os = "macos"))]
+                    &PredefinedMenuItem::quit(app_handle, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app_handle,
+                labels.edit,
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app_handle, None)?,
+                    &PredefinedMenuItem::redo(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::cut(app_handle, None)?,
+                    &PredefinedMenuItem::copy(app_handle, None)?,
+                    &PredefinedMenuItem::paste(app_handle, None)?,
+                    &PredefinedMenuItem::select_all(app_handle, None)?,
+                ],
+            )?,
+            #[cfg(target_os = "macos")]
+            &Submenu::with_items(
+                app_handle,
+                labels.view,
+                true,
+                &[&PredefinedMenuItem::fullscreen(app_handle, None)?],
+            )?,
+            &window_menu,
+            &help_menu,
+            &navigation_menu,
+        ],
+    )
+}
+
+fn set_app_navigation_menu<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    language: &str,
+) -> tauri::Result<()> {
+    let menu = build_localized_app_menu(app_handle, language)?;
+    app_handle.set_menu(menu)?;
+    Ok(())
+}
+
+fn install_app_navigation_menu<R: tauri::Runtime>(app: &mut tauri::App<R>) -> tauri::Result<()> {
+    set_app_navigation_menu(app.handle(), "zh-CN")?;
+    app.on_menu_event(|app_handle, event| match event.id().0.as_str() {
+        NAVIGATION_BACK_MENU_ID => {
+            if let Err(err) = app_handle.emit(NAVIGATION_MENU_EVENT, "back") {
+                log::warn!("[app-menu] failed to emit navigation back event: {err}");
+            }
+        }
+        NAVIGATION_FORWARD_MENU_ID => {
+            if let Err(err) = app_handle.emit(NAVIGATION_MENU_EVENT, "forward") {
+                log::warn!("[app-menu] failed to emit navigation forward event: {err}");
+            }
+        }
+        _ => {}
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn set_app_menu_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
+    set_app_navigation_menu(&app, &language).map_err(|err| err.to_string())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -55,6 +249,8 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            install_app_navigation_menu(app)?;
+
             // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
@@ -702,6 +898,11 @@ pub fn run() {
             // can use it to suppress desktop-dialog forwarding for IM-channel sessions.
             let channel_session_ids: Arc<std::sync::RwLock<std::collections::HashSet<String>>> =
                 Arc::new(std::sync::RwLock::new(std::collections::HashSet::new()));
+            let output_binding_registry =
+                Arc::new(runtime::human_interaction::RunOutputBindingRegistry::new());
+            let im_app_feedback =
+                connector::im::shared::app_feedback::IMAppFeedbackCoordinator::new();
+            app.manage(output_binding_registry);
 
             let chat_adapter = Arc::new(
                 transport::tauri_commands::chat::TauriChatCommandAdapter::new_with_channel_sessions(
@@ -717,7 +918,8 @@ pub fn run() {
                     app.handle().clone(),
                     Some(channel_session_ids.clone()
                         as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>),
-                ),
+                )
+                .with_im_app_feedback(im_app_feedback.clone()),
             );
             // LTR P2 follow-up: wire Path C wake (continuation turn triggered by
             // teammate SendMessage) AFTER the adapter is in an Arc, so the wake
@@ -752,6 +954,7 @@ pub fn run() {
             app.manage(skill_registry);
             app.manage(agent_runtime);
             app.manage(chat_adapter);
+            app.manage(im_app_feedback);
             app.manage(async_agent_task_store);
             app.manage(std::sync::Arc::new(
                 crate::runtime::employee::EmployeeActiveRuns::new(),
@@ -818,6 +1021,16 @@ pub fn run() {
                             .set_dispatcher(chat_adapter_for_pending)
                             .await;
                     });
+                }
+                {
+                    let chat_adapter_for_events = app
+                        .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                        .inner()
+                        .clone();
+                    chat_adapter_for_events.subscribe_event_listener(
+                        pending_manager.clone()
+                            as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>,
+                    );
                 }
                 app.manage(pending_manager);
             }
@@ -966,6 +1179,8 @@ pub fn run() {
             chat::approve_permission_request,
             chat::deny_permission_request,
             chat::cancel_permission_request,
+            chat::pending_permission_snapshot_for_session,
+            chat::pending_interaction_snapshot_for_session,
             chat::submit_user_interaction,
             chat::cancel_user_interaction,
             chat::get_messages,
@@ -995,6 +1210,8 @@ pub fn run() {
             file::save_clipboard_image_to_workspace_staging,
             file::open_generated_file,
             file::reveal_file_in_folder,
+            file::is_generated_file_available,
+            file::is_local_file_available,
             file::save_generated_file_as,
             file::get_file_preview,
             file::get_local_file_preview,
@@ -1035,6 +1252,7 @@ pub fn run() {
             // Plugin commands
             commands::plugin::list_tools,
             commands::plugin::list_skills,
+            commands::plugin::get_skill_detail,
             commands::plugin::get_plugin_info,
             // Agent commands
             transport::tauri_commands::agents::list_agents,
@@ -1139,6 +1357,7 @@ pub fn run() {
             commands::channel::channel_set_enabled,
             commands::channel::channel_remove_platform,
             commands::channel::channel_reveal_secret,
+            commands::channel::channel_send_dingtalk_greeting,
             commands::channel::channel_wecom_save,
             commands::channel::channel_wecom_test_connection,
             commands::channel::channel_wecom_remove,
@@ -1161,6 +1380,7 @@ pub fn run() {
             crate::transport::tauri_commands::pending::pending_remove_item,
             // Turn-stage persistence (spec 2026-05-17-turn-stages §5)
             crate::transport::tauri_commands::turn_stage::get_active_turn_stage,
+            crate::transport::tauri_commands::turn_stage::clear_active_turn_stage,
             // Updater cache/download commands
             updater::commands::updater_check_cache,
             updater::commands::updater_download,
@@ -1171,6 +1391,7 @@ pub fn run() {
             // Network status commands (spec docs/superpowers/specs/2026-05-26-network-detection-design.md)
             transport::tauri_commands::network::network_get_status,
             transport::tauri_commands::network::network_force_probe,
+            set_app_menu_language,
             // Dev-only environment switcher (not compiled in release builds)
             #[cfg(debug_assertions)]
             commands::dev_environment::get_dev_environment,
@@ -1221,6 +1442,85 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod app_menu_tests {
+    use super::*;
+
+    #[test]
+    fn localized_app_menu_preserves_standard_edit_actions() {
+        let source = include_str!("lib.rs");
+        let function_start = source
+            .find("fn build_localized_app_menu")
+            .expect("build_localized_app_menu should exist");
+        let setup_start = source
+            .find("fn install_app_navigation_menu")
+            .expect("install_app_navigation_menu should exist");
+        let menu_setup = &source[function_start..setup_start];
+
+        assert!(
+            menu_setup.contains("PredefinedMenuItem::copy")
+                && menu_setup.contains("PredefinedMenuItem::paste")
+                && menu_setup.contains("PredefinedMenuItem::cut")
+                && menu_setup.contains("PredefinedMenuItem::undo")
+                && menu_setup.contains("PredefinedMenuItem::redo")
+                && menu_setup.contains("PredefinedMenuItem::select_all"),
+            "localized Edit menu must keep Tauri predefined items so Cmd+C/V/X/Z/A continue to work"
+        );
+        assert!(
+            menu_setup.contains("labels.file")
+                && menu_setup.contains("labels.edit")
+                && menu_setup.contains("labels.view")
+                && menu_setup.contains("labels.window")
+                && menu_setup.contains("labels.help")
+                && menu_setup.contains("labels.navigation"),
+            "all visible top-level menu labels should come from the app language"
+        );
+    }
+
+    #[test]
+    fn app_menu_labels_follow_supported_app_languages() {
+        assert_eq!(
+            app_menu_labels("en-US"),
+            AppMenuLabels {
+                file: "File",
+                edit: "Edit",
+                view: "View",
+                window: "Window",
+                help: "Help",
+                navigation: "Navigation",
+                back: "Back",
+                forward: "Forward",
+            }
+        );
+        assert_eq!(
+            app_menu_labels("zh-CN"),
+            AppMenuLabels {
+                file: "文件",
+                edit: "编辑",
+                view: "显示",
+                window: "窗口",
+                help: "帮助",
+                navigation: "导航",
+                back: "后退",
+                forward: "前进",
+            }
+        );
+        assert_eq!(
+            app_menu_labels("fr-FR"),
+            AppMenuLabels {
+                file: "文件",
+                edit: "编辑",
+                view: "显示",
+                window: "窗口",
+                help: "帮助",
+                navigation: "导航",
+                back: "后退",
+                forward: "前进",
+            }
+        );
+    }
 }
 
 /// Scan a plugin directory for external plugins.
@@ -1341,6 +1641,29 @@ impl auth::AuthRevokedHandler for AuthExpiredEmitter {
     }
 }
 
+struct ChannelJudgeSettingsProvider {
+    db: std::sync::Arc<storage::file_store::AppStorage>,
+    crypto: Option<std::sync::Arc<storage::crypto::SecureStorage>>,
+}
+
+impl connector::im::ask_coordinator::JudgeSettingsProvider for ChannelJudgeSettingsProvider {
+    fn load_settings(&self) -> models::settings::AppSettings {
+        let settings_map = self.db.get_all_settings().unwrap_or_default();
+        let mut settings = if settings_map.is_empty() {
+            models::settings::AppSettings::default()
+        } else {
+            models::settings::AppSettings::from_string_map(&settings_map)
+        };
+        if let Some(ss) = self.crypto.as_ref() {
+            settings.primary_api_key = transport::tauri_commands::settings::decrypt_if_encrypted(
+                ss,
+                &settings.primary_api_key,
+            );
+        }
+        settings
+    }
+}
+
 /// Idempotent helper: ensure an active `ChannelManager` exists in the slot
 /// matching the currently-active user scope. Safe to call from setup (when
 /// the user was already logged in at boot) and from `cloud_login` (post-
@@ -1377,25 +1700,64 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
         .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
         .inner()
         .clone();
-    let gateway_ref = app.state::<Arc<llm::gateway::LlmGateway>>().inner().clone();
+    let im_app_feedback = app
+        .state::<Arc<connector::im::shared::app_feedback::IMAppFeedbackCoordinator>>()
+        .inner()
+        .clone();
 
-    let reply_manager = Arc::new(connector::im::DingtalkReplyManager::new());
-    let judge = Arc::new(connector::im::ask_coordinator::GatewayAskReplyJudge::new(
-        gateway_ref,
-        models::settings::AppSettings::default(),
-    ));
+    let output_binding_registry = app
+        .state::<Arc<crate::runtime::human_interaction::RunOutputBindingRegistry>>()
+        .inner()
+        .clone();
+    let reply_manager = Arc::new(
+        connector::im::DingtalkReplyManager::new_with_output_binding_registry(
+            output_binding_registry,
+        ),
+    );
+    im_app_feedback.set_sink(
+        reply_manager.clone() as Arc<dyn connector::im::shared::app_feedback::AppFeedbackSink>
+    );
+    let gateway = app.state::<Arc<llm::gateway::LlmGateway>>().inner().clone();
+    let secure_storage = app
+        .state::<Option<Arc<storage::crypto::SecureStorage>>>()
+        .inner()
+        .clone();
+    let judge_settings_db = cus.get().unwrap_or_else(|| {
+        app.state::<Arc<storage::file_store::AppStorage>>()
+            .inner()
+            .clone()
+    });
+    let judge_settings_provider = Arc::new(ChannelJudgeSettingsProvider {
+        db: judge_settings_db,
+        crypto: secure_storage,
+    })
+        as Arc<dyn connector::im::ask_coordinator::JudgeSettingsProvider>;
+    let reply_judge = Arc::new(
+        connector::im::ask_coordinator::GatewayPendingReplyJudge::new(
+            gateway,
+            judge_settings_provider,
+        ),
+    ) as Arc<dyn connector::im::ask_coordinator::PendingReplyJudge>;
     let channel_session_ids = app
         .state::<Arc<std::sync::RwLock<std::collections::HashSet<String>>>>()
         .inner()
         .clone();
-    let ask_coordinator = Arc::new(connector::im::ask_coordinator::IMAskCoordinator::new(
-        channel_session_ids.clone()
-            as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
-        reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
-        chat_adapter_ref.permission_control_plane(),
-        chat_adapter_ref.interaction_control_plane(),
-        judge,
-    ));
+    let pending_queue_manager = app
+        .state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        .inner()
+        .clone();
+    let ask_coordinator = Arc::new(
+        connector::im::ask_coordinator::IMAskCoordinator::new_with_judge(
+            channel_session_ids.clone()
+                as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
+            reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
+            chat_adapter_ref.permission_control_plane(),
+            chat_adapter_ref.interaction_control_plane(),
+            reply_judge,
+        )
+        .with_app_feedback(im_app_feedback.clone())
+        .with_pending_queue(pending_queue_manager),
+    );
 
     let new_cm = Arc::new(connector::im::ChannelManager::new(
         app.clone(),

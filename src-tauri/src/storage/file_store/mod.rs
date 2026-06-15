@@ -390,17 +390,6 @@ impl AppStorage {
             {
                 settings.insert("primaryModel".to_string(), primary_model.to_string());
             }
-            if let Some(data_masking_level) = workspace_settings
-                .data_masking_level
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                settings.insert(
-                    "dataMaskingLevel".to_string(),
-                    data_masking_level.to_string(),
-                );
-            }
         }
         Ok(settings)
     }
@@ -454,6 +443,49 @@ impl AppStorage {
             superseded_by,
             created_by_step,
             expires_at,
+        )?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_generated_file_with_storage(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        message_id: Option<&str>,
+        file_name: &str,
+        stored_path: &str,
+        file_type: &str,
+        file_size: i64,
+        category: &str,
+        description: Option<&str>,
+        version: i32,
+        is_latest: bool,
+        superseded_by: Option<&str>,
+        created_by_step: Option<i32>,
+        expires_at: Option<&str>,
+        storage_scope: &str,
+        storage_root: Option<types::FileStorageRoot>,
+    ) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        files::insert_generated_file_with_storage(
+            &self.base_dir,
+            id,
+            conversation_id,
+            message_id,
+            file_name,
+            stored_path,
+            file_type,
+            file_size,
+            category,
+            description,
+            version,
+            is_latest,
+            superseded_by,
+            created_by_step,
+            expires_at,
+            storage_scope,
+            storage_root,
         )?;
         Ok(())
     }
@@ -1573,6 +1605,8 @@ impl crate::runtime::store::FileRecordStore for InMemoryFileRecordStore {
             "storedPath": stored_path,
             "fileType": file_type,
             "fileSize": file_size,
+            "storageScope": "conversation",
+            "storageRoot": null,
             "category": category,
             "description": description,
             "version": version,
