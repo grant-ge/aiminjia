@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button'
 
 // Team event XML patterns — rendered by PeerMessageBanner instead
 const TEAM_EVENT_RE = /^(?:<peer-messages>[\s\S]*<\/peer-messages>|<task-notification[\s\S]*<\/task-notification>)$/
+const COLLAPSED_CONTENT_MASK_CLASS =
+  '[mask-image:linear-gradient(to_bottom,black_calc(100%_-_28px),transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_calc(100%_-_28px),transparent_100%)]'
 
 interface UserMessageBubbleProps {
   text: string
@@ -80,7 +82,7 @@ export function UserMessageBubble({
           data-testid="user-bubble-content"
           className={
             shouldCollapse && !expanded
-              ? 'relative max-h-[220px] overflow-hidden'
+              ? `relative max-h-[220px] overflow-hidden ${COLLAPSED_CONTENT_MASK_CLASS}`
               : 'relative'
           }
         >
@@ -101,9 +103,6 @@ export function UserMessageBubble({
           ) : null}
           {text ? (
             <UserBubbleMarkdown text={text} files={files} conversationId={conversationId} />
-          ) : null}
-          {shouldCollapse && !expanded ? (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ backgroundImage: 'linear-gradient(to top, var(--sidebar), transparent)' }} />
           ) : null}
         </div>
         {shouldCollapse ? (

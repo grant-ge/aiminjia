@@ -97,9 +97,13 @@ describe("UserMessageBubble", () => {
     const content = screen.getByTestId("user-bubble-content");
     expect(content.className).toMatch(/max-h-\[220px\]/);
     expect(content.className).toMatch(/overflow-hidden/);
+    expect(content.querySelector(".pointer-events-none")).not.toBeInTheDocument();
+    expect(content.className).toMatch(/\[mask-image:linear-gradient/);
+    expect(content.className).toMatch(/\[-webkit-mask-image:linear-gradient/);
 
     fireEvent.click(screen.getByRole("button", { name: "展开全部" }));
     expect(content.className).not.toMatch(/max-h-\[220px\]/);
+    expect(content.className).not.toMatch(/\[mask-image:linear-gradient/);
     expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
