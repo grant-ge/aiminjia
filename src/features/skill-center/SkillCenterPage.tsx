@@ -21,7 +21,6 @@ import { useChat } from '@/hooks/useChat'
 import {
   canToggleSkillEnablement,
   isBuiltinSkill,
-  isMarketSkill,
   isSkillEnabled,
   skillMatchesCenterView,
   type SkillCenterView,
