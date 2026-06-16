@@ -1780,7 +1780,7 @@
       "noCancelled": "没有已取消的任务",
       "noCancelledDesc": "取消的任务会出现在这里，可以恢复或永久删除。",
       "noTasks": "还没有定时任务",
-      "noTasksDesc": "选择上方模板或在对话中创建你的第一个定时任务。"
+      "noTasksDesc": "选择模板或在对话中创建你的第一个定时任务。"
     },
     "cancel": {
       "title": "取消此定时任务？",

@@ -289,7 +289,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
             ) : (
               <ChatArea expertTeamId={expertTeamId} />
             )}
-            <ChatBottomArea placeholderOverride={expertTeam?.composerPlaceholder} />
+            <ChatBottomArea />
           </div>
         </div>
         {activeConversationId ? (
