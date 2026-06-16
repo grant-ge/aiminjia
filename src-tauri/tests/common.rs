@@ -20,6 +20,7 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::ToolCallCompleted { .. } => "ToolCallCompleted",
         RuntimeEventKind::ToolProgress { .. } => "ToolProgress",
         RuntimeEventKind::PermissionAskRequired { .. } => "PermissionAskRequired",
+        RuntimeEventKind::PermissionAskResolved { .. } => "PermissionAskResolved",
         RuntimeEventKind::UserInteractionRequired { .. } => "UserInteractionRequired",
         RuntimeEventKind::UserInteractionResolved { .. } => "UserInteractionResolved",
         RuntimeEventKind::AgentIdle { .. } => "AgentIdle",

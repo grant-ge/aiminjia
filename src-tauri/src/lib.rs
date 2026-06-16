@@ -1674,6 +1674,10 @@ mod app_menu_tests {
                 navigation: "Navigation",
                 back: "Back",
                 forward: "Forward",
+                tray_tooltip: "AIjia",
+                tray_show: "Show AIjia",
+                tray_hide: "Hide to Tray",
+                tray_quit: "Quit AIjia",
             }
         );
         assert_eq!(
@@ -1687,6 +1691,10 @@ mod app_menu_tests {
                 navigation: "导航",
                 back: "后退",
                 forward: "前进",
+                tray_tooltip: "AI 小家",
+                tray_show: "显示主窗口",
+                tray_hide: "隐藏到托盘",
+                tray_quit: "退出 AI 小家",
             }
         );
         assert_eq!(
@@ -1700,6 +1708,10 @@ mod app_menu_tests {
                 navigation: "导航",
                 back: "后退",
                 forward: "前进",
+                tray_tooltip: "AI 小家",
+                tray_show: "显示主窗口",
+                tray_hide: "隐藏到托盘",
+                tray_quit: "退出 AI 小家",
             }
         );
     }

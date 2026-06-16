@@ -273,6 +273,7 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
                 message: "Denied by user".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("deny pending request");

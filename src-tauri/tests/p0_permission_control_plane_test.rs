@@ -251,6 +251,7 @@ async fn ask_request_is_recorded_without_completed_error_event() {
                 message: "Denied by user".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("deny pending request");

@@ -8,6 +8,7 @@ fn permission_ask_markdown_is_plain_im_text() {
         tool_name: "bash".into(),
         message: "命令：`ls /tmp`".into(),
         suggestions: vec!["只读命令".into()],
+        path_auth_scope: None,
     });
     assert!(markdown.contains("我需要你的确认"));
     assert!(markdown.contains("bash"));

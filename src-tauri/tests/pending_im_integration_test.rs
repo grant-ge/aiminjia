@@ -55,6 +55,8 @@ fn item(id: &str, sender: Option<&str>, text: &str) -> PendingItem {
         attachments: vec![],
         skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
+        origin: Default::default(),
+        output_binding: Default::default(),
     }
 }
 

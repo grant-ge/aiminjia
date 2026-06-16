@@ -52,6 +52,8 @@ fn app_item(id: &str, text: &str, atts: Vec<PendingAttachment>) -> PendingItem {
         attachments: atts,
         skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
+        origin: Default::default(),
+        output_binding: Default::default(),
     }
 }
 

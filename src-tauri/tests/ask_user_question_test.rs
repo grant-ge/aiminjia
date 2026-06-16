@@ -3,6 +3,7 @@
 use app_lib::runtime::interaction::{
     InMemoryInteractionControlPlane, InteractionResolution, PendingInteractionControlPlane,
 };
+use app_lib::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use app_lib::runtime::tools::catalog::{DAILY_ALLOWED_TOOLS, TOOL_CATALOG};
 use serde_json::json;
 
@@ -43,6 +44,8 @@ async fn interaction_control_plane_submit_resolves() {
             args: json!({}),
             purpose: None,
         },
+        turn_origin: TurnOrigin::App,
+        output_binding: OutputBinding::AppOnly,
     };
 
     let rx = cp.insert_pending(req).unwrap();
