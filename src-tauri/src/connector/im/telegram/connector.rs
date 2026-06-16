@@ -26,9 +26,11 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
 
 use super::api::TelegramApi;
+use super::approval_callback::TelegramApprovalManager;
 use super::pairing::PairingCodeStore;
 use super::sender::{SenderError, TelegramSender};
 use super::types::TelegramSessionTarget;
+use super::typing::TelegramTypingHeartbeatManager;
 use crate::connector::im::shared::config_store::ChannelConfigStore;
 use crate::connector::im::trait_def::{
     AuthFlow, ConnectorCapabilities, ConnectorContext, ConnectorError, IMConnector, InboundModel,
@@ -41,6 +43,8 @@ pub struct TelegramConnector {
     bot_username: String,
     api: Arc<TelegramApi>,
     sender: TelegramSender,
+    approval: Arc<TelegramApprovalManager>,
+    typing: TelegramTypingHeartbeatManager,
     pairing: PairingCodeStore,
     session_targets: Arc<RwLock<HashMap<String, TelegramSessionTarget>>>,
     config_store: Arc<ChannelConfigStore>,
@@ -57,6 +61,12 @@ impl TelegramConnector {
     ) -> Result<Self> {
         let api = Arc::new(TelegramApi::new(token)?);
         let sender = TelegramSender::new(api.clone());
+        let session_targets = Arc::new(RwLock::new(HashMap::new()));
+        let approval = Arc::new(TelegramApprovalManager::new(
+            api.clone(),
+            Arc::clone(&session_targets),
+        ));
+        let typing = TelegramTypingHeartbeatManager::new(api.clone());
         // PR4：启动时从磁盘读回 pending pairings（重启抗性）。
         // block_in_place 在 Tauri multi-thread runtime 下可安全使用。
         let pairing_path =
@@ -72,8 +82,10 @@ impl TelegramConnector {
             bot_username,
             api,
             sender,
+            approval,
+            typing,
             pairing,
-            session_targets: Arc::new(RwLock::new(HashMap::new())),
+            session_targets,
             config_store,
             on_status,
         })
@@ -90,13 +102,21 @@ impl TelegramConnector {
         config_store: Arc<ChannelConfigStore>,
     ) -> Self {
         let sender = TelegramSender::new(api.clone());
+        let session_targets = Arc::new(RwLock::new(HashMap::new()));
+        let approval = Arc::new(TelegramApprovalManager::new(
+            api.clone(),
+            Arc::clone(&session_targets),
+        ));
+        let typing = TelegramTypingHeartbeatManager::new(api.clone());
         Self {
             bot_id,
             bot_username,
             api,
             sender,
+            approval,
+            typing,
             pairing: PairingCodeStore::new(),
-            session_targets: Arc::new(RwLock::new(HashMap::new())),
+            session_targets,
             config_store,
             on_status: Arc::new(|_, _| {}),
         }
@@ -116,6 +136,12 @@ impl TelegramConnector {
     }
     pub fn sender(&self) -> &TelegramSender {
         &self.sender
+    }
+    pub fn approval_sink(&self) -> Arc<TelegramApprovalManager> {
+        Arc::clone(&self.approval)
+    }
+    pub fn typing_manager(&self) -> TelegramTypingHeartbeatManager {
+        self.typing.clone()
     }
 
     /// 由 manager worker 在 `get_or_create_session` 之后调用，让 connector 记住
@@ -146,6 +172,14 @@ impl TelegramConnector {
         &self,
     ) -> Arc<dyn Fn(ChannelConnectionState, Option<String>) + Send + Sync> {
         self.on_status.clone()
+    }
+
+    pub async fn start_typing(&self, session_id: String, run_id: String, chat_id: i64) {
+        self.typing.start_run(session_id, run_id, chat_id).await;
+    }
+
+    pub async fn stop_typing(&self, session_id: &str, run_id: &str) {
+        self.typing.stop_run(session_id, run_id).await;
     }
 
     async fn resolve_chat_id(&self, target: &ReplyTarget) -> Option<i64> {
@@ -195,6 +229,9 @@ impl IMConnector for TelegramConnector {
         let config_store = self.config_store.clone();
         let on_status = self.on_status.clone();
         let cancel = ctx.cancel_token.clone();
+        self.approval.start_cleanup(cancel.clone());
+        let approval = Arc::clone(&self.approval);
+        let ask_coordinator = ctx.ask_coordinator.clone();
         let last_get_updates_at = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
 
         // Watchdog 独立 task，共享 cancel 和时间戳
@@ -217,6 +254,8 @@ impl IMConnector for TelegramConnector {
                 config_store,
                 msg_tx,
                 on_status,
+                ask_coordinator,
+                approval,
                 cancel,
                 last_get_updates_at,
             })
@@ -224,6 +263,11 @@ impl IMConnector for TelegramConnector {
         });
 
         Ok(ReceiverStream::new(msg_rx).boxed())
+    }
+
+    async fn stop(&self) -> Result<(), ConnectorError> {
+        self.typing.stop_all().await;
+        Ok(())
     }
 
     async fn send(&self, target: ReplyTarget, content: ReplyContent) -> Result<(), ConnectorError> {

@@ -109,6 +109,7 @@ pub fn parse_inbound(bot_id: &str, frame: &WsFrame<Value>) -> Option<ParsedInbou
 
     Some(ParsedInbound::Message(ChannelMessage {
         msg_id: body.msgid,
+        native_message_id: None,
         conversation_type,
         // conversation_key 使用 chatid（group）或 userid（single），跟 reply_group_id 对齐
         conversation_key: reply_group_id.clone(),

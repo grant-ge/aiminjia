@@ -21,6 +21,7 @@
 //!   `download_file` SSRF host 检查（仅生产 api_base）
 
 pub mod api;
+pub mod approval_callback;
 pub mod connector;
 pub mod download;
 pub mod long_poll;
@@ -30,5 +31,6 @@ pub mod registration;
 pub mod reply_forwarder;
 pub mod sender;
 pub mod types;
+pub mod typing;
 
 pub use connector::TelegramConnector;

@@ -188,6 +188,16 @@ pub struct TgMessage {
     pub animation: Option<TgAnimation>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TgCallbackQuery {
+    pub id: String,
+    pub from: TgUser,
+    #[serde(default)]
+    pub message: Option<TgMessage>,
+    #[serde(default)]
+    pub data: Option<String>,
+}
+
 /// `getFile` 响应：包含 `file_path`，用来拼下载 URL
 /// `https://api.telegram.org/file/bot<token>/<file_path>`。
 #[derive(Debug, Clone, Deserialize)]
@@ -208,6 +218,8 @@ pub struct TgUpdate {
     pub update_id: i64,
     #[serde(default)]
     pub message: Option<TgMessage>,
+    #[serde(default)]
+    pub callback_query: Option<TgCallbackQuery>,
 }
 
 #[derive(Debug, Serialize)]
@@ -218,6 +230,50 @@ struct SendMessageBody<'a> {
     parse_mode: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reply_to_message_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TgInlineKeyboardButton {
+    pub text: String,
+    pub callback_data: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TgInlineKeyboardMarkup {
+    pub inline_keyboard: Vec<Vec<TgInlineKeyboardButton>>,
+}
+
+#[derive(Debug, Serialize)]
+struct SendMessageWithMarkupBody<'a> {
+    chat_id: i64,
+    text: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parse_mode: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_to_message_id: Option<i64>,
+    reply_markup: TgInlineKeyboardMarkup,
+}
+
+#[derive(Debug, Serialize)]
+struct AnswerCallbackQueryBody<'a> {
+    callback_query_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<&'a str>,
+    show_alert: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct EditMessageReplyMarkupBody {
+    chat_id: i64,
+    message_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_markup: Option<TgInlineKeyboardMarkup>,
+}
+
+#[derive(Debug, Serialize)]
+struct SendChatActionBody<'a> {
+    chat_id: i64,
+    action: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -323,7 +379,7 @@ impl TelegramApi {
         timeout_secs: u64,
     ) -> Result<Vec<TgUpdate>, TelegramApiError> {
         let url = format!(
-            "{}?offset={}&timeout={}&allowed_updates=%5B%22message%22%5D",
+            "{}?offset={}&timeout={}&allowed_updates=%5B%22message%22%2C%22callback_query%22%5D",
             self.url("getUpdates"),
             offset,
             timeout_secs,
@@ -418,6 +474,92 @@ impl TelegramApi {
             .await
             .map_err(classify_reqwest_error)?;
         parse_envelope::<TgMessage>(resp).await
+    }
+
+    pub async fn send_message_with_inline_keyboard(
+        &self,
+        chat_id: i64,
+        text: &str,
+        parse_mode: Option<&str>,
+        reply_to_message_id: Option<i64>,
+        reply_markup: TgInlineKeyboardMarkup,
+    ) -> Result<TgMessage, TelegramApiError> {
+        let body = SendMessageWithMarkupBody {
+            chat_id,
+            text,
+            parse_mode,
+            reply_to_message_id,
+            reply_markup,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("sendMessage"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        parse_envelope::<TgMessage>(resp).await
+    }
+
+    pub async fn answer_callback_query(
+        &self,
+        callback_query_id: &str,
+        text: Option<&str>,
+        show_alert: bool,
+    ) -> Result<(), TelegramApiError> {
+        let body = AnswerCallbackQueryBody {
+            callback_query_id,
+            text,
+            show_alert,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("answerCallbackQuery"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        let _ = parse_envelope::<bool>(resp).await?;
+        Ok(())
+    }
+
+    pub async fn edit_message_reply_markup(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        reply_markup: Option<TgInlineKeyboardMarkup>,
+    ) -> Result<(), TelegramApiError> {
+        let body = EditMessageReplyMarkupBody {
+            chat_id,
+            message_id,
+            reply_markup,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("editMessageReplyMarkup"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        let _ = parse_envelope::<serde_json::Value>(resp).await?;
+        Ok(())
+    }
+
+    pub async fn send_chat_action(
+        &self,
+        chat_id: i64,
+        action: &str,
+    ) -> Result<(), TelegramApiError> {
+        let body = SendChatActionBody { chat_id, action };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("sendChatAction"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        let _ = parse_envelope::<bool>(resp).await?;
+        Ok(())
     }
 
     /// 上传本地文件到 Telegram（sendDocument multipart）。

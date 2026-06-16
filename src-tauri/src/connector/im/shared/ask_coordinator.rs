@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -27,24 +27,126 @@ use crate::runtime::tools::permission::PermissionDestination;
 
 use super::app_feedback::{AppFeedbackDecision, IMAppFeedbackCoordinator};
 
+pub const DINGTALK_ASK_ROUTE: &str = "dingtalk-";
+pub const TELEGRAM_ASK_ROUTE: &str = "tg-";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AskKind {
+    Permission,
+    UserQuestion,
+}
+
+#[derive(Debug, Clone)]
+pub struct AskDeliveryPayload {
+    pub session_id: SessionId,
+    pub run_id: RunId,
+    pub markdown: String,
+    pub tool_call_id: String,
+    pub interaction_id: String,
+    pub kind: AskKind,
+    pub followup: bool,
+}
+
 #[async_trait]
-pub trait AskOutputSink: Send + Sync {
-    async fn deliver_ask_card(
-        &self,
-        session_id: &SessionId,
-        run_id: &RunId,
-        markdown: String,
-    ) -> Result<()>;
-    async fn deliver_followup_ask_card(
-        &self,
-        session_id: &SessionId,
-        markdown: String,
-    ) -> Result<()>;
+pub trait ImAskSink: Send + Sync {
+    async fn deliver_ask(&self, payload: &AskDeliveryPayload) -> Result<()>;
     async fn force_finish_current_card(
         &self,
         session_id: &SessionId,
         reason_for_log: &str,
     ) -> Result<()>;
+}
+
+pub struct IMAskOutputRouter {
+    sinks: RwLock<HashMap<String, Arc<dyn ImAskSink>>>,
+    session_routes: RwLock<HashMap<String, String>>,
+}
+
+impl IMAskOutputRouter {
+    pub fn new() -> Self {
+        Self {
+            sinks: RwLock::new(HashMap::new()),
+            session_routes: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub fn register_sink(&self, route_key: impl Into<String>, sink: Arc<dyn ImAskSink>) {
+        self.sinks
+            .write()
+            .expect("im ask route sinks poisoned")
+            .insert(route_key.into(), sink);
+    }
+
+    pub fn route_session(&self, session_id: impl Into<String>, route_key: impl Into<String>) {
+        self.session_routes
+            .write()
+            .expect("im ask session routes poisoned")
+            .insert(session_id.into(), route_key.into());
+    }
+
+    fn resolve_sink(&self, session_id: &SessionId) -> Option<(String, Arc<dyn ImAskSink>)> {
+        if let Some(route_key) = self
+            .session_routes
+            .read()
+            .expect("im ask session routes poisoned")
+            .get(session_id.as_str())
+            .cloned()
+        {
+            let sink = self
+                .sinks
+                .read()
+                .expect("im ask route sinks poisoned")
+                .get(&route_key)
+                .cloned();
+            return sink.map(|sink| (route_key, sink));
+        }
+
+        let sinks = self.sinks.read().expect("im ask route sinks poisoned");
+        for (route_key, sink) in sinks.iter() {
+            if session_id.as_str().starts_with(route_key) {
+                return Some((route_key.clone(), sink.clone()));
+            }
+        }
+        None
+    }
+}
+
+impl Default for IMAskOutputRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl ImAskSink for IMAskOutputRouter {
+    async fn deliver_ask(&self, payload: &AskDeliveryPayload) -> Result<()> {
+        let Some((route_key, sink)) = self.resolve_sink(&payload.session_id) else {
+            log::warn!(
+                "[im-ask-router] no sink route for session={}",
+                payload.session_id.as_str()
+            );
+            return Ok(());
+        };
+        log::debug!(
+            "[im-ask-router] deliver ask route={} session={} kind={:?}",
+            route_key,
+            payload.session_id.as_str(),
+            payload.kind
+        );
+        sink.deliver_ask(payload).await
+    }
+
+    async fn force_finish_current_card(
+        &self,
+        session_id: &SessionId,
+        reason_for_log: &str,
+    ) -> Result<()> {
+        let Some((_route_key, sink)) = self.resolve_sink(session_id) else {
+            return Ok(());
+        };
+        sink.force_finish_current_card(session_id, reason_for_log)
+            .await
+    }
 }
 
 pub trait ChannelSessionRegistry: Send + Sync {
@@ -264,6 +366,39 @@ pub enum PendingAskKind {
     },
 }
 
+fn ask_delivery_payload(
+    session_id: &SessionId,
+    run_id: &RunId,
+    kind: &PendingAskKind,
+    markdown: String,
+    followup: bool,
+) -> AskDeliveryPayload {
+    match kind {
+        PendingAskKind::Permission { tool_call_id, .. } => AskDeliveryPayload {
+            session_id: session_id.clone(),
+            run_id: run_id.clone(),
+            markdown,
+            tool_call_id: tool_call_id.as_str().to_string(),
+            interaction_id: tool_call_id.as_str().to_string(),
+            kind: AskKind::Permission,
+            followup,
+        },
+        PendingAskKind::UserQuestion {
+            interaction_id,
+            tool_call_id,
+            ..
+        } => AskDeliveryPayload {
+            session_id: session_id.clone(),
+            run_id: run_id.clone(),
+            markdown,
+            tool_call_id: tool_call_id.as_str().to_string(),
+            interaction_id: interaction_id.as_str().to_string(),
+            kind: AskKind::UserQuestion,
+            followup,
+        },
+    }
+}
+
 #[derive(Debug, Clone)]
 struct PendingAsk {
     run_id: RunId,
@@ -380,7 +515,7 @@ impl PendingAskSlots {
 pub struct IMAskCoordinator {
     pending: Arc<Mutex<PendingAskSlots>>,
     registry: Arc<dyn ChannelSessionRegistry>,
-    sink: Arc<dyn AskOutputSink>,
+    sink: Arc<dyn ImAskSink>,
     permission_cp: Arc<dyn PendingPermissionControlPlane>,
     interaction_cp: Arc<dyn PendingInteractionControlPlane>,
     judge: Arc<dyn PendingReplyJudge>,
@@ -391,7 +526,7 @@ pub struct IMAskCoordinator {
 impl IMAskCoordinator {
     pub fn new(
         registry: Arc<dyn ChannelSessionRegistry>,
-        sink: Arc<dyn AskOutputSink>,
+        sink: Arc<dyn ImAskSink>,
         permission_cp: Arc<dyn PendingPermissionControlPlane>,
         interaction_cp: Arc<dyn PendingInteractionControlPlane>,
     ) -> Self {
@@ -406,7 +541,7 @@ impl IMAskCoordinator {
 
     pub fn new_with_judge(
         registry: Arc<dyn ChannelSessionRegistry>,
-        sink: Arc<dyn AskOutputSink>,
+        sink: Arc<dyn ImAskSink>,
         permission_cp: Arc<dyn PendingPermissionControlPlane>,
         interaction_cp: Arc<dyn PendingInteractionControlPlane>,
         judge: Arc<dyn PendingReplyJudge>,
@@ -806,9 +941,14 @@ impl IMAskCoordinator {
                 PendingAskKind::UserQuestion { .. } => "user_question".to_string(),
             }
         );
-        self.sink
-            .deliver_followup_ask_card(session_id, format_pending_ask_markdown(&next_pending.kind))
-            .await
+        let payload = ask_delivery_payload(
+            session_id,
+            &next_pending.run_id,
+            &next_pending.kind,
+            format_pending_ask_markdown(&next_pending.kind),
+            true,
+        );
+        self.sink.deliver_ask(&payload).await
     }
 
     async fn resolve_single_permission_intent(
@@ -1197,9 +1337,9 @@ impl IMAskCoordinator {
             primary_model
         );
         let markdown = format_pending_ask_markdown(&kind);
-        self.sink
-            .deliver_ask_card(&event.session_id, &event.run_id, markdown)
-            .await?;
+        let payload =
+            ask_delivery_payload(&event.session_id, &event.run_id, &kind, markdown, false);
+        self.sink.deliver_ask(&payload).await?;
         if let Some(app_feedback) = self.app_feedback.as_ref() {
             match &kind {
                 PendingAskKind::Permission { tool_call_id, .. } => {

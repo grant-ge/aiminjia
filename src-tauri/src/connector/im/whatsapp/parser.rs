@@ -125,6 +125,7 @@ pub async fn normalize_async(
 
     Some(ChannelMessage {
         msg_id: info.id.clone(),
+        native_message_id: None,
         conversation_type: ConversationType::Private,
         conversation_key: conv_key,
         sender_id,

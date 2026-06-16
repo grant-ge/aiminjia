@@ -5,6 +5,7 @@ use tauri_plugin_updater::UpdaterExt;
 use crate::storage::aijia_home::AiJiaHome;
 use crate::updater::cache::{CacheCheckResult, UpdaterCache};
 use crate::updater::downloader::{download_with_resume, DownloadParams, ProgressSink};
+#[cfg(target_os = "macos")]
 use crate::updater::sanitize::strip_macos_metadata;
 
 fn cache_for(home: &AiJiaHome) -> UpdaterCache {

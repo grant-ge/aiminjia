@@ -33,10 +33,12 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use super::api::{TelegramApi, TelegramApiError};
+use super::approval_callback::TelegramApprovalManager;
 use super::pairing::{AttachOutcome, PairerInfo, PairingCodeStore};
 use super::parser::{parse_update, ParsedInbound, UnsupportedKind};
 use super::sender::TelegramSender;
 use super::types::TelegramSessionTarget;
+use crate::connector::im::shared::ask_coordinator::IMAskCoordinator;
 use crate::connector::im::shared::config_store::ChannelConfigStore;
 use crate::connector::im::shared::dedup::MessageDedupSet;
 use crate::connector::im::shared::reconnect::ReconnectBackoff;
@@ -55,6 +57,8 @@ pub struct Params {
     pub config_store: Arc<ChannelConfigStore>,
     pub msg_tx: mpsc::Sender<ChannelMessage>,
     pub on_status: Arc<dyn Fn(ChannelConnectionState, Option<String>) + Send + Sync>,
+    pub ask_coordinator: Option<Arc<IMAskCoordinator>>,
+    pub approval: Arc<TelegramApprovalManager>,
     pub cancel: CancellationToken,
     /// Watchdog 共享：每次 getUpdates 完成（成功或失败）后写入 unix millis。
     pub last_get_updates_at: Arc<AtomicI64>,
@@ -102,6 +106,15 @@ pub async fn run(p: Params) {
                         offset = u.update_id + 1;
                         continue;
                     }
+                    if let Some(callback) = u.callback_query.as_ref() {
+                        p.approval
+                            .handle_callback_query(callback, p.ask_coordinator.as_ref())
+                            .await;
+                        offset = u.update_id + 1;
+                        dirty_count += 1;
+                        continue;
+                    }
+
                     match parse_update(&u, &p.bot_id) {
                         ParsedInbound::Skip(reason) => {
                             log::info!(

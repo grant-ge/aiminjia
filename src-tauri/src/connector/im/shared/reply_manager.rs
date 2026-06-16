@@ -656,22 +656,31 @@ impl RuntimeEventSubscriber for DingtalkReplyManager {
 }
 
 #[async_trait]
-impl super::ask_coordinator::AskOutputSink for DingtalkReplyManager {
-    async fn deliver_ask_card(
+impl super::ask_coordinator::ImAskSink for DingtalkReplyManager {
+    async fn deliver_ask(
         &self,
-        session_id: &crate::runtime::ids::SessionId,
-        run_id: &crate::runtime::ids::RunId,
-        markdown: String,
+        payload: &super::ask_coordinator::AskDeliveryPayload,
     ) -> Result<()> {
+        if payload.followup {
+            let ask_content = non_empty_ask_content(payload.markdown.clone());
+            log::info!(
+                "[reply-manager] delivering follow-up ask card session={}",
+                payload.session_id.as_str()
+            );
+            return self
+                .deliver_session_feedback_card(&payload.session_id, ask_content)
+                .await;
+        }
+
         let mut contexts = self.contexts.lock().await;
-        let key = card_context_key(session_id.as_str(), run_id.as_str());
+        let key = card_context_key(payload.session_id.as_str(), payload.run_id.as_str());
         let Some(ctx) = contexts.get_mut(&key) else {
             return Ok(());
         };
-        if ctx.run_id != run_id.as_str() {
+        if ctx.run_id != payload.run_id.as_str() {
             return Ok(());
         }
-        let ask_content = non_empty_ask_content(markdown);
+        let ask_content = non_empty_ask_content(payload.markdown.clone());
         if !ctx.accumulated_text.trim().is_empty() {
             ctx.accumulated_text.push_str("\n\n");
         }
@@ -694,24 +703,10 @@ impl super::ask_coordinator::AskOutputSink for DingtalkReplyManager {
             .lock()
             .await
             .remove(&scheduled_card_update_key(
-                session_id.as_str(),
-                run_id.as_str(),
+                payload.session_id.as_str(),
+                payload.run_id.as_str(),
             ));
         Ok(())
-    }
-
-    async fn deliver_followup_ask_card(
-        &self,
-        session_id: &crate::runtime::ids::SessionId,
-        markdown: String,
-    ) -> Result<()> {
-        let ask_content = non_empty_ask_content(markdown);
-        log::info!(
-            "[reply-manager] delivering follow-up ask card session={}",
-            session_id.as_str()
-        );
-        self.deliver_session_feedback_card(session_id, ask_content)
-            .await
     }
 
     async fn force_finish_current_card(

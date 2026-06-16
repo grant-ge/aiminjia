@@ -51,32 +51,52 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
             return Ok(());
         }
 
-        if let RuntimeEventKind::MessagePersisted { role, content, .. } = &event.kind {
-            if role != "assistant" {
-                return Ok(());
+        match &event.kind {
+            RuntimeEventKind::MessagePersisted { role, content, .. } => {
+                if role != "assistant" {
+                    return Ok(());
+                }
+                let Some(text) = Self::extract_markdown(content) else {
+                    log::debug!(
+                        "[telegram-reply-forwarder] empty assistant content for session={}, skip",
+                        session_id
+                    );
+                    self.connector
+                        .stop_typing(&session_id, event.run_id.as_str())
+                        .await;
+                    return Ok(());
+                };
+                let target = ReplyTarget {
+                    session_id: session_id.clone(),
+                    external_conversation_key: String::new(),
+                };
+                if let Err(e) = self
+                    .connector
+                    .send(target, ReplyContent::Markdown(text))
+                    .await
+                {
+                    log::warn!(
+                        "[telegram-reply-forwarder] send Markdown failed (session={}): {:?}",
+                        session_id,
+                        e
+                    );
+                }
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
-            let Some(text) = Self::extract_markdown(content) else {
-                log::debug!(
-                    "[telegram-reply-forwarder] empty assistant content for session={}, skip",
-                    session_id
-                );
-                return Ok(());
-            };
-            let target = ReplyTarget {
-                session_id: session_id.clone(),
-                external_conversation_key: String::new(),
-            };
-            if let Err(e) = self
-                .connector
-                .send(target, ReplyContent::Markdown(text))
-                .await
-            {
-                log::warn!(
-                    "[telegram-reply-forwarder] send Markdown failed (session={}): {:?}",
-                    session_id,
-                    e
-                );
+            RuntimeEventKind::PermissionAskRequired { .. }
+            | RuntimeEventKind::UserInteractionRequired { .. }
+            | RuntimeEventKind::StreamDone
+            | RuntimeEventKind::StreamError { .. }
+            | RuntimeEventKind::TurnCompleted { .. }
+            | RuntimeEventKind::RunCancelled
+            | RuntimeEventKind::RunCompleted => {
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
+            _ => {}
         }
         Ok(())
     }
