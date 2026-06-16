@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
 import { UpdateAvailableLink } from './UpdateAvailableLink'
@@ -16,6 +16,49 @@ function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 1) {
     getCurrentWindow().startDragging()
   }
+}
+
+function useReserveMacTrafficLightInset(enabled: boolean) {
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    if (!enabled) {
+      setIsFullscreen(false)
+      return
+    }
+
+    const win = getCurrentWindow()
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    const syncFullscreen = () => {
+      void win.isFullscreen()
+        .then((next) => {
+          if (!cancelled) setIsFullscreen(next)
+        })
+        .catch(() => {
+          if (!cancelled) setIsFullscreen(false)
+        })
+    }
+
+    syncFullscreen()
+    void win.onResized(() => {
+      syncFullscreen()
+    }).then((nextUnlisten) => {
+      if (cancelled) {
+        nextUnlisten()
+        return
+      }
+      unlisten = nextUnlisten
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [enabled])
+
+  return enabled && !isFullscreen
 }
 
 function WindowControls() {
@@ -165,9 +208,13 @@ export function TitleBar() {
   )
   const isWindows = navigator.userAgent.includes('Windows')
   const isDev = import.meta.env.DEV
+  const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(!isWindows)
 
   const barClass = 'flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
   const barStyle = TITLE_BAR_STYLE
+  const macLeftGroupClass = reserveMacTrafficLightInset
+    ? 'flex items-center pl-20'
+    : 'flex items-center'
 
   if (!isWindows) {
     return (
@@ -176,7 +223,7 @@ export function TitleBar() {
         className={`${barClass} justify-between`}
         style={barStyle}
       >
-        <div className="flex items-center pl-20">
+        <div className={macLeftGroupClass}>
           <SidebarToggleButton />
           <TitleBarNavigationButtons />
         </div>
