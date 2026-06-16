@@ -32,6 +32,8 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(
   const height = isHot ? 'min-h-32' : 'min-h-28'
   const isRow = layout === 'row'
   const avatarText = Array.from(title.trim())[0]?.toUpperCase() ?? '?'
+  const cardHeaderPadding = !isRow && actionsSlot ? 'pr-12' : 'pr-0'
+  const chipClass = 'shrink-0 rounded-[2px] border border-border bg-card px-1.5 py-0 text-2xs font-medium leading-4 text-muted-foreground'
 
   const interactiveProps = onClick
     ? {
@@ -77,13 +79,13 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div data-testid="skill-card-title-row" className="flex min-w-0 items-center gap-1.5">
-            <span data-testid="skill-card-title-main" className="flex min-w-0 max-w-full flex-1 items-center gap-1.5">
+            <span data-testid="skill-card-title-main" className={`flex min-w-0 max-w-full flex-1 items-center gap-1.5 ${isRow ? '' : cardHeaderPadding}`}>
               <span data-testid="skill-card-title" className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground">{title}</span>
-              {version ? (
+              {isRow && version ? (
                 <span
                   data-testid="skill-card-version"
                   title={version}
-                  className="shrink-0 rounded-[2px] border border-border bg-muted px-1.5 py-0 font-mono text-2xs leading-4 text-muted-foreground"
+                  className={chipClass}
                 >
                   {version}
                 </span>
@@ -91,7 +93,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(
               {sourceLabel ? (
                 <span
                   data-testid="skill-card-source"
-                  className="shrink-0 rounded-[2px] border border-border bg-card px-1.5 py-0 text-2xs font-medium leading-4 text-muted-foreground"
+                  className={chipClass}
                 >
                   {sourceLabel}
                 </span>
@@ -101,8 +103,17 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(
           {isRow ? (
             <p className="min-w-0 truncate text-xs leading-5 text-muted-foreground">{desc || meta}</p>
           ) : (
-            <div className="flex min-w-0 items-center gap-1.5">
+            <div data-testid="skill-card-meta-row" className={`flex min-w-0 items-center gap-1.5 ${cardHeaderPadding}`}>
               <span className="truncate text-xs font-medium leading-4 text-muted-foreground">{meta}</span>
+              {version ? (
+                <span
+                  data-testid="skill-card-version"
+                  title={version}
+                  className={chipClass}
+                >
+                  {version}
+                </span>
+              ) : null}
             </div>
           )}
         </div>

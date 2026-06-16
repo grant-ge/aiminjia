@@ -86,6 +86,38 @@ fn app_about_metadata<R: tauri::Runtime>(
     }
 }
 
+fn handle_window_close_requested<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+    event: &tauri::WindowEvent,
+) {
+    if window.label() != "main" {
+        return;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Err(err) = window.hide() {
+                log::warn!("Failed to hide main window on macOS close request: {err}");
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Err(err) = window.minimize() {
+                log::warn!("Failed to minimize main window on Windows close request: {err}");
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = event;
+}
+
 fn build_localized_app_menu<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     language: &str,
@@ -248,6 +280,9 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_pilot::init());
 
     builder
+        .on_window_event(|window, event| {
+            handle_window_close_requested(window, event);
+        })
         .setup(|app| {
             install_app_navigation_menu(app)?;
 
@@ -1401,8 +1436,24 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app_handle, event| match event {
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                if !has_visible_windows {
+                    if let Some(win) = app_handle.get_webview_window("main") {
+                        if let Err(err) = win.show() {
+                            log::warn!("Failed to show main window on macOS Dock reopen: {err}");
+                        }
+                        if let Err(err) = win.set_focus() {
+                            log::warn!("Failed to focus main window on macOS Dock reopen: {err}");
+                        }
+                    }
+                }
+            }
+            tauri::RunEvent::Exit => {
                 if let Some(chat_adapter) = app_handle
                     .try_state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
                 {
@@ -1442,6 +1493,7 @@ pub fn run() {
                     });
                 }
             }
+            _ => {}
         });
 }
 
