@@ -1883,22 +1883,16 @@ mod tests {
         followup_calls: StdMutex<Vec<String>>,
     }
     #[async_trait]
-    impl AskOutputSink for RecordingSink {
-        async fn deliver_ask_card(
-            &self,
-            _session_id: &SessionId,
-            _run_id: &RunId,
-            markdown: String,
-        ) -> Result<()> {
-            self.calls.lock().unwrap().push(markdown);
-            Ok(())
-        }
-        async fn deliver_followup_ask_card(
-            &self,
-            _session_id: &SessionId,
-            markdown: String,
-        ) -> Result<()> {
-            self.followup_calls.lock().unwrap().push(markdown);
+    impl ImAskSink for RecordingSink {
+        async fn deliver_ask(&self, payload: &AskDeliveryPayload) -> Result<()> {
+            if payload.followup {
+                self.followup_calls
+                    .lock()
+                    .unwrap()
+                    .push(payload.markdown.clone());
+            } else {
+                self.calls.lock().unwrap().push(payload.markdown.clone());
+            }
             Ok(())
         }
         async fn force_finish_current_card(

@@ -1109,10 +1109,26 @@ mod tests {
         assert_eq!(ctx[&context_key].accumulated_text, "你好你好");
     }
 
-    /// AskOutputSink: force_finish_current_card 对 Streaming 状态的卡片标记为 Finished
+    fn ask_payload(
+        session_id: &str,
+        run_id: &str,
+        markdown: &str,
+    ) -> super::super::ask_coordinator::AskDeliveryPayload {
+        super::super::ask_coordinator::AskDeliveryPayload {
+            session_id: SessionId::new(session_id),
+            run_id: RunId::new(run_id),
+            markdown: markdown.to_string(),
+            tool_call_id: "tool-call-test".to_string(),
+            interaction_id: "interaction-test".to_string(),
+            kind: super::super::ask_coordinator::AskKind::Permission,
+            followup: false,
+        }
+    }
+
+    /// ImAskSink: force_finish_current_card 对 Streaming 状态的卡片标记为 Finished
     #[tokio::test]
     async fn force_finish_marks_lifecycle_finished() {
-        use super::super::ask_coordinator::AskOutputSink;
+        use super::super::ask_coordinator::ImAskSink;
 
         let mgr = DingtalkReplyManager::new();
         let context_key = card_context_key("sess-ask", "run1");
@@ -1145,10 +1161,10 @@ mod tests {
         ));
     }
 
-    /// AskOutputSink: force_finish_current_card 对不存在的 session 静默返回 Ok
+    /// ImAskSink: force_finish_current_card 对不存在的 session 静默返回 Ok
     #[tokio::test]
     async fn force_finish_no_context_is_ok() {
-        use super::super::ask_coordinator::AskOutputSink;
+        use super::super::ask_coordinator::ImAskSink;
 
         let mgr = DingtalkReplyManager::new();
         let result = mgr
@@ -1157,10 +1173,10 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    /// AskOutputSink: 空 streaming 卡片收到 AskUserQuestion 时应复用原卡并保留提问内容。
+    /// ImAskSink: 空 streaming 卡片收到 AskUserQuestion 时应复用原卡并保留提问内容。
     #[tokio::test]
     async fn deliver_ask_card_reuses_empty_streaming_card() {
-        use super::super::ask_coordinator::AskOutputSink;
+        use super::super::ask_coordinator::ImAskSink;
 
         let mgr = DingtalkReplyManager::new();
         let context_key = card_context_key("sess-empty-ask", "run1");
@@ -1182,11 +1198,7 @@ mod tests {
         }
 
         let _ = mgr
-            .deliver_ask_card(
-                &SessionId::new("sess-empty-ask"),
-                &RunId::new("run1"),
-                "question markdown".into(),
-            )
+            .deliver_ask(&ask_payload("sess-empty-ask", "run1", "question markdown"))
             .await;
 
         let ctx = mgr.contexts.lock().await;
@@ -1196,10 +1208,10 @@ mod tests {
         );
     }
 
-    /// AskOutputSink: 非空 streaming 卡片收到审批卡后合并到同一张 run 卡片。
+    /// ImAskSink: 非空 streaming 卡片收到审批卡后合并到同一张 run 卡片。
     #[tokio::test]
     async fn deliver_ask_card_merges_with_same_run_preface() {
-        use super::super::ask_coordinator::AskOutputSink;
+        use super::super::ask_coordinator::ImAskSink;
 
         let mgr = DingtalkReplyManager::new();
         let context_key = card_context_key("sess-non-empty-ask", "run1");
@@ -1221,11 +1233,11 @@ mod tests {
         }
 
         let _ = mgr
-            .deliver_ask_card(
-                &SessionId::new("sess-non-empty-ask"),
-                &RunId::new("run1"),
-                "permission markdown".into(),
-            )
+            .deliver_ask(&ask_payload(
+                "sess-non-empty-ask",
+                "run1",
+                "permission markdown",
+            ))
             .await;
 
         let ctx = mgr.contexts.lock().await;
@@ -1235,10 +1247,10 @@ mod tests {
         );
     }
 
-    /// AskOutputSink: pending ask 接管并完成同一张卡后，不能留下后台 StreamDone 刷新任务。
+    /// ImAskSink: pending ask 接管并完成同一张卡后，不能留下后台 StreamDone 刷新任务。
     #[tokio::test]
     async fn deliver_ask_card_clears_scheduled_update_for_same_run() {
-        use super::super::ask_coordinator::AskOutputSink;
+        use super::super::ask_coordinator::ImAskSink;
 
         let mgr = DingtalkReplyManager::new();
         let context_key = card_context_key("sess-scheduled-ask", "run1");
@@ -1261,11 +1273,11 @@ mod tests {
         }
 
         let _ = mgr
-            .deliver_ask_card(
-                &SessionId::new("sess-scheduled-ask"),
-                &RunId::new("run1"),
-                "permission markdown".into(),
-            )
+            .deliver_ask(&ask_payload(
+                "sess-scheduled-ask",
+                "run1",
+                "permission markdown",
+            ))
             .await;
 
         let scheduled = mgr.scheduled_card_updates.lock().await;
@@ -1299,10 +1311,10 @@ mod tests {
         );
     }
 
-    /// AskOutputSink: 同 session 的旧 run 不能被新 run 的 pending ask 改写。
+    /// ImAskSink: 同 session 的旧 run 不能被新 run 的 pending ask 改写。
     #[tokio::test]
     async fn deliver_ask_card_does_not_modify_other_run_context() {
-        use super::super::ask_coordinator::AskOutputSink;
+        use super::super::ask_coordinator::ImAskSink;
 
         let mgr = DingtalkReplyManager::new();
         let old_key = card_context_key("sess-run-scope", "run-old");
@@ -1315,11 +1327,7 @@ mod tests {
         }
 
         let _ = mgr
-            .deliver_ask_card(
-                &SessionId::new("sess-run-scope"),
-                &RunId::new("run-new"),
-                "new ask".into(),
-            )
+            .deliver_ask(&ask_payload("sess-run-scope", "run-new", "new ask"))
             .await;
 
         let ctx = mgr.contexts.lock().await;
@@ -1330,10 +1338,10 @@ mod tests {
         );
     }
 
-    /// AskOutputSink: 即使 AskUserQuestion markdown 为空，也不能完成一张空白卡片。
+    /// ImAskSink: 即使 AskUserQuestion markdown 为空，也不能完成一张空白卡片。
     #[tokio::test]
     async fn deliver_ask_card_uses_fallback_when_markdown_is_empty() {
-        use super::super::ask_coordinator::AskOutputSink;
+        use super::super::ask_coordinator::ImAskSink;
 
         let mgr = DingtalkReplyManager::new();
         let context_key = card_context_key("sess-empty-markdown", "run1");
@@ -1355,11 +1363,7 @@ mod tests {
         }
 
         let _ = mgr
-            .deliver_ask_card(
-                &SessionId::new("sess-empty-markdown"),
-                &RunId::new("run1"),
-                "   ".into(),
-            )
+            .deliver_ask(&ask_payload("sess-empty-markdown", "run1", "   "))
             .await;
 
         let ctx = mgr.contexts.lock().await;

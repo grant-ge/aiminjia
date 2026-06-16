@@ -831,7 +831,6 @@ mod tests {
 
     #[tokio::test]
     async fn send_document_uploads_multipart_successfully() {
-        use wiremock::matchers::body_string_contains;
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/botT/sendDocument"))

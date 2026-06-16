@@ -22,6 +22,7 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ApprovalAction {
     Allow,
+    AllowAlways,
     Deny,
 }
 
@@ -29,6 +30,7 @@ impl ApprovalAction {
     fn as_command_arg(self) -> &'static str {
         match self {
             Self::Allow => "allow",
+            Self::AllowAlways => "always",
             Self::Deny => "deny",
         }
     }
@@ -310,18 +312,7 @@ impl ImAskSink for TelegramApprovalManager {
         }
 
         let token = self.tokens.lock().await.insert(payload, &target);
-        let markup = TgInlineKeyboardMarkup {
-            inline_keyboard: vec![vec![
-                TgInlineKeyboardButton {
-                    text: "允许".to_string(),
-                    callback_data: format!("{CALLBACK_PREFIX}:{token}:allow"),
-                },
-                TgInlineKeyboardButton {
-                    text: "拒绝".to_string(),
-                    callback_data: format!("{CALLBACK_PREFIX}:{token}:deny"),
-                },
-            ]],
-        };
+        let markup = approval_keyboard(&token);
 
         let text = non_empty_ask_text(&payload.markdown);
         let result = self
@@ -358,6 +349,27 @@ impl ImAskSink for TelegramApprovalManager {
     }
 }
 
+fn approval_keyboard(token: &str) -> TgInlineKeyboardMarkup {
+    TgInlineKeyboardMarkup {
+        inline_keyboard: vec![
+            vec![
+                TgInlineKeyboardButton {
+                    text: "本次允许".to_string(),
+                    callback_data: format!("{CALLBACK_PREFIX}:{token}:allow"),
+                },
+                TgInlineKeyboardButton {
+                    text: "永久允许".to_string(),
+                    callback_data: format!("{CALLBACK_PREFIX}:{token}:allow_always"),
+                },
+            ],
+            vec![TgInlineKeyboardButton {
+                text: "拒绝".to_string(),
+                callback_data: format!("{CALLBACK_PREFIX}:{token}:deny"),
+            }],
+        ],
+    }
+}
+
 fn non_empty_ask_text(markdown: &str) -> String {
     if markdown.trim().is_empty() {
         "需要你确认后才能继续。".to_string()
@@ -377,6 +389,7 @@ fn parse_callback_data(data: &str) -> Option<(String, ApprovalAction)> {
     }
     let action = match parts.next()? {
         "allow" => ApprovalAction::Allow,
+        "allow_always" | "always" => ApprovalAction::AllowAlways,
         "deny" => ApprovalAction::Deny,
         _ => return None,
     };
@@ -384,4 +397,61 @@ fn parse_callback_data(data: &str) -> Option<(String, ApprovalAction)> {
         return None;
     }
     Some((token.to_string(), action))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_callback_data_accepts_all_approval_actions() {
+        assert_eq!(
+            parse_callback_data("aijia:ask:tok123:allow"),
+            Some(("tok123".to_string(), ApprovalAction::Allow))
+        );
+        assert_eq!(
+            parse_callback_data("aijia:ask:tok123:allow_always"),
+            Some(("tok123".to_string(), ApprovalAction::AllowAlways))
+        );
+        assert_eq!(
+            parse_callback_data("aijia:ask:tok123:always"),
+            Some(("tok123".to_string(), ApprovalAction::AllowAlways))
+        );
+        assert_eq!(
+            parse_callback_data("aijia:ask:tok123:deny"),
+            Some(("tok123".to_string(), ApprovalAction::Deny))
+        );
+        assert_eq!(parse_callback_data("aijia:ask:tok123:allow:extra"), None);
+    }
+
+    #[test]
+    fn approval_action_command_args_match_shared_approval_parser() {
+        assert_eq!(ApprovalAction::Allow.as_command_arg(), "allow");
+        assert_eq!(ApprovalAction::AllowAlways.as_command_arg(), "always");
+        assert_eq!(ApprovalAction::Deny.as_command_arg(), "deny");
+    }
+
+    #[test]
+    fn approval_keyboard_uses_two_row_three_button_layout() {
+        let markup = approval_keyboard("tok123");
+
+        assert_eq!(markup.inline_keyboard.len(), 2);
+        assert_eq!(markup.inline_keyboard[0].len(), 2);
+        assert_eq!(markup.inline_keyboard[1].len(), 1);
+        assert_eq!(markup.inline_keyboard[0][0].text, "本次允许");
+        assert_eq!(
+            markup.inline_keyboard[0][0].callback_data,
+            "aijia:ask:tok123:allow"
+        );
+        assert_eq!(markup.inline_keyboard[0][1].text, "永久允许");
+        assert_eq!(
+            markup.inline_keyboard[0][1].callback_data,
+            "aijia:ask:tok123:allow_always"
+        );
+        assert_eq!(markup.inline_keyboard[1][0].text, "拒绝");
+        assert_eq!(
+            markup.inline_keyboard[1][0].callback_data,
+            "aijia:ask:tok123:deny"
+        );
+    }
 }

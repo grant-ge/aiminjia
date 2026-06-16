@@ -253,6 +253,7 @@ mod tests {
         TgUpdate {
             update_id: id,
             message: Some(msg),
+            callback_query: None,
         }
     }
 
