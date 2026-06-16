@@ -36,6 +36,7 @@ const tauriMocks = vi.hoisted(() => ({
 const teamOverviewMock = vi.hoisted(() => ({
   overview: null as import('@/types/team').TeamOverview | null,
 }))
+const chatBottomAreaMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/hooks/useChat', () => ({
   useChat: () => chatMocks,
@@ -105,7 +106,10 @@ vi.mock('@/components/layout/ChatArea', () => ({
 }))
 
 vi.mock('@/components/chat-scene/ChatBottomArea', () => ({
-  ChatBottomArea: () => <footer data-testid="chat-footer-input" />,
+  ChatBottomArea: (props: Record<string, unknown>) => {
+    chatBottomAreaMock(props)
+    return <footer data-testid="chat-footer-input" />
+  },
 }))
 
 vi.mock('@/components/chat/RightPanel', () => ({
@@ -146,6 +150,7 @@ describe('ChatPage layout', () => {
     tauriMocks.expertTeamTemplateRefresh.mockResolvedValue(0)
     tauriMocks.getConversationSource.mockReturnValue(new Promise(() => {}))
     tauriMocks.employeeList.mockResolvedValue([])
+    chatBottomAreaMock.mockClear()
     await i18n.changeLanguage('zh-CN')
     setRemoteExpertTeams([])
     await clearExpertTeam('conv-layout')
@@ -414,6 +419,30 @@ describe('ChatPage layout', () => {
     render(<ChatPage conversationId="conv-team" />)
 
     expect(screen.queryByLabelText('关闭专家团')).not.toBeInTheDocument()
+  })
+
+  it('does not override the chat composer placeholder for expert team conversations', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-team',
+      conversations: [{
+        id: 'conv-team',
+        title: '专家团会话',
+        createdAt: '',
+        updatedAt: '',
+        isArchived: false,
+        kind: 'expertTeam',
+        sourceLabel: '沟通/谈判预演团',
+      }],
+      messages: [{ id: 'm1', conversationId: 'conv-team', role: 'assistant', content: { text: '已有消息' }, createdAt: '' }],
+    })
+    await setExpertTeam('conv-team', 'negotiation', '沟通/谈判预演团')
+
+    render(<ChatPage conversationId="conv-team" />)
+
+    await waitFor(() => {
+      expect(chatBottomAreaMock).toHaveBeenCalled()
+    })
+    expect(chatBottomAreaMock.mock.calls.at(-1)?.[0]).not.toHaveProperty('placeholderOverride')
   })
 
   it('uses the localized expert team name for the conversation source chip', async () => {

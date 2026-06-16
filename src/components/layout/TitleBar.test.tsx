@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { getDevBadgeLabel, TitleBar } from './TitleBar'
@@ -10,6 +10,8 @@ import { useUiStore } from '@/stores/uiStore'
 // already initialized by the time a test fires an event.
 const startDragging = vi.fn()
 const toggleMaximize = vi.fn()
+const isFullscreen = vi.fn()
+const onResized = vi.fn()
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
@@ -17,6 +19,8 @@ vi.mock('@tauri-apps/api/window', () => ({
     toggleMaximize,
     close: vi.fn(),
     startDragging,
+    isFullscreen,
+    onResized,
   }),
 }))
 
@@ -35,6 +39,8 @@ describe('TitleBar', () => {
     useUiStore.setState({ sidebarHidden: false })
     startDragging.mockClear()
     toggleMaximize.mockClear()
+    isFullscreen.mockReset().mockResolvedValue(false)
+    onResized.mockReset().mockResolvedValue(vi.fn())
   })
 
   afterEach(() => {
@@ -85,6 +91,20 @@ describe('TitleBar', () => {
     expect(toggle).toHaveAttribute('data-aijia-sidebar-toggle', 'true')
     expect(container.querySelector('.lucide-panel-left')).toBeInTheDocument()
     expect(titleBar.lastElementChild).toHaveTextContent(getDevBadgeLabel())
+  })
+
+  it('removes the macOS traffic-light padding while fullscreen', async () => {
+    isFullscreen.mockResolvedValue(true)
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+
+    const titleBar = container.firstElementChild as HTMLElement
+    const leftGroup = titleBar.firstElementChild as HTMLElement
+
+    await waitFor(() => {
+      expect(leftGroup).not.toHaveClass('pl-20')
+    })
+    expect(leftGroup).toContainElement(screen.getByLabelText('隐藏侧栏'))
   })
 
   it('renders route back and forward buttons in the macOS title bar', () => {

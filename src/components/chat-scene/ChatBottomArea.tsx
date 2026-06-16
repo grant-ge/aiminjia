@@ -64,15 +64,12 @@ function BottomTips() {
 export function ChatBottomArea({
   disabled = false,
   sessionIdOverride,
-  placeholderOverride,
 }: {
   disabled?: boolean;
   /** When the bottom area is rendered inside a channel session view (DingTalk
    * etc.), the active session id does NOT live in chatStore — pass it
    * explicitly so pending chips / snapshot can target the right queue. */
   sessionIdOverride?: string;
-  /** When set, overrides the default i18n placeholder. Used by expert-teams. */
-  placeholderOverride?: string;
 }) {
   const { t, i18n } = useTranslation();
   const composerRef = useRef<RichComposerHandle>(null);
@@ -463,7 +460,7 @@ export function ChatBottomArea({
             ) : (
               <RichComposer
                 ref={composerRef}
-                placeholder={placeholderOverride ?? t("inputBar.placeholder")}
+                placeholder={t("inputBar.placeholder")}
                 onSubmit={handleSubmit}
                 disabled={disabled}
                 isStreaming={isStreaming}
