@@ -1160,6 +1160,18 @@ impl IMAskCoordinator {
                     },
                 )?,
                 ApprovalCommandDecision::AllowAlways => {
+                    let path_auth_scope_override = self
+                        .permission_cp
+                        .get_pending_request(tool_call_id)
+                        .as_ref()
+                        .and_then(|request| allow_always_write_scope_override(pending, request));
+                    if let Some(scope) = path_auth_scope_override.as_deref() {
+                        log::info!(
+                            "[im-ask] allow_always write path scope override tool_call_id={} scope={}",
+                            tool_call_id.as_str(),
+                            scope
+                        );
+                    }
                     self.permission_cp.resolve_pending_request(
                         tool_call_id,
                         PendingPermissionResolution::Allow {
@@ -1167,7 +1179,7 @@ impl IMAskCoordinator {
                             remember: true,
                             destination: Some(PermissionDestination::User),
                             message: None,
-                            path_auth_scope_override: None,
+                            path_auth_scope_override,
                         },
                     )?
                 }
@@ -1433,6 +1445,42 @@ fn permission_decision_intent_from_approval(
         ApprovalCommandDecision::Deny => PermissionDecisionIntent::Deny { reason: None },
         ApprovalCommandDecision::Cancel => PermissionDecisionIntent::Cancel { reason: None },
     }
+}
+
+fn allow_always_write_scope_override(
+    pending: &PendingAsk,
+    request: &crate::runtime::store::PendingPermissionRequest,
+) -> Option<String> {
+    let PendingAskKind::Permission {
+        tool_name,
+        path_auth_scope: Some(scope),
+        ..
+    } = &pending.kind
+    else {
+        return None;
+    };
+    let path = scope.strip_prefix("path:")?.trim();
+    if path.is_empty() {
+        return None;
+    }
+    if !is_workspace_write_tool(tool_name)
+        && !is_workspace_write_tool(&request.original_request.tool_name)
+    {
+        return None;
+    }
+    Some(format!("pathwrite:{}", path))
+}
+
+fn is_workspace_write_tool(tool_name: &str) -> bool {
+    let normalized = tool_name
+        .trim()
+        .to_ascii_lowercase()
+        .replace('_', "")
+        .replace('-', "");
+    matches!(
+        normalized.as_str(),
+        "write" | "writefile" | "edit" | "editfile"
+    )
 }
 
 #[async_trait]
@@ -2372,6 +2420,123 @@ mod tests {
                 assert!(path_auth_scope_override.is_none());
             }
             other => panic!("expected allow resolution, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_allow_always_write_path_scope_overrides_to_pathwrite() {
+        let permission = Arc::new(crate::runtime::store::PendingPermissionRequestStore::new());
+        let mut request = permission_request("tool-1");
+        request.tool_name = "Write".into();
+        request.original_request = original_request("tool-1", "Write");
+        request.original_request.args =
+            serde_json::json!({ "file_path": "/tmp/aijia-im-always/a.txt" });
+        request.path_auth_scope = Some("path:/tmp/aijia-im-always".into());
+        let mut resolution_rx = permission.insert(request).unwrap();
+        let interaction =
+            Arc::new(crate::runtime::interaction::InMemoryInteractionControlPlane::new());
+        let coordinator = IMAskCoordinator::new(
+            Arc::new(Registry(true)),
+            Arc::new(RecordingSink {
+                calls: StdMutex::new(Vec::new()),
+                followup_calls: StdMutex::new(Vec::new()),
+            }),
+            permission,
+            interaction,
+        );
+        coordinator.pending.lock().await.insert(
+            "sess-im".into(),
+            PendingAsk {
+                run_id: RunId::new("run-1"),
+                kind: PendingAskKind::Permission {
+                    tool_call_id: ToolCallId::new("tool-1"),
+                    tool_name: "Write".into(),
+                    message: "write file".into(),
+                    suggestions: vec![],
+                    path_auth_scope: Some("path:/tmp/aijia-im-always".into()),
+                },
+                primary_model: "deepseek-v3".into(),
+            },
+        );
+
+        let outcome = coordinator
+            .try_handle_reply(&SessionId::new("sess-im"), "/approve tool-1 always".into())
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, HandleOutcome::ApprovalResolved);
+        match resolution_rx.try_recv().expect("permission should resolve") {
+            PendingPermissionResolution::Allow {
+                remember,
+                destination,
+                path_auth_scope_override,
+                ..
+            } => {
+                assert!(remember);
+                assert_eq!(destination, Some(PermissionDestination::User));
+                assert_eq!(
+                    path_auth_scope_override.as_deref(),
+                    Some("pathwrite:/tmp/aijia-im-always")
+                );
+            }
+            other => panic!("expected allow always resolution, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_allow_always_read_path_scope_does_not_escalate_to_pathwrite() {
+        let permission = Arc::new(crate::runtime::store::PendingPermissionRequestStore::new());
+        let mut request = permission_request("tool-1");
+        request.tool_name = "Read".into();
+        request.original_request = original_request("tool-1", "Read");
+        request.original_request.args =
+            serde_json::json!({ "file_path": "/tmp/aijia-im-read/a.txt" });
+        request.path_auth_scope = Some("path:/tmp/aijia-im-read".into());
+        let mut resolution_rx = permission.insert(request).unwrap();
+        let interaction =
+            Arc::new(crate::runtime::interaction::InMemoryInteractionControlPlane::new());
+        let coordinator = IMAskCoordinator::new(
+            Arc::new(Registry(true)),
+            Arc::new(RecordingSink {
+                calls: StdMutex::new(Vec::new()),
+                followup_calls: StdMutex::new(Vec::new()),
+            }),
+            permission,
+            interaction,
+        );
+        coordinator.pending.lock().await.insert(
+            "sess-im".into(),
+            PendingAsk {
+                run_id: RunId::new("run-1"),
+                kind: PendingAskKind::Permission {
+                    tool_call_id: ToolCallId::new("tool-1"),
+                    tool_name: "Read".into(),
+                    message: "read file".into(),
+                    suggestions: vec![],
+                    path_auth_scope: Some("path:/tmp/aijia-im-read".into()),
+                },
+                primary_model: "deepseek-v3".into(),
+            },
+        );
+
+        let outcome = coordinator
+            .try_handle_reply(&SessionId::new("sess-im"), "/approve tool-1 always".into())
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, HandleOutcome::ApprovalResolved);
+        match resolution_rx.try_recv().expect("permission should resolve") {
+            PendingPermissionResolution::Allow {
+                remember,
+                destination,
+                path_auth_scope_override,
+                ..
+            } => {
+                assert!(remember);
+                assert_eq!(destination, Some(PermissionDestination::User));
+                assert!(path_auth_scope_override.is_none());
+            }
+            other => panic!("expected allow always resolution, got {:?}", other),
         }
     }
 
