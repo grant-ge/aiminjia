@@ -94,7 +94,8 @@ describe('aijia result cards in assistant markdown', () => {
     expect(viewButton.parentElement).toBe(card?.firstElementChild)
 
     fireEvent.click(screen.getByRole('button', { name: '查看技能' }))
-    expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'sales-followup' })
+    expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'conv-1' })
+    expect(useUiStore.getState().skillDetailDialogId).toBe('sales-followup')
   })
 
   it('renders a schedule-created card and opens the editor with live agenda data', async () => {

@@ -99,7 +99,9 @@ describe('SkillCenterPage', () => {
     expect(topBar).not.toHaveClass('h-14')
     expect(topBar).not.toHaveClass('h-[45px]')
     expect(screen.getByText('技能中心')).toBeInTheDocument()
-    expect(screen.getByText(/7 个技能/)).toBeInTheDocument()
+    expect(screen.queryByText(/7 个技能/)).toBeNull()
+    expect(screen.getByRole('button', { name: '同步技能' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '已安装' })).toHaveTextContent('2')
     expect(screen.getByPlaceholderText('搜索技能名称或场景')).toBeInTheDocument()
   })
 
@@ -186,16 +188,17 @@ describe('SkillCenterPage', () => {
     }
   })
 
-  it('切换到内置后卡片点击进入详情', async () => {
+  it('切换到内置后卡片点击打开详情弹窗', async () => {
     render(<SkillCenterPage />)
     fireEvent.click(screen.getByRole('button', { name: '内置' }))
     const cards = screen.getAllByTestId('skill-card')
     const hrCard = cards.find((c) => c.textContent?.includes('创建技能'))
     expect(hrCard).toBeTruthy()
     fireEvent.click(hrCard!)
-    await waitFor(() => {
-      expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'create-skill' })
-    })
+    expect(await screen.findByTestId('skill-detail-dialog')).toBeInTheDocument()
+    expect(screen.getByTestId('skill-detail-dialog-title')).toHaveTextContent('创建技能')
+    expect(useUiStore.getState().route).toEqual({ kind: 'skill-center' })
+    expect(screen.queryByText('正在加载技能详情...')).toBeNull()
   })
 
   it('挂载后从后端刷新技能列表', async () => {
@@ -227,13 +230,13 @@ describe('SkillCenterPage', () => {
     expect(image).toHaveAttribute('src', '/skill-avatars/bid-writing.jpg')
   })
 
-  it('未命中图标时使用浅金底和金色文字 fallback', () => {
+  it('未命中图标时使用主题强调色 fallback', () => {
     seedStore({ skills: [REC1], recommendedIds: ['rec1'] })
 
     render(<SkillCenterPage />)
     fireEvent.click(screen.getByRole('button', { name: '内置' }))
 
-    expect(screen.getByTestId('skill-card-avatar')).toHaveClass('bg-[#fbeed8]', 'text-[#d19b00]')
+    expect(screen.getByTestId('skill-card-avatar')).toHaveClass('bg-[rgba(var(--primary-rgb),0.10)]', 'text-primary')
     expect(screen.getByTestId('skill-card-fallback-avatar')).toHaveTextContent('推')
   })
 
@@ -281,6 +284,69 @@ describe('SkillCenterPage', () => {
     expect(screen.queryByRole('switch')).toBeNull()
     expect(screen.queryByText('已关闭')).toBeNull()
     expect(screen.queryByText('去对话')).toBeNull()
+  })
+
+  it('市场技能没有本地图标资源时显示技能名首字 fallback', async () => {
+    tauriMock.listMarketplaceSkills.mockResolvedValueOnce({
+      items: [
+        {
+          ...MARKET_NEW,
+          id: 401,
+          pluginId: 'people-analytics',
+          name: 'HR数据分析',
+          category: 'hr',
+          icon: 'file-text',
+          version: '1.2',
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 100,
+    })
+    const { container } = render(<SkillCenterPage />)
+
+    await screen.findByText('HR数据分析')
+    const card = container.querySelector('[data-aijia-skill-id="people-analytics"]')
+    const avatar = card?.querySelector('[data-testid="skill-card-avatar"]')
+
+    expect(avatar).toHaveClass('bg-[rgba(var(--primary-rgb),0.10)]', 'text-primary')
+    expect(avatar).not.toHaveClass('bg-blue-500')
+    expect(avatar?.querySelector('svg')).toBeNull()
+    expect(avatar?.querySelector('[data-testid="skill-card-fallback-avatar"]')).toHaveTextContent('H')
+  })
+
+  it('点击未安装市场技能卡片打开无 header 的详情弹窗', async () => {
+    const { container } = render(<SkillCenterPage />)
+
+    await screen.findByText('深入研究')
+    fireEvent.click(container.querySelector('[data-aijia-skill-id="deep-research"]')!)
+
+    expect(screen.getByTestId('skill-detail-dialog')).toBeInTheDocument()
+    expect(screen.getByTestId('skill-detail-dialog-body-viewport')).toHaveClass(
+      'min-h-0',
+      'overflow-auto',
+      'max-h-[min(82vh,760px)]',
+    )
+    expect(screen.getByTestId('skill-detail-dialog-body')).toHaveClass('flex', 'flex-col', 'gap-6', 'py-6')
+    expect(screen.getByTestId('skill-detail-dialog-footer')).toHaveClass('border-t', 'border-border')
+    expect(screen.queryByTestId('skill-detail-dialog-header')).toBeNull()
+    expect(screen.getByRole('button', { name: '安装 深入研究' })).toBeInTheDocument()
+    expect(useUiStore.getState().route).toEqual({ kind: 'skill-center' })
+  })
+
+  it('已安装市场技能弹窗 footer 使用按钮会准备 skill chip', async () => {
+    const { container } = render(<SkillCenterPage />)
+
+    await screen.findByText('本地日报')
+    fireEvent.click(container.querySelector('[data-aijia-skill-id="local-report"]')!)
+    fireEvent.click(screen.getByRole('button', { name: '使用' }))
+
+    expect(useUiStore.getState().pendingSkill).toEqual({
+      id: 'local-report',
+      label: '本地日报',
+      trigger: '/local-report',
+    })
+    expect(useUiStore.getState().route).toEqual({ kind: 'home' })
   })
 
   it('dedupes market packages by plugin id and keeps the best package card', async () => {
@@ -352,11 +418,12 @@ describe('SkillCenterPage', () => {
     const card = container.querySelector('[data-aijia-skill-id="html-ppt"]')
     expect(card).toHaveAttribute('data-aijia-skill-installed', 'true')
     expect(card?.querySelector('[data-testid="skill-card-version"]')?.textContent).toBe('0.5')
+    expect(card?.querySelector('[data-testid="skill-card-source"]')).toBeNull()
     expect(card?.querySelector('[data-aijia-skill-market-action="added"]')).toBeInTheDocument()
     expect(card?.querySelector('[data-aijia-skill-market-action="add"]')).toBeNull()
   })
 
-  it('market add installs package and prepares one pending skill chip', async () => {
+  it('market add installs package and stays on skill center', async () => {
     const installMarketplace = vi.fn().mockResolvedValue(undefined)
     seedStore({ installMarketplace })
     render(<SkillCenterPage />)
@@ -365,12 +432,8 @@ describe('SkillCenterPage', () => {
     fireEvent.click(addButton)
 
     await waitFor(() => expect(installMarketplace).toHaveBeenCalledWith(101, 'deep-research'))
-    expect(useUiStore.getState().pendingSkill).toEqual({
-      id: 'deep-research',
-      label: '深入研究',
-      trigger: '/deep-research',
-    })
-    expect(useUiStore.getState().route).toEqual({ kind: 'home' })
+    expect(useUiStore.getState().pendingSkill).toBeNull()
+    expect(useUiStore.getState().route).toEqual({ kind: 'skill-center' })
   })
 
   it('已安装视图展示关闭开关并调用 setSkillEnabled', async () => {
@@ -382,5 +445,127 @@ describe('SkillCenterPage', () => {
     fireEvent.click(screen.getByRole('switch', { name: '本地日报 技能开关' }))
 
     await waitFor(() => expect(setSkillEnabled).toHaveBeenCalledWith('local-report', true))
+  })
+
+  it('已安装技能只有 source=user 显示自建，非 user 技能按市场处理', async () => {
+    const platformInstalledSkill = {
+      ...USER_SKILL,
+      id: 'payslip',
+      displayName: '玩转智能工资条',
+      description: 'payslip CLI 操作助手',
+      source: 'custom',
+      version: '0.10',
+      enabled: true,
+    }
+    seedStore({
+      skills: [USER_SKILL, platformInstalledSkill],
+      recommendedIds: [],
+    })
+    const { container } = render(<SkillCenterPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: '已安装' }))
+
+    const userCard = container.querySelector('[data-aijia-skill-id="local-report"]')
+    const platformCard = container.querySelector('[data-aijia-skill-id="payslip"]')
+
+    expect(userCard?.querySelector('[data-testid="skill-card-source"]')).toHaveTextContent('自建')
+    expect(platformCard?.querySelector('[data-testid="skill-card-source"]')).toHaveTextContent('市场')
+    expect(platformCard?.querySelector('[data-testid="skill-card-source"]')).not.toHaveTextContent('自建')
+    expect(platformCard?.querySelector('img')).toHaveAttribute('src', '/skill-avatars/smart-payslip.jpg')
+    expect(platformCard?.querySelector('[data-testid="skill-card-fallback-avatar"]')).toBeNull()
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '玩转智能工资条 更多操作' }))
+
+    expect(screen.getByRole('menuitem', { name: '卸载技能' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /导出/ })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '删除技能' })).toBeNull()
+  })
+
+  it('已安装技能 source=user 但命中市场 pluginId 时按市场安装处理', async () => {
+    const marketInstalledUserSkill = {
+      ...USER_SKILL,
+      id: 'payslip',
+      displayName: '玩转智能工资条',
+      description: 'payslip CLI 操作助手',
+      source: 'user',
+      version: '0.10',
+      enabled: true,
+    }
+    tauriMock.listMarketplaceSkills.mockResolvedValueOnce({
+      items: [
+        {
+          ...MARKET_NEW,
+          id: 501,
+          pluginId: 'payslip',
+          name: '玩转智能工资条',
+          category: 'hr',
+          icon: 'coins',
+          version: '0.10',
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 100,
+    })
+    seedStore({
+      skills: [marketInstalledUserSkill],
+      recommendedIds: [],
+    })
+    const { container } = render(<SkillCenterPage />)
+
+    await screen.findByText('玩转智能工资条')
+    fireEvent.click(screen.getByRole('button', { name: '已安装' }))
+
+    const card = container.querySelector('[data-aijia-skill-id="payslip"]')
+    expect(card?.querySelector('[data-testid="skill-card-source"]')).toHaveTextContent('市场')
+    expect(card?.querySelector('[data-testid="skill-card-source"]')).not.toHaveTextContent('自建')
+    expect(card?.querySelector('img')).toHaveAttribute('src', '/skill-avatars/smart-payslip.jpg')
+    expect(card?.querySelector('[data-testid="skill-card-fallback-avatar"]')).toBeNull()
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '玩转智能工资条 更多操作' }))
+    expect(screen.getByRole('menuitem', { name: '卸载技能' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /导出/ })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '删除技能' })).toBeNull()
+  })
+
+  it('已安装市场技能没有本地图标资源时才显示技能名首字 fallback', async () => {
+    const marketInstalledUserSkill = {
+      ...USER_SKILL,
+      id: 'market-no-avatar',
+      displayName: '市场无图标技能',
+      description: '市场安装但没有本地图标资源',
+      source: 'user',
+      version: '1.0',
+      enabled: true,
+    }
+    tauriMock.listMarketplaceSkills.mockResolvedValueOnce({
+      items: [
+        {
+          ...MARKET_NEW,
+          id: 601,
+          pluginId: 'market-no-avatar',
+          name: '市场无图标技能',
+          category: 'general',
+          icon: 'file-text',
+          version: '1.0',
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 100,
+    })
+    seedStore({
+      skills: [marketInstalledUserSkill],
+      recommendedIds: [],
+    })
+    const { container } = render(<SkillCenterPage />)
+
+    await screen.findByText('市场无图标技能')
+    fireEvent.click(screen.getByRole('button', { name: '已安装' }))
+
+    const card = container.querySelector('[data-aijia-skill-id="market-no-avatar"]')
+    expect(card?.querySelector('[data-testid="skill-card-source"]')).toHaveTextContent('市场')
+    expect(card?.querySelector('img')).toBeNull()
+    expect(card?.querySelector('[data-testid="skill-card-fallback-avatar"]')).toHaveTextContent('市')
   })
 })

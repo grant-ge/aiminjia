@@ -2658,6 +2658,10 @@ export interface MarketplaceResponse {
   size: number;
 }
 
+export interface MarketplaceSkillPreview {
+  rawContent: string;
+}
+
 /** List skill packages from the cloud marketplace. */
 export function listMarketplaceSkills(
   page: number,
@@ -2670,6 +2674,17 @@ export function listMarketplaceSkills(
     size,
     category: category || null,
     search: search || null,
+  });
+}
+
+/** Download and preview a skill package from the marketplace without installing it. */
+export function previewMarketplaceSkill(
+  packageId: number,
+  pluginId: string,
+): Promise<MarketplaceSkillPreview> {
+  return invoke<MarketplaceSkillPreview>("preview_marketplace_skill", {
+    packageId,
+    pluginId,
   });
 }
 

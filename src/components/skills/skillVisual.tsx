@@ -95,7 +95,7 @@ const CATEGORY_AVATAR_CLASS: Record<string, string> = {
   general: 'bg-[var(--color-accent-bg-light)] text-muted-foreground',
 }
 
-export const SKILL_FALLBACK_AVATAR_CLASS = 'bg-[#fbeed8] text-[#d19b00]'
+export const SKILL_FALLBACK_AVATAR_CLASS = 'bg-[rgba(var(--primary-rgb),0.10)] text-primary'
 
 const SKILL_AVATARS_BY_ID: Record<string, string> = {
   'bid-writing': '/skill-avatars/bid-writing.jpg',

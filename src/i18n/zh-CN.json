@@ -1186,7 +1186,7 @@
     "searchPlaceholder": "搜索技能名称或场景",
     "syncBuiltin": "更新官方技能",
     "syncLocal": "检查本机技能",
-    "syncSkills": "更新技能",
+    "syncSkills": "同步技能",
     "syncing": "同步中...",
     "syncLocalDone": "本机技能已更新",
     "importSkill": "+ 导入技能",

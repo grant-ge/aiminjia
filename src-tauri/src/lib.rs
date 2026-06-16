@@ -1347,6 +1347,7 @@ pub fn run() {
             crate::plugin::skill::sync_command::sync_builtin_skills,
             // Marketplace commands
             commands::skill_management::list_marketplace_skills,
+            commands::skill_management::preview_marketplace_skill,
             commands::skill_management::install_marketplace_skill,
             // Channel commands
             commands::channel::channel_get_platforms,

@@ -9,6 +9,11 @@ export const REQUIRED_BUILTIN_SKILL_IDS = new Set([
   'dingtalk-workspace',
 ])
 
+export const NON_TOGGLEABLE_BUILTIN_SKILL_IDS = new Set([
+  'create-skill',
+  'skill-creator',
+])
+
 export function isSkillEnabled(skill: { enabled?: boolean }): boolean {
   return skill.enabled !== false
 }
@@ -22,11 +27,11 @@ export function isMarketSkill(skill: Pick<SkillInfo, 'id' | 'source'>): boolean 
 }
 
 export function isInstalledSkill(skill: Pick<SkillInfo, 'id' | 'source'>): boolean {
-  return !isMarketSkill(skill) && !isBuiltinSkill(skill)
+  return !isBuiltinSkill(skill)
 }
 
 export function canToggleSkillEnablement(skill: Pick<SkillInfo, 'id' | 'source'>): boolean {
-  return isBuiltinSkill(skill) || isInstalledSkill(skill)
+  return !NON_TOGGLEABLE_BUILTIN_SKILL_IDS.has(skill.id)
 }
 
 export function skillMatchesCenterView(skill: SkillInfo, view: SkillCenterView): boolean {

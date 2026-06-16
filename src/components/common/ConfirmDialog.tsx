@@ -10,7 +10,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { cn } from '@/lib/utils'
 
 export type ConfirmDialogVariant = 'default' | 'destructive'
 
@@ -55,10 +54,7 @@ export function ConfirmDialog({
             {resolvedCancelLabel}
           </AlertDialogCancel>
           <AlertDialogAction
-            className={cn(
-              variant === 'destructive' &&
-                'bg-destructive text-destructive-foreground hover:brightness-110 active:brightness-95',
-            )}
+            variant={variant}
             onClick={onConfirm}
             data-aijia-dialog-action="confirm"
           >

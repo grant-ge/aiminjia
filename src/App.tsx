@@ -18,6 +18,7 @@ import { InboxPage } from '@/features/inbox/InboxPage'
 import { ExpertTeamsPage } from '@/features/expert-teams/ExpertTeamsPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
+import { SkillDetailDialog } from '@/features/skill-detail/SkillDetailDialog'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { useStreaming } from '@/hooks/useStreaming'
@@ -33,6 +34,7 @@ import {
   onConversationCreated,
   onConversationTitleUpdated,
 } from '@/lib/tauri'
+import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
@@ -45,6 +47,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { hydrateHomeStore } from '@/stores/homeStore'
 import { initChannelListeners } from '@/stores/channelStore'
 import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
+import type { SkillInfo } from '@/lib/tauri'
 
 applyFontScale(loadPersistedFontScale())
 
@@ -76,6 +79,23 @@ function RouteSwitch() {
 function AppShell() {
   useUpdater()
   const sidebarHidden = useUiStore((state) => state.sidebarHidden)
+  const skillDetailDialogId = useUiStore((state) => state.skillDetailDialogId)
+  const closeSkillDetailDialog = useUiStore((state) => state.closeSkillDetailDialog)
+  const setPendingSkill = useUiStore((state) => state.setPendingSkill)
+  const setRoute = useUiStore((state) => state.setRoute)
+  const skillForDialog = useSkillStore((state) =>
+    skillDetailDialogId ? state.getById(skillDetailDialogId) : undefined,
+  )
+  const handleUseSkillFromDialog = (skill: SkillInfo) => {
+    const localized = localizeSkill(skill)
+    setPendingSkill({
+      id: skill.id,
+      label: localized.name,
+      trigger: skill.triggerText?.trim() || `/${skill.id}`,
+    })
+    closeSkillDetailDialog()
+    setRoute({ kind: 'home' })
+  }
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -97,6 +117,14 @@ function AppShell() {
       <ConfirmDialogHost />
       <ToastContainer />
       <UpdaterPanel />
+      <SkillDetailDialog
+        open={Boolean(skillDetailDialogId && skillForDialog)}
+        skill={skillForDialog ?? null}
+        onOpenChange={(open) => {
+          if (!open) closeSkillDetailDialog()
+        }}
+        onUse={handleUseSkillFromDialog}
+      />
     </div>
   )
 }

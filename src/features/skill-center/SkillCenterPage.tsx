@@ -1,4 +1,4 @@
-import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react'
+import { Check, Download, MessageSquare, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
@@ -13,10 +13,7 @@ import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
 import {
   getSkillAvatarNode,
-  getSkillAvatarSrc,
   getSkillCardAvatarClass,
-  getSkillCategoryBg,
-  getSkillIconComponent,
 } from '@/components/skills/skillVisual'
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES } from '@/data/skill-categories'
@@ -37,22 +34,14 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 import { SkillValidationResultDialog } from './SkillValidationResultDialog'
+import { SkillDetailDialog } from '@/features/skill-detail/SkillDetailDialog'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { SkillValidationError, type SkillValidationKind } from '@/stores/skillStore'
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
-import { ChevronDown, Cloud, FolderOpen, HardDrive, Package } from 'lucide-react'
+import { ChevronDown, FolderOpen, Package } from 'lucide-react'
 
-function getSkillIcon(icon: string | null | undefined) {
-  const Icon = getSkillIconComponent(icon)
-  return <Icon className="h-4 w-4 text-primary-foreground" />
-}
-
-function getSkillCardIcon(skillId: string | null | undefined, icon: string | null | undefined) {
-  return getSkillAvatarNode(skillId) ?? getSkillIcon(icon)
-}
-
-function getSkillCardIconBg(skillId: string | null | undefined, category: string | null | undefined) {
-  return getSkillAvatarSrc(skillId) ? getSkillCardAvatarClass(skillId) : getSkillCategoryBg(category)
+function getSkillCardIconBg(skillId: string | null | undefined) {
+  return getSkillCardAvatarClass(skillId)
 }
 
 function compareVersionText(a?: string | null, b?: string | null) {
@@ -116,9 +105,10 @@ export function SkillCenterPage() {
   const [marketItems, setMarketItems] = useState<MarketplaceSkillItem[]>([])
   const [marketLoading, setMarketLoading] = useState(false)
   const [marketError, setMarketError] = useState<string | null>(null)
+  const [selectedMarketItem, setSelectedMarketItem] = useState<MarketplaceSkillItem | null>(null)
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
   const [installingMarketId, setInstallingMarketId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
-  const [checkingId, setCheckingId] = useState<string | null>(null)
   const skills = useSkillStore((s) => s.skills)
   const isLoading = useSkillStore((s) => s.isLoading)
   const reload = useSkillStore((s) => s.reload)
@@ -210,9 +200,9 @@ export function SkillCenterPage() {
     await runInstall(picked)
   }, [runInstall, t])
 
-  const handleDeleteSkill = async (skillId: string, displayName: string) => {
+  const handleDeleteSkill = async (skillId: string, displayName: string, title = t('skillCenter.deleteSkill')) => {
     const confirmed = await requestConfirm({
-      title: t('skillCenter.deleteSkill'),
+      title,
       description: t('skillCenter.deleteConfirm', { name: displayName }),
       confirmLabel: t('skillCenter.deleteLabel'),
       cancelLabel: t('skillCenter.cancelLabel'),
@@ -244,12 +234,16 @@ export function SkillCenterPage() {
     }
   }
 
-  const handleSyncBuiltin = async () => {
+  const handleSyncAll = async () => {
     if (syncing) return
     setSyncing(true)
     try {
       const result = await syncBuiltinSkills()
+      await refreshSkillRegistry()
       await reload()
+      if (isLoggedIn) {
+        await loadMarketSkills()
+      }
       pushNotification({
         level: 'success',
         title:
@@ -274,78 +268,6 @@ export function SkillCenterPage() {
       })
     } finally {
       setSyncing(false)
-    }
-  }
-
-  /** 同步本地技能：让后端重扫 user/global skills 目录，把新装但内存 registry
-   *  还不知道的技能同步上来。用于"AI 用 lotus_skill.py 装完技能，但 registry 没刷新"
-   *  这种 disk-app 不同步的兜底场景。后端 refresh_skill_registry 内部会发
-   *  TAURI_EVENTS.SKILL_REGISTRY_REFRESHED 事件，AuthGate 监听后会自动 reload，
-   *  这里再显式 reload 一次防止网络抖动遗漏。 */
-  const handleSyncLocal = async () => {
-    if (syncing) return
-    setSyncing(true)
-    try {
-      await refreshSkillRegistry()
-      await reload()
-      pushNotification({
-        level: 'success',
-        title: t('skillCenter.syncLocalDone'),
-        message: '',
-        actions: [],
-        dismissible: true,
-        autoHide: 4,
-        context: 'toast',
-      })
-    } catch (err) {
-      pushNotification({
-        level: 'error',
-        title: t('skillCenter.syncFailed'),
-        message: err instanceof Error ? err.message : String(err),
-        actions: [],
-        dismissible: true,
-        autoHide: 6,
-        context: 'toast',
-      })
-    } finally {
-      setSyncing(false)
-    }
-  }
-
-  /**
-   * Per-card check-update: reuses the global sync IPC and inspects the
-   * `installed` array to surface a card-targeted toast. Avoids a separate
-   * per-skill backend command — the OPS list API has no per-skill query
-   * so a dedicated command would still fetch the whole list.
-   */
-  const handleCheckSkillUpdate = async (skillId: string, displayName: string) => {
-    if (checkingId || syncing) return
-    setCheckingId(skillId)
-    try {
-      const result = await syncBuiltinSkills()
-      await reload()
-      const updated = result.installed.includes(skillId)
-      pushNotification({
-        level: 'success',
-        title: updated ? t('skillCenter.hasUpdate') : t('skillCenter.upToDate'),
-        message: displayName,
-        actions: [],
-        dismissible: true,
-        autoHide: 4,
-        context: 'toast',
-      })
-    } catch (err) {
-      pushNotification({
-        level: 'error',
-        title: t('skillCenter.checkUpdateFailed'),
-        message: err instanceof Error ? err.message : String(err),
-        actions: [],
-        dismissible: true,
-        autoHide: 6,
-        context: 'toast',
-      })
-    } finally {
-      setCheckingId(null)
     }
   }
 
@@ -413,12 +335,6 @@ export function SkillCenterPage() {
       setInstallingMarketId(item.pluginId)
       try {
         await installMarketplace(item.id, item.pluginId)
-        setPendingSkill({
-          id: item.pluginId,
-          label: item.name || item.pluginId,
-          trigger: `/${item.pluginId}`,
-        })
-        setRoute({ kind: 'home' })
       } catch (err) {
         pushNotification({
           level: 'error',
@@ -433,7 +349,7 @@ export function SkillCenterPage() {
         setInstallingMarketId(null)
       }
     },
-    [installMarketplace, installingMarketId, pushNotification, setPendingSkill, setRoute],
+    [installMarketplace, installingMarketId, pushNotification],
   )
 
   const handleSetSkillEnabled = useCallback(
@@ -493,13 +409,14 @@ export function SkillCenterPage() {
     }
   }, [loadMarketSkills, view])
 
+  const installedCount = useMemo(() => skills.filter((skill) => !isBuiltinSkill(skill)).length, [skills])
   const viewItems = useMemo(
     () => [
       { key: 'market', label: '市场' },
       { key: 'builtin', label: '内置' },
-      { key: 'installed', label: '已安装' },
+      { key: 'installed', label: '已安装', count: installedCount },
     ],
-    [],
+    [installedCount],
   )
 
   const normalizedQuery = query.trim().toLowerCase()
@@ -521,6 +438,7 @@ export function SkillCenterPage() {
     .filter(matchesQuery)
 
   const installedSkillsById = useMemo(() => new Map(skills.map((skill) => [skill.id, skill])), [skills])
+  const selectedSkill = selectedSkillId ? installedSkillsById.get(selectedSkillId) ?? null : null
   const marketSkills = useMemo(() => {
     const uniqueItems = dedupeMarketItems(marketItems)
     if (!normalizedQuery) return uniqueItems
@@ -534,33 +452,34 @@ export function SkillCenterPage() {
       ].some((value) => value?.toLowerCase().includes(normalizedQuery)),
     )
   }, [marketItems, normalizedQuery])
+  const marketPluginIds = useMemo(() => new Set(marketItems.map((item) => item.pluginId)), [marketItems])
 
   const sectionTitle =
     view === 'market' ? '技能市场' : view === 'builtin' ? '内置技能' : '已安装技能'
 
+  function isUserCreatedSkill(skill: SkillInfo) {
+    return !isBuiltinSkill(skill) && skill.source === 'user' && !marketPluginIds.has(skill.id)
+  }
+
+  function isInstalledMarketSkill(skill: SkillInfo) {
+    return !isBuiltinSkill(skill) && !isUserCreatedSkill(skill)
+  }
+
   function getSkillMeta(skill: SkillInfo) {
     const normalizedCategory = skill.category || 'general'
     const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? t('skillCenter.defaultCategory')
-    const sourceLabel = isMarketSkill(skill)
-      ? skill.source === 'tenant'
-        ? '企业下发'
-        : '平台下发'
-      : isBuiltinSkill(skill)
-        ? 'AI 小家内置'
-        : '本地安装'
-    const statusLabel = canToggleSkillEnablement(skill)
-      ? isSkillEnabled(skill)
-        ? '已开启'
-        : '已关闭'
-      : null
-    return [sourceLabel, label, statusLabel].filter(Boolean).join(' · ')
+    return label
+  }
+
+  function getSkillSourceLabel(skill: SkillInfo) {
+    if (isBuiltinSkill(skill)) return '内置'
+    return isUserCreatedSkill(skill) ? '自建' : '市场'
   }
 
   function getMarketSkillMeta(item: MarketplaceSkillItem) {
     const normalizedCategory = item.category || 'general'
     const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? t('skillCenter.defaultCategory')
-    const sourceLabel = item.scope === 'tenant' ? '企业下发' : '平台技能'
-    return [sourceLabel, label].filter(Boolean).join(' · ')
+    return label
   }
 
   const listLoading = view === 'market' ? marketLoading : isLoading && skills.length === 0
@@ -576,9 +495,6 @@ export function SkillCenterPage() {
           title={(
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{t('skillCenter.title')}</span>
-              <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              {t('skillCenter.installedCount', { count: skills.length })}
-              </span>
             </div>
           )}
           trailing={(
@@ -593,42 +509,22 @@ export function SkillCenterPage() {
                 />
               </div>
               {isLoggedIn && (
-                <AppDropdown
-                  ariaLabel={t('skillCenter.syncSkills')}
-                  trigger={
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={syncing}
-                      data-aijia-skill-sync-trigger
-                      data-testid="skills-sync-builtin"
-                    >
-                      {syncing ? t('skillCenter.syncing') : t('skillCenter.syncSkills')}
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </Button>
-                  }
-                  items={[
-                    {
-                      id: 'sync-builtin',
-                      label: t('skillCenter.syncBuiltin'),
-                      icon: <Cloud className="h-4 w-4" />,
-                      onSelect: () => void handleSyncBuiltin(),
-                      dataAttrs: { 'data-aijia-skill-sync-action': 'builtin' },
-                    },
-                    {
-                      id: 'sync-local',
-                      label: t('skillCenter.syncLocal'),
-                      icon: <HardDrive className="h-4 w-4" />,
-                      onSelect: () => void handleSyncLocal(),
-                      dataAttrs: { 'data-aijia-skill-sync-action': 'local' },
-                    },
-                  ]}
-                />
+                <Button
+                  size="md"
+                  variant="outline"
+                  loading={syncing}
+                  disabled={syncing}
+                  data-aijia-skill-sync-trigger
+                  data-testid="skills-sync-builtin"
+                  onClick={() => void handleSyncAll()}
+                >
+                  {syncing ? t('skillCenter.syncing') : t('skillCenter.syncSkills')}
+                </Button>
               )}
               <AppDropdown
                 ariaLabel={t('skillCenter.importSkill')}
                 trigger={
-                  <Button size="sm" data-aijia-skill-import-trigger>
+                  <Button size="md" data-aijia-skill-import-trigger>
                     {t('skillCenter.importSkill')}
                     <ChevronDown className="h-3.5 w-3.5" />
                   </Button>
@@ -657,6 +553,7 @@ export function SkillCenterPage() {
     >
       <SkillOfficeSection
         title={sectionTitle}
+        layout={view === 'market' ? 'grid' : 'list'}
         categoryBar={
           <SkillCategoryBar
             items={viewItems}
@@ -667,7 +564,7 @@ export function SkillCenterPage() {
         }
       >
         {listLoading ? (
-          <SkillCenterState title={t('skillCenter.loading')} />
+          <SkillCenterLoading title={t('skillCenter.loading')} />
         ) : listError ? (
           <SkillCenterState title={t('skillCenter.loadFailed')} desc={listError} actionLabel={t('skillCenter.retry')} onAction={() => view === 'market' ? void loadMarketSkills() : void loadSkills()} />
         ) : listEmpty ? (
@@ -704,26 +601,34 @@ export function SkillCenterPage() {
                 title={item.name || item.pluginId}
                 meta={getMarketSkillMeta(item)}
                 desc={item.description}
-                iconNode={getSkillCardIcon(item.pluginId, item.icon)}
-                iconBg={getSkillCardIconBg(item.pluginId, item.category)}
+                iconNode={getSkillAvatarNode(item.pluginId)}
+                iconBg={getSkillCardIconBg(item.pluginId)}
                 version={installedSkill?.version ?? item.version}
                 skillId={item.pluginId}
                 skillSource={item.scope === 'tenant' ? 'tenant' : 'global'}
                 marketCard
                 marketInstalled={installed}
-                onClick={installed ? () => setRoute({ kind: 'skill-detail', skillId: item.pluginId }) : undefined}
+                onClick={() => setSelectedMarketItem(item)}
                 actionsSlot={
                   installed ? (
-                    <span
+                    <Button
+                      size="sm"
+                      variant="ghost"
                       data-aijia-skill-market-action="added"
-                      className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground"
+                      aria-label={`使用 ${installedSkill ? localizeSkill(installedSkill, i18n.language).name : item.name || item.pluginId}`}
+                      onClick={() => {
+                        if (installedSkill) handleUseSkill(installedSkill)
+                      }}
                     >
-                      已添加
-                    </span>
+                      <Check className="h-3.5 w-3.5 group-hover:hidden" aria-hidden />
+                      <MessageSquare className="hidden h-3.5 w-3.5 group-hover:block" aria-hidden />
+                      <span className="sr-only">已添加</span>
+                    </Button>
                   ) : (
                     <Button
-                      size="icon"
+                      size="sm"
                       variant="ghost"
+                      loading={installingMarketId === item.pluginId}
                       disabled={installingMarketId === item.pluginId}
                       data-aijia-skill-market-action="add"
                       aria-label={`添加 ${item.name || item.pluginId}`}
@@ -739,8 +644,8 @@ export function SkillCenterPage() {
         ) : (
           officeSkills.map((skill) => {
             const localized = localizeSkill(skill, i18n.language)
-            const isUserSkill = skill.source === 'user'
-            const marketSkill = isMarketSkill(skill)
+            const isUserSkill = isUserCreatedSkill(skill)
+            const marketSkill = isInstalledMarketSkill(skill)
             const manageable = canToggleSkillEnablement(skill)
             const enabled = isSkillEnabled(skill)
             const menuItems: Array<{
@@ -755,6 +660,7 @@ export function SkillCenterPage() {
               menuItems.push({
                 id: 'export',
                 label: t('skillCenter.exportLabel'),
+                icon: <Download />,
                 onSelect: () => void handleExportSkill(skill.id, localized.name),
               })
               menuItems.push({
@@ -764,14 +670,13 @@ export function SkillCenterPage() {
                 className: 'text-destructive [&_svg]:text-destructive',
                 onSelect: () => void handleDeleteSkill(skill.id, localized.name),
               })
-            } else if (!marketSkill && isLoggedIn) {
-              // Non-user skills (builtin / global) can be re-synced from OPS.
+            } else if (marketSkill) {
               menuItems.push({
-                id: 'check-update',
-                label: checkingId === skill.id ? t('skillCenter.checking') : t('skillCenter.checkUpdate'),
-                disabled: checkingId === skill.id || syncing,
-                onSelect: () =>
-                  void handleCheckSkillUpdate(skill.id, localized.name),
+                id: 'uninstall',
+                label: '卸载技能',
+                icon: <Trash2 />,
+                className: 'text-destructive [&_svg]:text-destructive',
+                onSelect: () => void handleDeleteSkill(skill.id, localized.name, '卸载技能'),
               })
             }
             return (
@@ -782,53 +687,42 @@ export function SkillCenterPage() {
                 desc={localized.description}
                 iconNode={getSkillAvatarNode(skill.id)}
                 iconBg={getSkillCardAvatarClass(skill.id)}
+                layout="row"
                 version={skill.version}
+                sourceLabel={getSkillSourceLabel(skill)}
                 skillId={skill.id}
                 skillSource={skill.source}
                 skillEnabled={enabled}
                 marketCard={marketSkill}
-                marketInstalled={!marketSkill}
-                onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
+                marketInstalled
+                onClick={() => setSelectedSkillId(skill.id)}
                 actionsSlot={
-                  marketSkill ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      data-aijia-skill-market-action="add"
-                      aria-label={`添加并使用 ${localized.name}`}
-                      onClick={() => handleUseSkill(skill)}
-                    >
-                      添加并使用
-                    </Button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {manageable ? (
-                        <Switch
-                          checked={enabled}
-                          disabled={enablementChangingId === skill.id}
-                          data-aijia-skill-toggle={skill.id}
-                          aria-label={`${localized.name} 技能开关`}
-                          onCheckedChange={(next) => void handleSetSkillEnabled(skill, next)}
-                        />
-                      ) : null}
-                      {menuItems.length === 0 ? (
-                        <div aria-hidden="true" className="h-8 w-8" />
-                      ) : (
-                        <AppDropdown
-                          ariaLabel={`${localized.name} ${t('skillCenter.moreActions')}`}
-                          trigger={
-                            <button
-                              type="button"
-                              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </button>
-                          }
-                          items={menuItems}
-                        />
-                      )}
-                    </div>
-                  )
+                  <div className="flex items-center gap-2">
+                    {manageable ? (
+                      <Switch
+                        size="sm"
+                        checked={enabled}
+                        disabled={enablementChangingId === skill.id}
+                        data-aijia-skill-toggle={skill.id}
+                        aria-label={`${localized.name} 技能开关`}
+                        onCheckedChange={(next) => void handleSetSkillEnabled(skill, next)}
+                      />
+                    ) : null}
+                    {menuItems.length > 0 ? (
+                      <AppDropdown
+                        ariaLabel={`${localized.name} ${t('skillCenter.moreActions')}`}
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`${localized.name} ${t('skillCenter.moreActions')}`}
+                            icon={<MoreHorizontal />}
+                          />
+                        }
+                        items={menuItems}
+                      />
+                    ) : null}
+                  </div>
                 }
               />
             )
@@ -846,6 +740,20 @@ export function SkillCenterPage() {
         setValidationFailure(null)
         void handleImportDirectory()
       }}
+    />
+    <SkillDetailDialog
+      open={Boolean(selectedSkill || selectedMarketItem)}
+      skill={selectedSkill ?? (selectedMarketItem ? installedSkillsById.get(selectedMarketItem.pluginId) ?? null : null)}
+      marketplaceItem={selectedMarketItem}
+      installing={selectedMarketItem ? installingMarketId === selectedMarketItem.pluginId : false}
+      onOpenChange={(open) => {
+        if (!open) {
+          setSelectedMarketItem(null)
+          setSelectedSkillId(null)
+        }
+      }}
+      onInstall={(item) => void handleInstallMarketplace(item)}
+      onUse={handleUseSkill}
     />
     </>
   )
@@ -871,6 +779,14 @@ function SkillCenterState({
           {actionLabel}
         </Button>
       ) : null}
+    </div>
+  )
+}
+
+function SkillCenterLoading({ title }: { title: string }) {
+  return (
+    <div className="col-span-full flex min-h-36 items-center justify-center pt-6 text-sm text-muted-foreground">
+      {title}
     </div>
   )
 }

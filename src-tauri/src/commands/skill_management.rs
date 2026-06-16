@@ -646,6 +646,13 @@ pub struct MarketplaceResponse {
     pub size: i64,
 }
 
+/// Full raw SKILL.md preview for an uninstalled marketplace package.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceSkillPreview {
+    pub raw_content: String,
+}
+
 fn parse_marketplace_response(
     body: serde_json::Value,
     requested_page: u32,
@@ -792,6 +799,36 @@ fn write_marketplace_sidecar(dest: &Path, meta: Option<serde_json::Value>) {
     }
 }
 
+fn read_marketplace_archive_skill_md(
+    archive_path: &Path,
+    tmp_root: &Path,
+    plugin_id: &str,
+) -> Result<String, String> {
+    if plugin_id.starts_with('_') || plugin_id.starts_with('.') || !is_valid_skill_id(plugin_id) {
+        return Err(format!("Invalid plugin_id: {}", plugin_id));
+    }
+
+    let prepared = tmp_root.join("prepared").join(plugin_id);
+    crate::plugin::skill::global_sync::extract_global_skills_zip(archive_path, &prepared)
+        .map_err(|e| e.to_string())?;
+
+    let source = if prepared.join("SKILL.md").is_file() {
+        prepared
+    } else if let Some(subdir) =
+        crate::plugin::skill::global_sync::find_single_level_skill_root(&prepared)
+            .map_err(|e| e.to_string())?
+    {
+        subdir
+    } else {
+        return Err(format!(
+            "skill package '{}' missing SKILL.md after extraction",
+            plugin_id
+        ));
+    };
+
+    std::fs::read_to_string(source.join("SKILL.md")).map_err(|e| e.to_string())
+}
+
 /// List skill packages from the cloud marketplace.
 #[tauri::command]
 pub async fn list_marketplace_skills(
@@ -935,6 +972,68 @@ pub async fn install_marketplace_skill(
     clear_enablement_override_for_skill(&app, &plugin_id)?;
     refresh_skill_registry(&app)?;
     Ok(format!("Installed '{}'", plugin_id))
+}
+
+/// Download a marketplace skill package and return its SKILL.md without
+/// installing it to the user's skill directory.
+#[tauri::command]
+pub async fn preview_marketplace_skill(
+    app: AppHandle,
+    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+    package_id: i64,
+    plugin_id: String,
+) -> Result<MarketplaceSkillPreview, String> {
+    let session_key = auth.get_session_key().await.map_err(|e| e.to_string())?;
+    let client = reqwest::Client::new();
+    let download_url = format!(
+        "{}/v1/skill-packages/{}/download",
+        crate::environment::tenant_host(),
+        package_id
+    );
+    let resp = client
+        .post(&download_url)
+        .header("Authorization", format!("Bearer {}", session_key))
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Download API error: {}", body));
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let package_url = marketplace_download_url(&body).ok_or("No package_url in response")?;
+    let zip_resp = client
+        .get(&package_url)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    if !zip_resp.status().is_success() {
+        return Err(format!(
+            "Failed to download package: HTTP {}",
+            zip_resp.status()
+        ));
+    }
+
+    let zip_bytes = zip_resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    let tmp = archive_tmp_root(&app).join("preview");
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let archive_path = tmp.join("marketplace-skill-preview.zip");
+    std::fs::write(&archive_path, zip_bytes.as_ref()).map_err(|e| e.to_string())?;
+    let raw_content = read_marketplace_archive_skill_md(&archive_path, &tmp.join("unpacked"), &plugin_id);
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    Ok(MarketplaceSkillPreview {
+        raw_content: raw_content?,
+    })
 }
 
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
