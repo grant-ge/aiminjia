@@ -29,6 +29,30 @@ describe('ConfirmDialog', () => {
     expect(getOverlay()).toHaveClass('bg-[var(--color-overlay)]')
   })
 
+  it('uses the shared Button primitive styling for the default confirm action', () => {
+    render(
+      <ConfirmDialog
+        open
+        title="恢复此聊天？"
+        description="恢复后聊天会重新出现在左侧聊天列表中。"
+        confirmLabel="恢复"
+        onOpenChange={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    )
+
+    const confirm = screen.getByRole('button', { name: '恢复' })
+
+    expect(confirm).toHaveClass('h-8', 'px-[15px]', 'hover:opacity-90', 'active:scale-[0.98]')
+    expect(confirm).not.toHaveClass(
+      'h-9',
+      'px-4',
+      'py-2',
+      'hover:bg-[var(--color-primary-hover)]',
+      'hover:border-[var(--color-primary-hover)]',
+    )
+  })
+
   it('uses consistent cancel styling and supports destructive confirm styling', () => {
     render(
       <ConfirmDialog
@@ -42,8 +66,15 @@ describe('ConfirmDialog', () => {
       />,
     )
 
+    const confirm = screen.getByRole('button', { name: '确认删除' })
+
     expect(screen.getByRole('button', { name: '取消' })).toHaveClass('border-input')
-    expect(screen.getByRole('button', { name: '确认删除' })).toHaveClass('bg-destructive')
+    expect(confirm).toHaveClass('border-destructive', 'bg-destructive', 'text-destructive-foreground')
+    expect(confirm).not.toHaveClass(
+      'border-primary',
+      'hover:bg-[var(--color-primary-hover)]',
+      'hover:border-[var(--color-primary-hover)]',
+    )
   })
 
   it('calls onConfirm when the confirm button is clicked', () => {

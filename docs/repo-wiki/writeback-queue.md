@@ -29,6 +29,7 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 | WB-2026-06-15-001 | Shell auto-background / background task IO | P1 | validated | Dirac + Lagrange + Russell / gpt-5.3-codex-spark + gpt-5.4 + gpt-5.4-mini | `.understand-anything/enhancements/runtime-shell-auto-background.json` | enhancement 已合并，runtime-map/coverage/index/log 已更新并通过 RepoWiki 校验 |
 | WB-2026-06-15-002 | Agent foreground auto-background | P1 | validated | 主线程 / current main source | `.understand-anything/enhancements/runtime-agent-foreground-auto-background.json` | main 已实现 foreground Agent promotion，enhancement/runtime-map/coverage 已更新并通过校验 |
 | WB-2026-06-15-003 | LLM gateway / provider / streaming | P1 | validated | 主线程 / origin-main@c4bcc8b7 | `.understand-anything/enhancements/llm-visible-reply-language-anchor.json` | target-branch enhancement 已合并，runtime-map/coverage/index/log 已更新并通过 RepoWiki 校验 |
+| WB-2026-06-10-001 | Skill enablement / marketplace sync / runtime catalog | P1 | candidate | Dalton + Noether + Hypatia + Herschel / current session | `.understand-anything/enhancements/skill-enablement-registry-catalog.json` | 实现完成并验证后，补 skill enablement、marketplace sync、runtime catalog、AEIT CLI coverage，更新 RepoWiki maps/coverage/log 并通过校验 |
 
 ## Active Queue Details
 
@@ -104,6 +105,18 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 - Evidence from origin-main intake: `git show origin/main:src-tauri/src/llm/providers/aijia_gateway_v2.rs`，提交 `b0152fee6e87ce9303c1d90470e78663edcdaa12`；`git show origin/main:docs/test-intents/spec/tasks/对话/rules.md`，提交 `c4bcc8b7e4c12e622e91def848278e051b754c72`。
 - Execution note: 新增 `.understand-anything/enhancements/llm-visible-reply-language-anchor.json`，同步 `runtime-map.md`、`coverage-manifest.md`、`index.md` 和 `log.md`；图谱新增 4 个 architecture review 节点、8 条边和 3 个 guided tour steps。
 - Close criteria: 已完成 enhancement/RepoWiki/coverage/writeback/log 更新；`node scripts/apply-understand-enhancements.mjs`、`node scripts/check-repowiki.mjs`、`node scripts/run-userwiki-qa-smoke.mjs --validate-only` 通过。
+
+### WB-2026-06-10-001
+
+- Trigger: 技能中心改造讨论发现“市场/内置/已安装”不是纯前端状态，而是牵动 `skillsConfig.json`、登录用户作用域、marketplace 安装、官方技能更新、runtime catalog 注入、`Skill` 工具执行和 AEIT CLI 的跨层契约。
+- Engineering question: 修改技能启用/关闭、市场添加、内置默认安装或官方技能更新时，哪些前端入口、Tauri IPC、Rust registry、上下文注入、runtime tool 和意图测试必须同步检查。
+- Current boundary: candidate only。本轮先补设计计划和意图测试；不能在实现前把具体源码行为写成 validated wiki fact。
+- Evidence from userwiki cross-check: `SkillCenterPage`、`SkillDetailPage`、`skillStore`、`App.tsx`、`SkillPopover`、`ChatBottomArea`、`HomeTaskComposerCard`、`WelcomeScreen`、`RichComposer`、`CurrentUserStorage`、`UserScopedPaths`、`skill_management.rs`、`sync_command.rs`、`global_sync.rs`、`get_skill_catalog()`、`LoadSkillRuntimeTool`。
+- Writeback scope for docs/test worker: 已补 `docs/test-intents/spec/tasks/技能/rules.md` 的启用状态意图覆盖，新增重新开启恢复与账号隔离；已补 `docs/test-intents/cli-gap.md` 的技能中心原子命令缺口。仍不得把意图规格当成产品已实现证据。
+- Enablement state boundary to preserve in future RepoWiki/enhancement: 用户开关状态应存为当前登录账号 scope 下的 `~/.renlijia/users/{scope}/skillsConfig.json`，采用 `disabledSkillIds` 默认开启模型；不得新增或依赖 `~/.renlijia/global/skillsConfig.json`。
+- Runtime filtering boundary to preserve in future RepoWiki/enhancement: 管理视图需要全量已安装技能和 `enabled` 字段；聊天输入框技能选择、slash 候选、详情页直接使用入口、模型 skill catalog 与 `Skill` runtime tool 必须消费 enabled 视图，不能只靠前端隐藏。
+- Sync boundary to preserve in future RepoWiki/enhancement: 登录/“更新官方技能”只能自动安装 allowlist 内必需内置技能，并可更新已安装技能；不能把未添加市场技能自动安装进 registry，也不能覆盖用户已关闭状态。
+- CLI boundary to preserve in future RepoWiki/enhancement: AEIT 只能在 `tauri-pilot aijia` 具备 `skill-center-*`、`skill-market-*`、`skill-detail-*`、`skill-picker-open`、`slash-suggestions`、`sync-builtin-skills` 等原子命令后作为 L4 证据；缺命令时记录 `CLI gap`。
 
 ## Intake Rule
 

@@ -274,6 +274,7 @@ describe('ChatPage layout', () => {
         displayNameEn: 'Salary Fairness Analysis v2',
         description: '',
         source: 'builtin',
+        enabled: true,
         hasWorkflow: true,
         shortDescription: '',
         shortDescriptionEn: '',

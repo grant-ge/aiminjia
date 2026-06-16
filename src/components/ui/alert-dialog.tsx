@@ -63,13 +63,29 @@ const AlertDialogDescription = React.forwardRef<
 ))
 AlertDialogDescription.displayName = AlertDialogPrimitive.Description.displayName
 
+type AlertDialogActionVariant = 'default' | 'destructive'
+
+const actionVariantClasses: Record<AlertDialogActionVariant, string> = {
+  default: 'border-primary bg-primary text-primary-foreground',
+  destructive: 'border-destructive bg-destructive text-destructive-foreground',
+}
+
 const AlertDialogAction = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Action>,
-  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & {
+    variant?: AlertDialogActionVariant
+  }
+>(({ className, variant = 'default', ...props }, ref) => (
   <AlertDialogPrimitive.Action
     ref={ref}
-    className={cn('inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-[var(--color-primary-hover)] hover:border-[var(--color-primary-hover)]', className)}
+    className={cn(
+      'inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border px-[15px] text-sm font-medium',
+      'transition-[opacity,transform] duration-150 ease-out hover:opacity-90 active:scale-[0.98]',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0',
+      'disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-45',
+      actionVariantClasses[variant],
+      className,
+    )}
     {...props}
   />
 ))

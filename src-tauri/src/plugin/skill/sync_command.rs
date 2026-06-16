@@ -13,7 +13,9 @@ use crate::plugin::skill::registry::SkillRegistry;
 #[derive(Debug, Serialize)]
 pub struct SyncBuiltinSkillsResult {
     pub installed: Vec<String>,
+    pub updated: Vec<String>,
     pub skipped: Vec<String>,
+    pub changed: Vec<String>,
 }
 
 #[tauri::command]
@@ -40,12 +42,14 @@ pub async fn sync_builtin_skills(
     .instrument(span)
     .await?;
 
-    if !report.installed.is_empty() {
+    if !report.changed.is_empty() {
         reload_skill_registry(&skill_roots, &registry_arc);
     }
 
     Ok(SyncBuiltinSkillsResult {
         installed: report.installed,
+        updated: report.updated,
         skipped: report.skipped,
+        changed: report.changed,
     })
 }

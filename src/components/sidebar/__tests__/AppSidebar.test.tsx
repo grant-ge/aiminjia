@@ -359,6 +359,9 @@ describe("AppSidebar", () => {
     expect(
       screen.getByRole("dialog", { name: "控制面板" }),
     ).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "控制面板" });
+    expect(dialog).toHaveClass("w-[560px]", "max-w-[calc(100vw-32px)]");
+    expect(dialog).not.toHaveClass("w-[90vh]", "h-[90vh]");
     expect(
       screen.getByText("隐藏功能和高级操作入口，不会出现在常规设置中。"),
     ).toBeInTheDocument();

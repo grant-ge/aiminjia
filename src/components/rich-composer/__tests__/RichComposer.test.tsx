@@ -270,6 +270,11 @@ describe('RichComposer — getEditor handle', () => {
 })
 
 describe('RichComposer — slash shortcut to open skill picker', () => {
+  it('renders a stable e2e trigger for the skill picker button', () => {
+    render(<RichComposer onSubmit={() => {}} onOpenSkill={() => {}} />)
+    expect(document.querySelector('[data-aijia-skill-picker-trigger]')).toBeInTheDocument()
+  })
+
   it('empty editor: pressing / calls onOpenSkill and the slash does not enter the editor', async () => {
     const onOpenSkill = vi.fn()
     const user = userEvent.setup()

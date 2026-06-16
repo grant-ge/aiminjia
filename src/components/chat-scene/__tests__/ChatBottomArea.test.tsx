@@ -230,6 +230,7 @@ beforeEach(() => {
         displayNameEn: "DingTalk Workspace",
         description: "desc",
         source: "global",
+        enabled: true,
         hasWorkflow: false,
         icon: "",
         shortDescription: "desc",

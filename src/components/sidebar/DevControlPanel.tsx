@@ -16,14 +16,14 @@ export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="!flex h-[90vh] w-[90vh] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] flex-col"
+        className="!flex w-[560px] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] flex-col"
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>控制面板</DialogTitle>
           <DialogDescription>隐藏功能和高级操作入口，不会出现在常规设置中。</DialogDescription>
         </DialogHeader>
-        <div className="mt-6 flex-1 overflow-y-auto">
+        <div className="mt-6 max-h-[min(68vh,420px)] overflow-y-auto px-6 pb-6">
           <div className="space-y-8">
             <section aria-labelledby="dev-control-display-title" className="space-y-3">
               <h3 id="dev-control-display-title" className="text-xs font-medium text-muted-foreground">

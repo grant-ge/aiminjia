@@ -852,6 +852,10 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     }
 
     /// 加载 turn 对应的 workspace 路径。
+    async fn is_skill_enabled_for_context(&self, _skill_id: &str) -> bool {
+        true
+    }
+
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(PathBuf::new())
     }
@@ -2618,7 +2622,20 @@ impl RuntimeChatTurnDriver {
                 String::new()
             });
         let skill_catalog = executor.get_skill_catalog(None).await;
-        let skill_context = match selected_skill_instruction(request.skill_command.as_ref()) {
+        let selected_instruction = match request.skill_command.as_ref() {
+            Some(skill) if executor.is_skill_enabled_for_context(&skill.id).await => {
+                selected_skill_instruction(Some(skill))
+            }
+            Some(skill) => {
+                log::warn!(
+                    "[skill-command] skip disabled or unknown selected skill: {}",
+                    skill.id
+                );
+                None
+            }
+            None => None,
+        };
+        let skill_context = match selected_instruction {
             Some(instruction) if !skill_catalog.is_empty() => {
                 format!("{skill_catalog}{instruction}")
             }
@@ -5769,6 +5786,7 @@ mod tests {
         seen_dynamic_contexts: Mutex<Vec<String>>,
         skill_catalog: Option<String>,
         override_system_prompt: Option<String>,
+        disabled_skill_ids: std::collections::HashSet<String>,
     }
 
     impl SnapshotPromptExecutor {
@@ -5779,6 +5797,7 @@ mod tests {
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: None,
                 override_system_prompt: None,
+                disabled_skill_ids: Default::default(),
             }
         }
 
@@ -5789,11 +5808,17 @@ mod tests {
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: Some(skill_catalog.into()),
                 override_system_prompt: None,
+                disabled_skill_ids: Default::default(),
             }
         }
 
         fn with_override_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
             self.override_system_prompt = Some(system_prompt.into());
+            self
+        }
+
+        fn with_disabled_skill(mut self, skill_id: impl Into<String>) -> Self {
+            self.disabled_skill_ids.insert(skill_id.into());
             self
         }
     }
@@ -5882,6 +5907,10 @@ mod tests {
 
         async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
             self.skill_catalog.clone().unwrap_or_default()
+        }
+
+        async fn is_skill_enabled_for_context(&self, skill_id: &str) -> bool {
+            !self.disabled_skill_ids.contains(skill_id)
         }
 
         async fn load_turn_config_overrides(
@@ -6037,6 +6066,46 @@ mod tests {
     }
 
     // ── LTR (B-gap1) Path A wiring tests ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn driver_skips_selected_skill_instruction_when_skill_disabled() {
+        let executor = Arc::new(
+            SnapshotPromptExecutor::with_skill_catalog(
+                "## available skills\n- `other-skill` - other",
+            )
+            .with_disabled_skill("dingtalk-workspace"),
+        );
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id(
+                "conv-driver-disabled-selected-skill".to_string(),
+            ),
+            RunId::new("run-driver-disabled-selected-skill"),
+            "check schedule".to_string(),
+        );
+        let mut request = ChatTurnRequest::new(
+            "conv-driver-disabled-selected-skill",
+            "check schedule",
+            vec![],
+        );
+        request.skill_command = Some(SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("DingTalk".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        });
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should ignore disabled selected skill");
+
+        let dynamic_contexts = executor.seen_dynamic_contexts.lock().unwrap().clone();
+        assert_eq!(dynamic_contexts.len(), 1);
+        assert!(dynamic_contexts[0].contains("other-skill"));
+        assert!(!dynamic_contexts[0].contains("Skill({ skill_id: \"dingtalk-workspace\" })"));
+    }
 
     use crate::runtime::agent::{AgentNameRegistry, LeadIdleSupervisor};
     use crate::runtime::event_bus::RuntimeEventSubscriber;

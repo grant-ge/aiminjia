@@ -1022,10 +1022,22 @@ impl ToolRegistry {
                 // 注入 transport 层 refresher，让 runtime tool 不直接依赖 Tauri。
                 // ctx.app_handle 为 None 的 test/legacy 路径退回到无 refresh 的旧行为。
                 let tool = match ctx.app_handle.as_ref() {
-                    Some(app) => builtin::load_skill::LoadSkillRuntimeTool::with_refresher(
-                        registry,
-                        Arc::new(AppSkillRegistryRefresher { app: app.clone() }),
-                    ),
+                    Some(app) => {
+                        use tauri::Manager;
+                        match app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>() {
+                            Some(enablement_store) => {
+                                builtin::load_skill::LoadSkillRuntimeTool::with_refresher_and_enablement(
+                                    registry,
+                                    Arc::new(AppSkillRegistryRefresher { app: app.clone() }),
+                                    enablement_store.inner().clone(),
+                                )
+                            }
+                            None => builtin::load_skill::LoadSkillRuntimeTool::with_refresher(
+                                registry,
+                                Arc::new(AppSkillRegistryRefresher { app: app.clone() }),
+                            ),
+                        }
+                    }
                     None => builtin::load_skill::LoadSkillRuntimeTool::new(registry),
                 };
                 Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)

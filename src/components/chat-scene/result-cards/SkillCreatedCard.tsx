@@ -15,7 +15,7 @@ export function SkillCreatedCard({ payload }: SkillCreatedCardProps) {
   const { t, i18n } = useTranslation()
   const skill = useSkillStore((state) => state.getById(payload.skillId))
   const reload = useSkillStore((state) => state.reload)
-  const setRoute = useUiStore((state) => state.setRoute)
+  const openSkillDetailDialog = useUiStore((state) => state.openSkillDetailDialog)
 
   useEffect(() => {
     if (!skill) void reload().catch(() => undefined)
@@ -51,7 +51,7 @@ export function SkillCreatedCard({ payload }: SkillCreatedCardProps) {
           unstyled
           type="button"
           aria-label={t('resultCards.skill.view')}
-          onClick={() => setRoute({ kind: 'skill-detail', skillId: payload.skillId })}
+          onClick={() => openSkillDetailDialog(payload.skillId)}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 group-hover:opacity-100"
           data-testid="skill-created-card-view"
         >

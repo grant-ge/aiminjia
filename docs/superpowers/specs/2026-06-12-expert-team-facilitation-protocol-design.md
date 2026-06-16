@@ -1,8 +1,8 @@
 # 专家团主持协议开放化设计
 
-> 状态：设计稿，待用户 review  
-> 日期：2026-06-12  
-> 作者：Codex，基于本地专家团会话排查与项目 owner 讨论  
+> 状态：设计稿，待用户 review
+> 日期：2026-06-12
+> 作者：Codex，基于本地专家团会话排查与项目 owner 讨论
 > 关联工件：
 > - `src/features/expert-teams/buildDirectorPrompt.ts`
 > - `src-tauri/src/runtime/chat/chat_turn_driver.rs`

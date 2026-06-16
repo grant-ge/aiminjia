@@ -53,6 +53,7 @@ interface UiState {
   sidebarHidden: boolean
   prefillText: string | null
   pendingSkill: PendingSkillSelection | null
+  skillDetailDialogId: string | null
   permissionModesBySession: Record<string, PermissionMode>
   setRoute: (route: Route) => void
   replaceRoute: (route: Route) => void
@@ -69,6 +70,8 @@ interface UiState {
   consumePrefillText: () => string | null
   setPendingSkill: (skill: PendingSkillSelection) => void
   consumePendingSkill: () => PendingSkillSelection | null
+  openSkillDetailDialog: (skillId: string) => void
+  closeSkillDetailDialog: () => void
   setPermissionModeForSession: (sessionId: string, mode: PermissionMode) => void
   getPermissionModeForSession: (sessionId: string) => PermissionMode | undefined
 }
@@ -216,6 +219,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   sidebarHidden: loadPersistedSidebarHidden(),
   prefillText: null,
   pendingSkill: null,
+  skillDetailDialogId: null,
   permissionModesBySession: loadPersistedPermissionModes(),
   setRoute: (route) => {
     const current = get().route
@@ -289,6 +293,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (skill !== null) set({ pendingSkill: null })
     return skill
   },
+  openSkillDetailDialog: (skillId) => set({ skillDetailDialogId: skillId }),
+  closeSkillDetailDialog: () => set({ skillDetailDialogId: null }),
   setPermissionModeForSession: (sessionId, mode) => {
     const next = { ...get().permissionModesBySession, [sessionId]: mode }
     persistPermissionModes(next)

@@ -310,6 +310,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               type="button"
               variant={skillCommand ? 'secondary' : 'ghost'}
               size="sm"
+              data-aijia-skill-picker-trigger
               onClick={onOpenSkill}
               disabled={disabled}
               aria-label={

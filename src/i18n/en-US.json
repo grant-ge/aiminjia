@@ -1194,7 +1194,7 @@
     "searchPlaceholder": "Search skills by name or scenario",
     "syncBuiltin": "Refresh official skills",
     "syncLocal": "Check local skills",
-    "syncSkills": "Refresh skills",
+    "syncSkills": "Sync skills",
     "syncing": "Syncing...",
     "syncLocalDone": "Local skills updated",
     "importSkill": "+ Import Skill",
