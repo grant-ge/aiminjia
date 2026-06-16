@@ -22,13 +22,18 @@ use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
 use storage::UserScopedPathResolver;
-use tauri::menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu, SubmenuBuilder};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, SubmenuBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
 const APP_LOG_RETENTION_DAYS: u64 = 3;
 const NAVIGATION_MENU_EVENT: &str = "navigation:menu-command";
 const NAVIGATION_BACK_MENU_ID: &str = "navigation.back";
 const NAVIGATION_FORWARD_MENU_ID: &str = "navigation.forward";
+const TRAY_ICON_ID: &str = "main";
+const TRAY_SHOW_MENU_ID: &str = "tray.show";
+const TRAY_HIDE_MENU_ID: &str = "tray.hide";
+const TRAY_QUIT_MENU_ID: &str = "tray.quit";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct AppMenuLabels {
@@ -40,6 +45,10 @@ struct AppMenuLabels {
     navigation: &'static str,
     back: &'static str,
     forward: &'static str,
+    tray_tooltip: &'static str,
+    tray_show: &'static str,
+    tray_hide: &'static str,
+    tray_quit: &'static str,
 }
 
 fn app_menu_labels(language: &str) -> AppMenuLabels {
@@ -53,6 +62,10 @@ fn app_menu_labels(language: &str) -> AppMenuLabels {
             navigation: "Navigation",
             back: "Back",
             forward: "Forward",
+            tray_tooltip: "AIjia",
+            tray_show: "Show AIjia",
+            tray_hide: "Hide to Tray",
+            tray_quit: "Quit AIjia",
         }
     } else {
         AppMenuLabels {
@@ -64,6 +77,10 @@ fn app_menu_labels(language: &str) -> AppMenuLabels {
             navigation: "导航",
             back: "后退",
             forward: "前进",
+            tray_tooltip: "AI 小家",
+            tray_show: "显示主窗口",
+            tray_hide: "隐藏到托盘",
+            tray_quit: "退出 AI 小家",
         }
     }
 }
@@ -108,8 +125,8 @@ fn handle_window_close_requested<R: tauri::Runtime>(
     {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
-            if let Err(err) = window.minimize() {
-                log::warn!("Failed to minimize main window on Windows close request: {err}");
+            if let Err(err) = window.hide() {
+                log::warn!("Failed to hide main window on Windows close request: {err}");
             }
         }
     }
@@ -249,7 +266,117 @@ fn install_app_navigation_menu<R: tauri::Runtime>(app: &mut tauri::App<R>) -> ta
 
 #[tauri::command]
 fn set_app_menu_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
-    set_app_navigation_menu(&app, &language).map_err(|err| err.to_string())
+    set_app_navigation_menu(&app, &language).map_err(|err| err.to_string())?;
+    set_app_tray_language(&app, &language).map_err(|err| err.to_string())
+}
+
+fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn hide_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let visible = window.is_visible().unwrap_or(false);
+    let minimized = window.is_minimized().unwrap_or(false);
+    if visible && !minimized {
+        let _ = window.hide();
+    } else {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn build_tray_menu<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    labels: AppMenuLabels,
+) -> tauri::Result<Menu<R>> {
+    Menu::with_items(
+        app_handle,
+        &[
+            &MenuItem::with_id(
+                app_handle,
+                TRAY_SHOW_MENU_ID,
+                labels.tray_show,
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(
+                app_handle,
+                TRAY_HIDE_MENU_ID,
+                labels.tray_hide,
+                true,
+                None::<&str>,
+            )?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &MenuItem::with_id(
+                app_handle,
+                TRAY_QUIT_MENU_ID,
+                labels.tray_quit,
+                true,
+                None::<&str>,
+            )?,
+        ],
+    )
+}
+
+fn set_app_tray_language<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    language: &str,
+) -> tauri::Result<()> {
+    let labels = app_menu_labels(language);
+    if let Some(tray) = app_handle.tray_by_id(TRAY_ICON_ID) {
+        let menu = build_tray_menu(app_handle, labels)?;
+        tray.set_menu(Some(menu))?;
+        tray.set_tooltip(Some(labels.tray_tooltip))?;
+    }
+    Ok(())
+}
+
+fn install_app_tray<R: tauri::Runtime>(app: &mut tauri::App<R>) -> tauri::Result<()> {
+    let app_handle = app.handle().clone();
+    let labels = app_menu_labels("zh-CN");
+    let menu = build_tray_menu(&app_handle, labels)?;
+    let icon = app_handle
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| tauri::Error::AssetNotFound("default_window_icon".into()))?;
+
+    TrayIconBuilder::with_id(TRAY_ICON_ID)
+        .icon(icon)
+        .tooltip(labels.tray_tooltip)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_SHOW_MENU_ID => show_main_window(app),
+            TRAY_HIDE_MENU_ID => hide_main_window(app),
+            TRAY_QUIT_MENU_ID => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                toggle_main_window(tray.app_handle());
+            }
+        })
+        .build(&app_handle)?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -285,6 +412,7 @@ pub fn run() {
         })
         .setup(|app| {
             install_app_navigation_menu(app)?;
+            install_app_tray(app)?;
 
             // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;

@@ -25,7 +25,7 @@ fn macos_close_button_hides_main_window_instead_of_exiting_app() {
 }
 
 #[test]
-fn windows_close_button_minimizes_main_window_instead_of_exiting_app() {
+fn windows_close_button_hides_main_window_to_tray_instead_of_exiting_app() {
     let source = std::fs::read_to_string("src/lib.rs").expect("read src/lib.rs");
 
     assert!(
@@ -41,8 +41,12 @@ fn windows_close_button_minimizes_main_window_instead_of_exiting_app() {
         "Windows close behavior must prevent destroying the last main window"
     );
     assert!(
-        source.contains("window.minimize()"),
-        "Windows close button must minimize the window so IM/background tasks keep running and users can restore it from the taskbar"
+        source.contains("window.hide()"),
+        "Windows close button must hide the window to the system tray so IM/background tasks keep running and users can restore it from the tray icon"
+    );
+    assert!(
+        source.contains("TrayIconBuilder"),
+        "Hiding the window on close requires a system tray entry so users have a way to restore it"
     );
 }
 
