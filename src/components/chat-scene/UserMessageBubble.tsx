@@ -2,13 +2,13 @@
  * @designSource design.pen#1JNrw bubble/adaptive-max-80
  * @sizing r-16 padding [8,12] bg sidebar fg foreground; align right; max-w 80%
  */
-import { Blocks, Check, Copy } from 'lucide-react'
+import { Blocks, BrainCircuit, Check, Copy } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
 import { DispatchBanner } from './DispatchBanner'
 import { parseDispatchHeader } from './parseDispatchHeader'
-import type { FileAttachment, SkillCommandBreadcrumb } from '@/types/message'
+import type { FileAttachment, ReasoningMode, SkillCommandBreadcrumb } from '@/types/message'
 import { Button } from '@/components/ui/button'
 
 // Team event XML patterns — rendered by PeerMessageBanner instead
@@ -20,6 +20,7 @@ interface UserMessageBubbleProps {
   text: string
   commandText?: string
   skillCommand?: SkillCommandBreadcrumb
+  reasoningMode?: ReasoningMode
   files?: FileAttachment[]
   conversationId?: string
 }
@@ -28,6 +29,7 @@ export function UserMessageBubble({
   text,
   commandText,
   skillCommand,
+  reasoningMode,
   files,
   conversationId,
 }: UserMessageBubbleProps) {
@@ -63,6 +65,7 @@ export function UserMessageBubble({
 
   const command = skillCommand?.command ?? commandText?.split(/\s+/)[0]
   const tokenLabel = skillCommand?.label ?? skillCommand?.id ?? command?.replace(/^\//, '')
+  const showDeepReasoning = reasoningMode === 'deep'
   // 折叠阈值用换行数衡量，不再用字符数：中文短文本 320 字 ≠ 视觉上很长，
   // 但贴一条长 URL（~250 chars）+ 几句话就误触发折叠 + clip，把正文遮住。
   const shouldCollapse = text.split(/\n/).length > 8
@@ -99,6 +102,20 @@ export function UserMessageBubble({
                 style={{ width: '0.75rem', height: '0.75rem', transform: 'translateY(1px)' }}
               />
               <span>{tokenLabel}</span>
+            </span>
+          ) : null}
+          {showDeepReasoning ? (
+            <span
+              data-testid="user-reasoning-token"
+              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-foreground/10 px-2 py-1 text-xs font-semibold leading-none text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              title={t('composer.reasoningModeDeepLong')}
+            >
+              <BrainCircuit
+                aria-hidden="true"
+                className="shrink-0"
+                style={{ width: '0.75rem', height: '0.75rem', transform: 'translateY(1px)' }}
+              />
+              <span>{t('composer.reasoningModeDeep')}</span>
             </span>
           ) : null}
           {text ? (

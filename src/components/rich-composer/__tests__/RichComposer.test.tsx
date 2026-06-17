@@ -36,6 +36,22 @@ describe('RichComposer — basic submit', () => {
     })
   })
 
+  it('renders reasoning mode control and emits changes', async () => {
+    const onReasoningModeChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <RichComposer
+        onSubmit={() => {}}
+        reasoningMode="auto"
+        onReasoningModeChange={onReasoningModeChange}
+      />,
+    )
+    const trigger = await screen.findByRole('button', { name: /思考模式|Thinking mode/ })
+    await user.click(trigger)
+    await user.click(await screen.findByText(/深度思考|Deep thinking/))
+    expect(onReasoningModeChange).toHaveBeenCalledWith('deep')
+  })
+
   it('Enter submits payload with markdown', async () => {
     const onSubmit = vi.fn()
     const user = userEvent.setup()

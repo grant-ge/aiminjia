@@ -1,8 +1,8 @@
-//! Tauri commands for personal-tenant billing.
+//! Tauri commands for account usage and personal-tenant billing.
 //!
-//! Backed by `/v1/billing/summary` and `/v1/billing/usage-records` on the
-//! Lotus gateway. The user's session key is sourced from `AuthManager`
-//! (auto-refreshes if expired), so callers don't have to thread it through.
+//! Backed by `/v1/billing/*` and `/v1/enterprise/usage-records` on the Lotus
+//! gateway. The user's session key is sourced from `AuthManager` (auto-refreshes
+//! if expired), so callers don't have to thread it through.
 
 use std::sync::Arc;
 
@@ -54,6 +54,16 @@ pub struct UsageRecord {
     pub key_type: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub struct UsageRecordSummary {
+    pub request_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cached_tokens: i64,
+    pub cost: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct UsageRecordsPage {
@@ -61,6 +71,16 @@ pub struct UsageRecordsPage {
     pub size: u32,
     pub total: i64,
     pub records: Vec<UsageRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<UsageRecordSummary>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BillingUsageQuery {
+    pub start_at: Option<String>,
+    pub end_at: Option<String>,
+    pub request_type: Option<String>,
+    pub model_name: Option<String>,
 }
 
 #[tauri::command]
@@ -74,9 +94,46 @@ pub async fn billing_summary(auth: State<'_, Arc<AuthManager>>) -> Result<Billin
 pub async fn billing_usage_records(
     page: u32,
     size: u32,
+    start_at: Option<String>,
+    end_at: Option<String>,
+    request_type: Option<String>,
+    model_name: Option<String>,
     auth: State<'_, Arc<AuthManager>>,
 ) -> Result<UsageRecordsPage, String> {
-    auth.get_billing_usage_records(page, size)
-        .await
-        .map_err(|e| format!("{:#}", e))
+    auth.get_billing_usage_records(
+        page,
+        size,
+        BillingUsageQuery {
+            start_at,
+            end_at,
+            request_type,
+            model_name,
+        },
+    )
+    .await
+    .map_err(|e| format!("{:#}", e))
+}
+
+#[tauri::command]
+pub async fn enterprise_usage_records(
+    page: u32,
+    size: u32,
+    start_at: Option<String>,
+    end_at: Option<String>,
+    request_type: Option<String>,
+    model_name: Option<String>,
+    auth: State<'_, Arc<AuthManager>>,
+) -> Result<UsageRecordsPage, String> {
+    auth.get_enterprise_usage_records(
+        page,
+        size,
+        BillingUsageQuery {
+            start_at,
+            end_at,
+            request_type,
+            model_name,
+        },
+    )
+    .await
+    .map_err(|e| format!("{:#}", e))
 }

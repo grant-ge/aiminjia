@@ -32,6 +32,7 @@ import {
   getActiveTurnStage,
   type ChatAttachmentPayload,
   type PermissionMode,
+  type ReasoningMode,
   type SkillCommandPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
@@ -301,12 +302,14 @@ export function useChat() {
    *                 message which the prompt builder uses to inject SKILL.md
    *                 contents and mark the turn as a skill-driven flow.
    * @param permissionMode - Optional session-level permission mode override.
+   * @param reasoningMode  - Optional per-turn reasoning policy override.
    */
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
     skill?: PendingSkillCommand | null,
     permissionMode?: PermissionMode | null,
+    reasoningMode?: ReasoningMode | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -440,7 +443,11 @@ export function useChat() {
       event: 'chat.submit.started',
       conversationId,
       clientMessageId: messageId,
-      payload: { messageLength: text.length, fileCount: files?.length ?? 0 },
+      payload: {
+        messageLength: text.length,
+        fileCount: files?.length ?? 0,
+        reasoningMode: reasoningMode ?? null,
+      },
     })
 
     // Build the optimistic user message
@@ -454,6 +461,7 @@ export function useChat() {
         text,
         commandText: skillCommand?.command,
         skillCommand: skillCommand ?? undefined,
+        reasoningMode: reasoningMode ?? undefined,
         files: files?.map((f) => ({
           id: f.id,
           fileName: f.fileName,
@@ -487,7 +495,7 @@ export function useChat() {
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
-      await sendMessage(conversationId, text, files, null, messageId, skillCommand, permissionMode)
+      await sendMessage(conversationId, text, files, null, messageId, skillCommand, permissionMode, reasoningMode)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',

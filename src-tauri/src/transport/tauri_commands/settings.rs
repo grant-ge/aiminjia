@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::llm::providers::LlmProviderTrait;
-use crate::llm::providers::{
-    claude::ClaudeProvider, custom::CustomProvider, openai::OpenAiProvider,
-};
+use crate::llm::providers::{custom::CustomProvider, openai::OpenAiProvider};
 use crate::models::settings::AppSettings;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_store::AppStorage;
@@ -268,10 +266,6 @@ impl TauriSettingsCommandAdapter {
         let result = match provider.as_str() {
             "openai" => {
                 let p = OpenAiProvider::new(api_key);
-                p.validate_key().await
-            }
-            "claude" => {
-                let p = ClaudeProvider::new(api_key, None);
                 p.validate_key().await
             }
             "custom" => {

@@ -128,7 +128,7 @@ pub struct FeedbackConfig {
 /// Model preference for a Skill.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ModelPreference {
-    /// Use a specific provider (e.g., "claude").
+    /// Use a specific provider (e.g., "aijia-v2" or "custom").
     Provider(String),
     /// Select by capability.
     Capability(ModelCapability),

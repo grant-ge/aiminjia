@@ -43,6 +43,7 @@ describe('SettingsModal', () => {
     useUiStore.getState().openSettings('account')
     render(<SettingsModal />)
     expect(screen.getByRole('button', { name: '通用设置' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '账户与消耗' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '关于' })).toBeInTheDocument()
     expect(screen.getByText('姚域权')).toBeInTheDocument()
     expect(screen.queryByText('语言')).not.toBeInTheDocument()

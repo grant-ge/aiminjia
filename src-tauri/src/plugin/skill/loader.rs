@@ -74,7 +74,7 @@ pub fn load_skill_roots(roots: &[PathBuf]) -> Result<HashMap<String, DiskSkill>>
 
 /// Load skills from `(root, source)` pairs in priority order. Earlier entries
 /// win on id collisions, with a warn-level log naming the loser so operators
-/// can detect when a local upload shadows a tenant-pushed skill.
+/// can detect when a user-installed skill shadows a platform-required one.
 pub fn load_skill_roots_tagged(
     roots: &[(PathBuf, SkillSource)],
 ) -> Result<HashMap<String, DiskSkill>> {
@@ -167,7 +167,8 @@ fn load_one_root(
             }
         }
         // If sync wrote a `.scope` marker, upgrade Global → Tenant when marker
-        // says "tenant". User root never reads .scope (local uploads stay User).
+        // says "tenant". This is only reachable for required builtin ids; other
+        // global entries require explicit user installation and are skipped above.
         let effective_source = if matches!(source, SkillSource::Global) {
             match fs::read_to_string(path.join(".scope")) {
                 Ok(s) if s.trim() == "tenant" => SkillSource::Tenant,

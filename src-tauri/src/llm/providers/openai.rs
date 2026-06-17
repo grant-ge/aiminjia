@@ -8,14 +8,14 @@
 //! response parsing, and SSE stream process.
 //!
 //! ## ⚠ 部分 DEPRECATED
-//! `OpenAiProvider` 本身（直连 api.openai.com）是死代码：产品仅对外暴露
-//! lotus 网关 + custom 端点。`new(api_key)` 不收 model 参数，请求 body 写死
+//! `OpenAiProvider` 本身（直连 api.openai.com）是历史兼容路径；产品默认走
+//! AIjia Gateway V2 + custom 端点。`new(api_key)` 不收 model 参数，请求 body 写死
 //! `DEFAULT_MODEL = "gpt-4o"`，settings 里的 model id 丢失。删除计划：
 //! 专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
 //!
 //! **保留**本文件中的 `send_openai_compat` / `stream_openai_compat` /
-//! `validate_key_openai_compat` 等 `pub(super)` 共享函数 —— 它们被 `lotus.rs`
-//! 和 `custom.rs` 复用，是 OpenAI 协议的核心实现，不能删。删除时只去掉
+//! `validate_key_openai_compat` 等 `pub(super)` 共享函数 —— 它们被 `custom.rs`
+//! 复用，是 OpenAI-compatible 协议的核心实现，不能删。删除时只去掉
 //! `OpenAiProvider` 本身的 struct/impl，保留共享 helper。
 #![allow(dead_code)]
 
@@ -136,10 +136,8 @@ pub(super) fn build_request_body(
                     msg["content"] = Value::Null;
                 }
             }
-            // Pass thinking/reasoning content back for gateways that proxy
-            // to Claude (e.g. Lotus). Only assistant messages can carry
-            // thinking — adding it to other roles confuses the gateway and
-            // would be silently dropped or rejected by Anthropic.
+            // Pass thinking/reasoning content back for gateways that require
+            // signed thinking context. Only assistant messages can carry it.
             if m.role == "assistant" {
                 if let Some(ref thinking) = m.thinking {
                     msg["thinking"] = json!(thinking);
@@ -735,11 +733,11 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
         let arguments = match serde_json::from_str(&st.tool_args) {
             Ok(v) => v,
             Err(e) => {
-                // Lotus / Anthropic-via-OpenAI gateways sometimes pack multiple
-                // parallel tool_calls into ONE chunk with a single id and
-                // index, with the args field being two-or-more concatenated
-                // JSON objects: `{...}{...}{...}`. Detect this and split into
-                // independent tool_calls — emit one ToolCallStart per object.
+                // Some OpenAI-compatible gateways pack multiple parallel
+                // tool_calls into ONE chunk with a single id and index, with
+                // the args field being two-or-more concatenated JSON objects:
+                // `{...}{...}{...}`. Detect this and split into independent
+                // tool_calls — emit one ToolCallStart per object.
                 if let Some(parts) = split_concatenated_json_objects(&st.tool_args) {
                     log::warn!(
                         "[SSE] Detected {} concatenated JSON objects in single tool_call args (gateway flatten bug); splitting into independent tool_calls",
@@ -884,9 +882,9 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
 /// - input parses as 2+ valid JSON objects end-to-end (no trailing junk)
 /// - all parts are JSON objects (not arrays/scalars)
 ///
-/// Handles the lotus-tenant gateway bug where N parallel Anthropic tool_use
-/// blocks get serialized as a single OpenAI tool_call whose `arguments` string
-/// is the concatenation of N separate argument JSONs.
+/// Handles gateways that serialize N parallel tool calls as a single OpenAI
+/// tool_call whose `arguments` string is the concatenation of N separate
+/// argument JSONs.
 fn split_concatenated_json_objects(input: &str) -> Option<Vec<Value>> {
     let trimmed = input.trim();
     if !trimmed.starts_with('{') {
@@ -1470,8 +1468,8 @@ mod tests {
         }
     }
 
-    /// Lotus / Anthropic-via-OpenAI gateway sometimes flattens N parallel
-    /// tool_use blocks into a SINGLE tool_call whose `arguments` field is the
+    /// Some OpenAI-compatible gateways flatten N parallel tool calls into a
+    /// SINGLE tool_call whose `arguments` field is the
     /// concatenation of N separate JSON objects (no separator). We must split
     /// them and emit one ToolCallStart per object — otherwise serde_json fails
     /// with "trailing characters" and the LLM call appears to be a single
@@ -1479,7 +1477,7 @@ mod tests {
     #[test]
     fn flush_pending_tool_splits_concatenated_json_objects_into_independent_tool_calls() {
         let mut st = test_state();
-        st.tool_id = Some("toolu_lotus_combined".to_string());
+        st.tool_id = Some("toolu_combined".to_string());
         st.tool_name = Some("Read".to_string());
         st.tool_args = String::from(
             r#"{"file_path": "README.md", "max_bytes": 5000}{"file_path": "AGENTS.md"}{"file_path": "Makefile"}"#,
@@ -1512,9 +1510,9 @@ mod tests {
         }
         // First reuses the original id; subsequent ones get derived ids so they
         // are unique downstream (executor maps id -> tool_call).
-        assert_eq!(calls[0].id, "toolu_lotus_combined");
-        assert_eq!(calls[1].id, "toolu_lotus_combined_split_1");
-        assert_eq!(calls[2].id, "toolu_lotus_combined_split_2");
+        assert_eq!(calls[0].id, "toolu_combined");
+        assert_eq!(calls[1].id, "toolu_combined_split_1");
+        assert_eq!(calls[2].id, "toolu_combined_split_2");
         // Each call must carry exactly its own arguments, not the concatenation.
         assert_eq!(
             calls[0].arguments.get("file_path").and_then(|v| v.as_str()),

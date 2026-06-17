@@ -676,7 +676,10 @@ pub async fn sync_skill_packages_from_server(
     server_base_url: String,
     session_key: String,
 ) -> Result<GlobalSkillInstallReport> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .context("build skill sync http client")?;
 
     log::info!("[skill-sync] start sync from {}", server_base_url);
 
@@ -714,7 +717,11 @@ pub async fn sync_skill_packages_from_server(
         &config.global_skills_dir,
     )?);
     let mut new_installed: HashMap<String, String> = local_state.installed.clone();
-    let remote_ids: HashSet<String> = list.data.iter().map(|item| item.plugin_id.clone()).collect();
+    let remote_ids: HashSet<String> = list
+        .data
+        .iter()
+        .map(|item| item.plugin_id.clone())
+        .collect();
     let packages_to_sync = dedupe_skill_packages(&list.data);
     if packages_to_sync.len() != list.data.len() {
         log::info!(
@@ -886,6 +893,10 @@ pub fn read_global_skills_state(state_path: &Path) -> Result<Option<GlobalSkills
 }
 
 pub fn write_global_skills_state(state_path: &Path, state: &GlobalSkillsState) -> Result<()> {
+    if let Some(parent) = state_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create global skills state dir '{}'", parent.display()))?;
+    }
     crate::storage::migration::update_state_json(state_path, |value| {
         value["globalSkills"] =
             serde_json::to_value(state).expect("serialize globalSkills state should not fail");
@@ -894,7 +905,11 @@ pub fn write_global_skills_state(state_path: &Path, state: &GlobalSkillsState) -
 }
 
 async fn download_file(url: &str, path: &Path) -> Result<()> {
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .context("build skill artifact http client")?;
+    let response = client
         .get(url)
         .timeout(ARTIFACT_DOWNLOAD_TIMEOUT)
         .send()
@@ -1108,10 +1123,7 @@ mod tests {
         write_global_skills_state(
             &config.state_path,
             &GlobalSkillsState {
-                installed: HashMap::from([(
-                    "dingtalk-workspace".to_string(),
-                    "1.2.0".to_string(),
-                )]),
+                installed: HashMap::from([("dingtalk-workspace".to_string(), "1.2.0".to_string())]),
                 updated_at_unix_seconds: 1,
             },
         )

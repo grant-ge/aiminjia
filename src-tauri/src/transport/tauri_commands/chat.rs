@@ -28,7 +28,7 @@ use crate::models::settings::AppSettings;
 use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
-use crate::runtime::chat::chat_turn_driver::RunActivityController;
+use crate::runtime::chat::chat_turn_driver::{ReasoningMode, RunActivityController};
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::chat::compaction::{
     append_literal_anchor_hints, append_transcript_path_hint,
@@ -1705,7 +1705,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
     async fn load_llm_settings_for_turn(
         &self,
-        _request: &ChatTurnRequest,
+        request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
         let global_settings_map = self.services.db().get_all_settings().unwrap_or_default();
         let global_settings = if global_settings_map.is_empty() {
@@ -1733,6 +1733,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         if let Some(ss) = self.services.crypto.as_ref() {
             settings.primary_api_key = decrypt_api_key(ss, &settings.primary_api_key);
         }
+        apply_reasoning_mode_override(&mut settings, request.reasoning_mode);
 
         Ok(ResolvedLlmSettings {
             primary_model: settings.primary_model,
@@ -1755,15 +1756,17 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         content: &str,
         attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
         skill_command: Option<&crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
+        reasoning_mode: Option<crate::runtime::chat::chat_turn_driver::ReasoningMode>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
         let content_json =
-            crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
+            crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill_and_reasoning(
                 content,
                 attachments,
                 skill_command,
+                reasoning_mode,
             )
             .to_string();
 
@@ -2058,7 +2061,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             build_assistant_content_json(&filtered_content, tool_calls, None, thinking_blocks)
         };
 
-        // Inject thinking blocks for Anthropic API round-trip (must be echoed back on next turn).
+        // Inject signed thinking blocks for upstream round-trip (must be echoed back on next turn).
         if !thinking_blocks.is_empty() {
             if let Some(obj) = content_value.as_object_mut() {
                 obj.insert(
@@ -2599,6 +2602,20 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 }
 
+fn apply_reasoning_mode_override(settings: &mut AppSettings, mode: Option<ReasoningMode>) {
+    match mode {
+        Some(ReasoningMode::Auto) => {
+            settings.thinking_type = "adaptive".to_string();
+        }
+        Some(ReasoningMode::Deep) => {
+            settings.cloud_model_type = "reasoner".to_string();
+            settings.thinking_type = "enabled".to_string();
+            settings.thinking_budget_tokens = 8192;
+        }
+        None => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2625,6 +2642,30 @@ mod tests {
         let settings = build_gateway_settings(&resolved);
 
         assert_eq!(settings.cloud_gateway_mode, CloudGatewayMode::V2);
+    }
+
+    #[test]
+    fn reasoning_mode_auto_overrides_settings_to_adaptive() {
+        let mut settings = AppSettings::default();
+        settings.thinking_type = "disabled".to_string();
+
+        apply_reasoning_mode_override(&mut settings, Some(ReasoningMode::Auto));
+
+        assert_eq!(settings.thinking_type, "adaptive");
+    }
+
+    #[test]
+    fn reasoning_mode_deep_overrides_settings_to_enabled_high_budget() {
+        let mut settings = AppSettings::default();
+        settings.cloud_model_type = "chat".to_string();
+        settings.thinking_type = "disabled".to_string();
+        settings.thinking_budget_tokens = 1024;
+
+        apply_reasoning_mode_override(&mut settings, Some(ReasoningMode::Deep));
+
+        assert_eq!(settings.cloud_model_type, "reasoner");
+        assert_eq!(settings.thinking_type, "enabled");
+        assert_eq!(settings.thinking_budget_tokens, 8192);
     }
 
     struct Gate {
@@ -4322,6 +4363,7 @@ impl TauriChatCommandAdapter {
         agent_name: Option<String>,
         client_message_id: Option<String>,
         skill_command: Option<crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
+        reasoning_mode: Option<crate::runtime::chat::chat_turn_driver::ReasoningMode>,
     ) -> Result<(), String> {
         log::info!(
             "[send_message] trace_id={:?} conversation_id={} content_len={} attachments_count={}",
@@ -4370,6 +4412,7 @@ impl TauriChatCommandAdapter {
                     })
                     .collect(),
                 skill_command: skill_command.clone(),
+                reasoning_mode,
                 received_at: chrono::Utc::now().to_rfc3339(),
                 origin: Default::default(),
                 output_binding: Default::default(),
@@ -4413,6 +4456,7 @@ impl TauriChatCommandAdapter {
             permission_mode.unwrap_or_else(|| self.default_permission_mode_from_settings());
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         request.skill_command = skill_command;
+        request.reasoning_mode = reasoning_mode;
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
         // The derived dirs will be merged into the per-turn ToolPermissionContext as
         // RuleSource::Session in QueryEngine::build_turn_permission_ctx.
@@ -5947,7 +5991,7 @@ mod retry_reason_tests {
     fn upstream_5xx_is_upstream_busy() {
         assert_eq!(
             classify_retry_reason(
-                "Anthropic API stream error (502 Bad Gateway): <html>nginx/1.20.1</html>"
+                "AIjia v2 stream error (502 Bad Gateway): <html>nginx/1.20.1</html>"
             ),
             RetryReason::UpstreamBusy
         );

@@ -100,6 +100,15 @@ const i18nMock = vi.hoisted(() => ({
       "composer.fullAccessRuleTrusted":
         "仅建议在你信任当前任务时使用",
       "composer.fullAccessRuleSwitchBack": "你可随时切回默认权限",
+      "composer.reasoningModeLabel": "思考模式：{{mode}}",
+      "composer.reasoningModeAuto": "自动",
+      "composer.reasoningModeDeep": "深度思考",
+      "composer.reasoningModeAutoLong": "自动思考",
+      "composer.reasoningModeDeepLong": "深度思考",
+      "composer.reasoningModeAutoDesc":
+        "按任务复杂度走默认推理策略，兼顾速度和质量。",
+      "composer.reasoningModeDeepDesc":
+        "为复杂分析、审查和长任务增加推理预算，可能更慢、用量更高。",
     },
     "en-US": {
       "pendingAction.permission.allowedFeedback":
@@ -219,7 +228,7 @@ beforeEach(() => {
     activeConversationId: "conv-1",
     messages: [],
   });
-  useUiStore.setState({ permissionModesBySession: {} });
+  useUiStore.setState({ permissionModesBySession: {}, reasoningModesBySession: {} });
   useStreamingStore.setState({ pendingAsks: new Map() });
   useInteractionStore.setState({ pendingInteractions: [] });
   useSkillStore.setState({
@@ -427,6 +436,27 @@ describe("ChatBottomArea", () => {
     expect(mockSendUserMessage.mock.calls[0][3]).toBe("fullAccess");
     expect(useUiStore.getState().permissionModesBySession["conv-1"]).toBe(
       "fullAccess",
+    );
+  });
+
+  it("toggles session reasoning mode and passes it on submit", async () => {
+    const user = userEvent.setup();
+    render(<ChatBottomArea />);
+    await waitFor(() =>
+      expect(document.querySelector(".ProseMirror")).toBeTruthy(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "思考模式：自动" }));
+    await user.click(await screen.findByText("深度思考"));
+    const editor = document.querySelector(".ProseMirror") as HTMLElement;
+    await user.click(editor);
+    await user.type(editor, "analyze this");
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1));
+    expect(mockSendUserMessage.mock.calls[0][4]).toBe("deep");
+    expect(useUiStore.getState().reasoningModesBySession["conv-1"]).toBe(
+      "deep",
     );
   });
 

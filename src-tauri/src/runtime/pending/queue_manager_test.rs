@@ -44,6 +44,7 @@ fn sample_item(id: &str) -> PendingItem {
         sender_nick: None,
         attachments: vec![],
         skill_command: None,
+        reasoning_mode: None,
         received_at: "2026-05-11T03:21:00Z".into(),
         origin: Default::default(),
         output_binding: Default::default(),
@@ -117,6 +118,7 @@ async fn queued_item_taken_for_human_interaction_can_be_dispatched_as_new_turn()
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
         last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, PendingConfig::default());
@@ -495,6 +497,8 @@ struct CountingDispatcher {
     pub count: AtomicUsize,
     pub last_text: tokio::sync::Mutex<Option<String>>,
     pub last_skill_id: tokio::sync::Mutex<Option<String>>,
+    pub last_reasoning_mode:
+        tokio::sync::Mutex<Option<crate::runtime::chat::chat_turn_driver::ReasoningMode>>,
     pub last_channel_context: tokio::sync::Mutex<Option<String>>,
 }
 
@@ -504,6 +508,7 @@ impl ChatTurnDispatcher for CountingDispatcher {
         self.count.fetch_add(1, Ordering::SeqCst);
         *self.last_skill_id.lock().await =
             request.skill_command.as_ref().map(|skill| skill.id.clone());
+        *self.last_reasoning_mode.lock().await = request.reasoning_mode;
         *self.last_channel_context.lock().await = request.channel_context.clone();
         *self.last_text.lock().await = Some(request.content);
         Ok(())
@@ -522,6 +527,7 @@ async fn drain_dispatches_after_debounce() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
         last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
@@ -586,6 +592,7 @@ async fn drain_im_item_sets_mobile_channel_context_on_dispatched_request() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
         last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
@@ -627,6 +634,7 @@ async fn immediate_drain_bypasses_debounce_window() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
         last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
@@ -661,6 +669,7 @@ async fn drain_preserves_skill_command_on_dispatched_request() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
         last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
@@ -692,6 +701,93 @@ async fn drain_preserves_skill_command_on_dispatched_request() {
 }
 
 #[tokio::test]
+async fn drain_preserves_reasoning_mode_on_dispatched_request() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let mut config = PendingConfig::default();
+    config.debounce_window = std::time::Duration::from_millis(50);
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("conv-reasoning-drain");
+    use crate::runtime::chat::chat_turn_driver::ReasoningMode;
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    let mut item = sample_item("reasoning");
+    item.reasoning_mode = Some(ReasoningMode::Deep);
+    mgr.enqueue_or_send(session.clone(), item).await.unwrap();
+
+    registry.clear(session.as_str());
+    mgr.schedule_drain(session.clone()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    assert_eq!(dispatcher.count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        *dispatcher.last_reasoning_mode.lock().await,
+        Some(ReasoningMode::Deep)
+    );
+}
+
+#[tokio::test]
+async fn drain_splits_batches_by_reasoning_mode() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let mut config = PendingConfig::default();
+    config.debounce_window = std::time::Duration::from_millis(50);
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("conv-reasoning-split-drain");
+    use crate::runtime::chat::chat_turn_driver::ReasoningMode;
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    let mut auto_item = sample_item("auto");
+    auto_item.reasoning_mode = Some(ReasoningMode::Auto);
+    let mut deep_item = sample_item("deep");
+    deep_item.reasoning_mode = Some(ReasoningMode::Deep);
+    mgr.enqueue_or_send(session.clone(), auto_item)
+        .await
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), deep_item)
+        .await
+        .unwrap();
+
+    registry.clear(session.as_str());
+    mgr.schedule_drain(session.clone()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    assert_eq!(
+        dispatcher.count.load(Ordering::SeqCst),
+        2,
+        "different reasoning modes must not be merged into one turn"
+    );
+    assert_eq!(
+        *dispatcher.last_reasoning_mode.lock().await,
+        Some(ReasoningMode::Deep)
+    );
+}
+
+#[tokio::test]
 async fn drain_skipped_when_session_busy() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
@@ -703,6 +799,7 @@ async fn drain_skipped_when_session_busy() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
         last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
@@ -798,6 +895,7 @@ async fn drain_recently_drained_blocks_replay_after_restore() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
         last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);

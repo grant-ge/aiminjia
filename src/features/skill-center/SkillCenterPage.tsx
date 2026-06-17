@@ -105,7 +105,7 @@ export function SkillCenterPage() {
   const [marketLoading, setMarketLoading] = useState(false)
   const [marketError, setMarketError] = useState<string | null>(null)
   const [selectedMarketItem, setSelectedMarketItem] = useState<MarketplaceSkillItem | null>(null)
-  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
+  const [activeInstalledSkillId, setActiveInstalledSkillId] = useState<string | null>(null)
   const [installingMarketId, setInstallingMarketId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const skills = useSkillStore((s) => s.skills)
@@ -437,7 +437,7 @@ export function SkillCenterPage() {
     .filter(matchesQuery)
 
   const installedSkillsById = useMemo(() => new Map(skills.map((skill) => [skill.id, skill])), [skills])
-  const selectedSkill = selectedSkillId ? installedSkillsById.get(selectedSkillId) ?? null : null
+  const selectedSkill = activeInstalledSkillId ? installedSkillsById.get(activeInstalledSkillId) ?? null : null
   const marketSkills = useMemo(() => {
     const uniqueItems = dedupeMarketItems(marketItems)
     if (!normalizedQuery) return uniqueItems
@@ -694,7 +694,7 @@ export function SkillCenterPage() {
                 skillEnabled={enabled}
                 marketCard={marketSkill}
                 marketInstalled
-                onClick={() => setSelectedSkillId(skill.id)}
+                onClick={() => setActiveInstalledSkillId(skill.id)}
                 actionsSlot={
                   <div className="flex items-center gap-2">
                     {manageable ? (
@@ -748,7 +748,7 @@ export function SkillCenterPage() {
       onOpenChange={(open) => {
         if (!open) {
           setSelectedMarketItem(null)
-          setSelectedSkillId(null)
+          setActiveInstalledSkillId(null)
         }
       }}
       onInstall={(item) => void handleInstallMarketplace(item)}

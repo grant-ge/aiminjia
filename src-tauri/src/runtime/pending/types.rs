@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::chat::chat_turn_driver::SkillCommandRef;
+use crate::runtime::chat::chat_turn_driver::{ReasoningMode, SkillCommandRef};
 use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::human_interaction::{ImPlatform, OutputBinding, TurnOrigin};
 
@@ -19,6 +19,8 @@ pub struct PendingItem {
     pub attachments: Vec<PendingAttachment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skill_command: Option<SkillCommandRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_mode: Option<ReasoningMode>,
     pub received_at: String,
     #[serde(default)]
     pub origin: TurnOrigin,
@@ -88,6 +90,7 @@ impl PendingItem {
             sender_nick: None,
             attachments: Vec::new(),
             skill_command: None,
+            reasoning_mode: None,
             received_at: "2026-06-09T00:00:00Z".into(),
             origin: TurnOrigin::Im {
                 platform,

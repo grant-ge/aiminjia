@@ -28,7 +28,6 @@ pub enum LlmProvider {
     DeepseekV3,
     Volcano,
     Openai,
-    Claude,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,7 +58,7 @@ pub struct AppSettings {
     pub custom_model_endpoint: String,
     #[serde(default)]
     pub custom_model_name: String,
-    /// Cloud mode: selected model name from /v1/models (used when logged in).
+    /// Cloud mode: selected logical model name from AIjia Gateway V2.
     #[serde(default)]
     pub cloud_model: String,
     /// Cloud mode: model type ("chat" or "reasoner") for the selected cloud model.

@@ -1274,6 +1274,7 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         _content: &str,
         _attachments: &[ChatAttachmentRef],
         _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
+        _reasoning_mode: Option<app_lib::runtime::chat::chat_turn_driver::ReasoningMode>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-id".to_string())

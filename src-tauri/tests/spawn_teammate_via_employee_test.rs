@@ -2,7 +2,7 @@
 //!
 //! Tests the source-resolution and validation logic:
 //! - `team_name` requires an existing Team (TeamCreate must be called first)
-//! - duplicate `name` in same session is rejected by AgentNameRegistry
+//! - duplicate `name` in same session is suppressed as an idempotent success
 //! - happy-path: Employee-sourced Teammate (subagent_type=emp-…) registers name + joins Team
 //!
 //! After the协议合并 (2026-05-12)：spawn_subagent 只有单一 `subagent_type`
@@ -152,7 +152,7 @@ async fn rejects_team_name_when_no_team_exists() {
 // ─── Test 2: duplicate name in same session ───────────────────────────────────
 
 #[tokio::test]
-async fn rejects_duplicate_name_in_same_session() {
+async fn suppresses_duplicate_name_in_same_session() {
     let dir = TempDir::new().unwrap();
     let employee_store = Arc::new(EmployeeStore::new(dir.path().to_path_buf()));
     let emp_id = create_employee(&employee_store);
@@ -179,9 +179,9 @@ async fn rejects_duplicate_name_in_same_session() {
         .await
         .unwrap();
 
-    // First dispatch with name "researcher" should fail (stub) but register the name.
+    // First dispatch with name "researcher" should register the teammate.
     let ctx1 = build_ctx_with_registries(session_id, team_registry.clone(), name_registry.clone());
-    let _ = tool
+    let first = tool
         .execute(
             json!({
                 "subagent_type": emp_id,
@@ -192,11 +192,19 @@ async fn rejects_duplicate_name_in_same_session() {
             }),
             ctx1,
         )
-        .await; // May fail with P1.6 stub; we don't care about the result here.
+        .await
+        .expect("first teammate spawn should succeed");
+    let first_payload: serde_json::Value =
+        serde_json::from_str(&first.content).expect("first teammate response should be JSON");
+    let first_agent_id = first_payload["agent_id"]
+        .as_str()
+        .expect("first teammate response should include agent_id")
+        .to_string();
 
-    // Second dispatch with the SAME name in the same session → NameRegistry::Duplicate.
+    // Second dispatch with the SAME name in the same session is idempotently
+    // suppressed and returns the originally registered teammate identity.
     let ctx2 = build_ctx_with_registries(session_id, team_registry.clone(), name_registry.clone());
-    let err = tool
+    let result = tool
         .execute(
             json!({
                 "subagent_type": emp_id,
@@ -208,20 +216,15 @@ async fn rejects_duplicate_name_in_same_session() {
             ctx2,
         )
         .await
-        .unwrap_err();
+        .expect("duplicate teammate spawn should be suppressed, not fail");
 
-    match err {
-        ToolError::ExecutionFailed(msg) => {
-            assert!(
-                msg.contains("already registered") || msg.contains("researcher"),
-                "error should mention duplicate name, got: {msg}"
-            );
-        }
-        other => panic!(
-            "expected ExecutionFailed for duplicate name, got: {:?}",
-            other
-        ),
-    }
+    let payload = result
+        .data
+        .expect("duplicate teammate response should include structured data");
+    assert_eq!(payload["status"], "teammate_spawned");
+    assert_eq!(payload["name"], "researcher");
+    assert_eq!(payload["agent_id"], first_agent_id);
+    assert_eq!(payload["duplicate_suppressed"], true);
 }
 
 // ─── Test 3: happy path (subagent_type=emp-… + Team + Name) ───────────────────

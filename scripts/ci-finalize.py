@@ -44,8 +44,8 @@ PLATFORMS = {
         f"{OSS_PREFIX}/v{{version}}/AIjia_x64.app.tar.gz.sig",
     ),
     "windows-x86_64": (
-        f"{OSS_PREFIX}/v{{version}}/AIjia_{{version}}_x64-setup.exe",
-        f"{OSS_PREFIX}/v{{version}}/AIjia_{{version}}_x64-setup.exe.sig",
+        f"{OSS_PREFIX}/v{{version}}/AIjia_{{version}}_x64-setup.msi",
+        f"{OSS_PREFIX}/v{{version}}/AIjia_{{version}}_x64-setup.msi.sig",
     ),
 }
 

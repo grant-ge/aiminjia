@@ -87,13 +87,13 @@ describe('settingsStore — setters', () => {
 describe('settingsStore — setSettings (bulk)', () => {
   it('updates multiple settings at once', () => {
     useSettingsStore.getState().setSettings({
-      primaryModel: 'claude',
+      primaryModel: 'custom',
       autoModelRouting: false,
       chatWidthMode: 'full',
     })
 
     const state = useSettingsStore.getState()
-    expect(state.primaryModel).toBe('claude')
+    expect(state.primaryModel).toBe('custom')
     expect(state.autoModelRouting).toBe(false)
     expect(state.chatWidthMode).toBe('full')
     // Other settings remain at defaults
@@ -138,14 +138,14 @@ describe('settingsStore — appLanguage consistency', () => {
     useSettingsStore.getState().setAppLanguage('en-US')
 
     // …then backend settings (saved on another session) arriving post sign-in.
-    useSettingsStore.getState().setSettings({ primaryModel: 'claude', appLanguage: 'zh-CN' })
+    useSettingsStore.getState().setSettings({ primaryModel: 'custom', appLanguage: 'zh-CN' })
 
     const state = useSettingsStore.getState()
     // Device choice wins: the on-screen language and the store agree.
     expect(i18n.language).toBe('en-US')
     expect(state.appLanguage).toBe('en-US')
     // Unrelated settings still apply.
-    expect(state.primaryModel).toBe('claude')
+    expect(state.primaryModel).toBe('custom')
   })
 
   it('leaves appLanguage untouched on a partial update that omits it', () => {

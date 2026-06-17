@@ -388,7 +388,7 @@ impl PendingQueueManager {
             log::warn!("[pending] no dispatcher set; drained items dropped");
             return;
         };
-        for batch in split_items_by_output_binding(items) {
+        for batch in split_items_by_dispatch_context(items) {
             let request = build_request_from_batch(&session_id, batch);
             if let Err(e) = dispatcher.dispatch(request).await {
                 log::error!(
@@ -525,6 +525,7 @@ fn build_request_from_single(session_id: &SessionId, item: PendingItem) -> ChatT
     req.turn_origin = item.origin;
     req.output_binding = item.output_binding;
     req.skill_command = item.skill_command;
+    req.reasoning_mode = item.reasoning_mode;
     req
 }
 
@@ -564,19 +565,23 @@ fn build_request_from_batch(session_id: &SessionId, items: Vec<PendingItem>) -> 
     let mut req = ChatTurnRequest::new(session_id.clone(), last_text, last_attachments);
     req.channel_context = channel_context_for_pending_source(last.source);
     req.skill_command = last.skill_command.clone();
+    req.reasoning_mode = last.reasoning_mode;
     req.turn_origin = last.origin.clone();
     req.output_binding = last.output_binding.clone();
     req.pending_batch = Some(items);
     req
 }
 
-fn split_items_by_output_binding(items: Vec<PendingItem>) -> Vec<Vec<PendingItem>> {
+fn split_items_by_dispatch_context(items: Vec<PendingItem>) -> Vec<Vec<PendingItem>> {
     let mut batches: Vec<Vec<PendingItem>> = Vec::new();
     for item in items {
         if let Some(last_batch) = batches.last_mut() {
             if last_batch
                 .last()
-                .map(|last| last.output_binding == item.output_binding)
+                .map(|last| {
+                    last.output_binding == item.output_binding
+                        && last.reasoning_mode == item.reasoning_mode
+                })
                 .unwrap_or(false)
             {
                 last_batch.push(item);

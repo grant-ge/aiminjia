@@ -485,18 +485,12 @@ fn install_skill_md_file(
 /// Uninstall a custom skill by ID.
 ///
 /// Looks in both the per-user `user_skills_dir` and the legacy global
-/// `~/.renlijia/skills/` root. The dual-root design (PR-2026-05-15
-/// reaffirmed) keeps OPS-synced skills in the global root so multiple
-/// accounts on the same machine share them; user-imported packages go
-/// to the user root. The delete UI should be able to clear stale items
-/// from either side — without this fallback users hit
-/// "Custom skill 'daily-work-plan' not found" toasts whenever they
-/// tried to remove an OPS-orphaned skill that only lived in the global
-/// root.
+/// `~/.renlijia/skills/` root. Runtime skill availability is user-root
+/// first; the global fallback exists to clear old OPS-synced orphans left
+/// behind before marketplace and tenant skills became explicit installs.
 ///
-/// Caveat: if the deleted skill is still published in OPS, the next
-/// `sync_builtin_skills` call will re-create it. To prevent that, ask
-/// the OPS admin to unpublish the corresponding package.
+/// Caveat: required platform builtins can still be recreated by
+/// `sync_builtin_skills`.
 #[tauri::command]
 pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<String, String> {
     let user_dir = user_skills_dir(&app)?.join(&skill_id);
@@ -1028,7 +1022,8 @@ pub async fn preview_marketplace_skill(
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
     let archive_path = tmp.join("marketplace-skill-preview.zip");
     std::fs::write(&archive_path, zip_bytes.as_ref()).map_err(|e| e.to_string())?;
-    let raw_content = read_marketplace_archive_skill_md(&archive_path, &tmp.join("unpacked"), &plugin_id);
+    let raw_content =
+        read_marketplace_archive_skill_md(&archive_path, &tmp.join("unpacked"), &plugin_id);
     let _ = std::fs::remove_dir_all(&tmp);
 
     Ok(MarketplaceSkillPreview {

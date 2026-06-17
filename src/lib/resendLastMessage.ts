@@ -121,6 +121,8 @@ export async function resendLastUserMessage(conversationId: string): Promise<voi
       null,
       message.id,
       skillCommand,
+      null,
+      message.content.reasoningMode ?? null,
     )
   } catch (err) {
     console.error('[resendLastUserMessage] sendMessage IPC failed:', err)

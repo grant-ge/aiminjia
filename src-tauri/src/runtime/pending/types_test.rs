@@ -14,6 +14,7 @@ fn pending_item_roundtrip_camel_case() {
             size_bytes: Some(1024),
         }],
         skill_command: None,
+        reasoning_mode: None,
         received_at: "2026-05-11T03:21:00Z".into(),
         origin: Default::default(),
         output_binding: Default::default(),

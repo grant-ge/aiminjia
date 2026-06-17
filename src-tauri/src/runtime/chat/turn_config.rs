@@ -87,7 +87,7 @@ pub struct TurnConfig {
     pub conversation_id: SessionId,
     pub run_id: RunId,
     /// Top-level user-turn trace id (UUID from send_message). Used only for
-    /// observability propagation to the lotus gateway via the X-Aijia-Trace-Id
+    /// observability propagation to AIjia Gateway V2 via the X-Aijia-Trace-Id
     /// HTTP header. Empty string when unknown.
     pub trace_id: String,
     pub hook_registry: Option<Arc<HookRegistry>>,

@@ -7,7 +7,7 @@
 #   3. Print public download URLs for hand-off
 #
 # Windows Authenticode signature can only be fully verified on a Windows
-# machine; we just confirm the .exe is reachable and non-trivially sized.
+# machine; we just confirm the .msi is reachable and non-trivially sized.
 #
 # Usage:
 #   bash scripts/verify-release.sh <version> <beta|release>
@@ -44,8 +44,8 @@ EXPECTED_FILES=(
     "AIjia.app.tar.gz.sig"
     "AIjia_x64.app.tar.gz"
     "AIjia_x64.app.tar.gz.sig"
-    "AIjia_${VERSION}_x64-setup.exe"
-    "AIjia_${VERSION}_x64-setup.exe.sig"
+    "AIjia_${VERSION}_x64-setup.msi"
+    "AIjia_${VERSION}_x64-setup.msi.sig"
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -165,27 +165,27 @@ for arch in aarch64 x64; do
 done
 
 # ── 3. Windows: reach only (signature verified on Windows) ───────────────
-section "Step 3: Windows .exe reachability"
-exe_url="$URL_PREFIX/AIjia_${VERSION}_x64-setup.exe"
+section "Step 3: Windows .msi reachability"
+msi_url="$URL_PREFIX/AIjia_${VERSION}_x64-setup.msi"
 echo "  Authenticode signature can only be fully verified on a Windows machine."
 echo "  This check only confirms the file is downloadable and well-formed."
-exe_tmp="$TMP_DIR/win.exe"
-if curl -sSfL --max-time 300 -o "$exe_tmp" "$exe_url"; then
-    size=$(stat -f%z "$exe_tmp" 2>/dev/null || stat -c%s "$exe_tmp")
-    # NSIS installer should start with MZ magic (Windows PE)
-    if [ "$(head -c 2 "$exe_tmp" | xxd -p)" = "4d5a" ]; then
-        ok "valid PE/EXE (MZ header), $(awk -v b="$size" 'BEGIN{printf "%.2f MB", b/1024/1024}')"
+msi_tmp="$TMP_DIR/win.msi"
+if curl -sSfL --max-time 300 -o "$msi_tmp" "$msi_url"; then
+    size=$(stat -f%z "$msi_tmp" 2>/dev/null || stat -c%s "$msi_tmp")
+    # MSI files are OLE compound documents.
+    if [ "$(head -c 8 "$msi_tmp" | xxd -p | tr -d '\n')" = "d0cf11e0a1b11ae1" ]; then
+        ok "valid MSI/OLE header, $(awk -v b="$size" 'BEGIN{printf "%.2f MB", b/1024/1024}')"
     else
-        err "not a valid PE/EXE — header is not MZ"
+        err "not a valid MSI — header is not OLE compound file magic"
         FAIL=$((FAIL+1))
     fi
 else
-    err "download failed: $exe_url"
+    err "download failed: $msi_url"
     FAIL=$((FAIL+1))
 fi
 echo ""
 echo "  To verify Authenticode on Windows:"
-echo "    Get-AuthenticodeSignature .\\AIjia_${VERSION}_x64-setup.exe"
+echo "    Get-AuthenticodeSignature .\\AIjia_${VERSION}_x64-setup.msi"
 
 # ── 4. Summary ───────────────────────────────────────────────────────────
 section "Summary"

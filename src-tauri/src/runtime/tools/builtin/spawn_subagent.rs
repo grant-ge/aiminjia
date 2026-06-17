@@ -177,8 +177,7 @@ impl SpawnSubagentRuntimeTool {
 /// Aligns with claude-code-best `getPrompt(agentDefinitions, ...)` in
 /// `src/tools/AgentTool/prompt.ts` — that file builds the same kind of
 /// "Available agent types" listing which is then returned from
-/// `tool.prompt()` and fed verbatim as the Anthropic API `description`
-/// field (see `src/utils/api.ts::buildToolBlock`).
+/// `tool.prompt()` and fed verbatim into the tool schema description field.
 pub fn render_dispatch_catalog(ctx: &crate::runtime::tools::ToolDescriptionContext) -> String {
     use crate::runtime::agent::definition::AgentSource;
     use std::fmt::Write as _;

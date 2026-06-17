@@ -5,6 +5,7 @@ import {
   formatPercentage,
   truncateText,
   formatNumber,
+  formatTokenCount,
   formatRelativeTime,
 } from './format'
 
@@ -111,6 +112,22 @@ describe('formatNumber', () => {
 
   it('handles zero', () => {
     expect(formatNumber(0)).toBe('0')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// formatTokenCount
+// ---------------------------------------------------------------------------
+
+describe('formatTokenCount', () => {
+  it('formats large token counts with Chinese large-number units', () => {
+    expect(formatTokenCount(129_993_778)).toBe('129.99 百万 Tokens')
+    expect(formatTokenCount(50_000)).toBe('5 万 Tokens')
+  })
+
+  it('returns a placeholder for invalid token counts', () => {
+    expect(formatTokenCount(null)).toBe('-')
+    expect(formatTokenCount(Number.POSITIVE_INFINITY)).toBe('-')
   })
 })
 
