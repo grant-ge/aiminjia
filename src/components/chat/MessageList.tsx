@@ -537,6 +537,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                     text={t.userMessage.text}
                     commandText={t.userMessage.commandText}
                     skillCommand={t.userMessage.skillCommand}
+                    reasoningMode={t.userMessage.reasoningMode}
                     files={t.userMessage.files}
                     conversationId={activeConversationId ?? undefined}
                   />

@@ -52,6 +52,7 @@ pub async fn send_message(
     agent_name: Option<String>,
     client_message_id: Option<String>,
     skill_command: Option<crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
+    reasoning_mode: Option<crate::runtime::chat::chat_turn_driver::ReasoningMode>,
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
     // .send_message(conversation_id, content, attachments, permission_mode, agent_name)
@@ -72,6 +73,7 @@ pub async fn send_message(
             agent_name,
             client_message_id,
             skill_command,
+            reasoning_mode,
         )
         .await;
     match &result {

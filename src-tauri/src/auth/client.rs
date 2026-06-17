@@ -483,22 +483,35 @@ impl AuthClient {
         Ok(resp.json().await?)
     }
 
-    /// Fetch a page of usage records (`/v1/billing/usage-records?page=&size=`).
-    pub async fn get_billing_usage_records(
+    async fn get_usage_records_at(
         &self,
         session_key: &str,
+        path: &str,
         page: u32,
         size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
     ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
-        let url = format!(
-            "{}/v1/billing/usage-records?page={}&size={}",
-            base_url(),
-            page,
-            size
-        );
+        let mut url = url::Url::parse(&format!("{}{}", base_url(), path))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("page", &page.to_string());
+            pairs.append_pair("size", &size.to_string());
+            if let Some(start_at) = query.start_at.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("start_at", start_at);
+            }
+            if let Some(end_at) = query.end_at.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("end_at", end_at);
+            }
+            if let Some(request_type) = query.request_type.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("request_type", request_type);
+            }
+            if let Some(model_name) = query.model_name.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("model_name", model_name);
+            }
+        }
         let resp = self
             .client
-            .get(&url)
+            .get(url)
             .header("Authorization", format!("Bearer {}", session_key))
             .send()
             .await?;
@@ -508,6 +521,36 @@ impl AuthClient {
             return Err(parse_api_error(status.as_u16(), &body));
         }
         Ok(resp.json().await?)
+    }
+
+    /// Fetch a page of personal-tenant usage records (`/v1/billing/usage-records?page=&size=`).
+    pub async fn get_billing_usage_records(
+        &self,
+        session_key: &str,
+        page: u32,
+        size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        self.get_usage_records_at(session_key, "/v1/billing/usage-records", page, size, query)
+            .await
+    }
+
+    /// Fetch a page of enterprise current-user usage records (`/v1/enterprise/usage-records?page=&size=`).
+    pub async fn get_enterprise_usage_records(
+        &self,
+        session_key: &str,
+        page: u32,
+        size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        self.get_usage_records_at(
+            session_key,
+            "/v1/enterprise/usage-records",
+            page,
+            size,
+            query,
+        )
+        .await
     }
 }
 

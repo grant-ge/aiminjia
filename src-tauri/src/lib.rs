@@ -781,30 +781,25 @@ pub fn run() {
 
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
-            // Load SKILL.md-based skills from BOTH the per-user root and
-            // the legacy global root. Dual-root is intentional:
+            // Load SKILL.md-based skills from both the per-user root and
+            // the restricted global root. Dual-root is intentional:
             //
-            // - `~/.renlijia/skills/` (global) holds skills synced from the
-            //   OPS portal (`sync_builtin_skills` → published "built-in"
-            //   skills). Sharing across accounts on the same machine
-            //   avoids re-downloading per user.
+            // - `~/.renlijia/skills/` (global) is only for required platform
+            //   builtins. Marketplace and tenant skills must be explicitly
+            //   installed by the user before they appear in the runtime
+            //   SkillRegistry.
             // - `~/.renlijia/users/{scope}/skills/` holds user-imported
             //   SKILL packages (`install_custom_skill`). Per-account so
             //   account switches don't leak.
             //
-            // User-facing delete on the global root is by design a no-op
-            // (admin-published) — daily-work-plan-style orphans are fixed
-            // upstream in OPS, not by deleting locally.
+            // User-facing delete normally operates on the user root; legacy
+            // global orphans are pruned/handled by the global sync path.
             let global_skills_dir = aijia_home.skills_dir();
             let user_skills_dir = current_user_storage
                 .resolve_paths()
                 .map(|paths| paths.skills_dir());
             // (root, source) pairs — explicit so we don't rely on positional
-            // index-0=User convention. Tenant-pushed skills land in the same
-            // global dir as platform ones (handler returns both classes in one
-            // response), but at load time the registry currently tags them
-            // Global. A future change can split the global dir into
-            // managed/{public,tenant}/ and emit Tenant labels here.
+            // index-0=User convention.
             if let Err(error) =
                 plugin::skill::global_sync::prune_non_required_global_skill_installs(
                     &aijia_home.global_state_path(),
@@ -1493,9 +1488,10 @@ pub fn run() {
             commands::auth::cloud_register,
             commands::auth::cloud_reset_password,
             commands::auth::get_last_brand,
-            // Billing commands (personal tenant)
+            // Billing/account usage commands
             crate::transport::tauri_commands::billing::billing_summary,
             crate::transport::tauri_commands::billing::billing_usage_records,
+            crate::transport::tauri_commands::billing::enterprise_usage_records,
             commands::auth::save_last_brand,
             // Skill management commands
             commands::skill_management::list_custom_skills,

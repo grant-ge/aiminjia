@@ -442,6 +442,8 @@ export type PermissionMode =
   | "acceptEdits"
   | "fullAccess";
 
+export type ReasoningMode = "auto" | "deep";
+
 // ---------------------------------------------------------------------------
 // Chat Commands
 // ---------------------------------------------------------------------------
@@ -461,6 +463,7 @@ export function sendMessage(
   clientMessageId?: string,
   skillCommand?: SkillCommandPayload | null,
   permissionMode?: PermissionMode | null,
+  reasoningMode?: ReasoningMode | null,
 ): Promise<void> {
   return invoke<void>("send_message", {
     conversationId,
@@ -470,6 +473,7 @@ export function sendMessage(
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
     skillCommand: skillCommand ?? null,
+    reasoningMode: reasoningMode ?? null,
   });
 }
 
@@ -3463,7 +3467,7 @@ export function listenPendingRemoved(
 }
 
 // =====================================================================
-// Billing (personal-tenant only — gated by `tenant.type === 'personal'`)
+// Billing / usage records for the current signed-in account.
 // =====================================================================
 
 export interface BillingThisMonth {
@@ -3500,11 +3504,27 @@ export interface UsageRecord {
   key_type: string;
 }
 
+export interface UsageRecordSummary {
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cost: string;
+}
+
 export interface UsageRecordsPage {
   page: number;
   size: number;
   total: number;
   records: UsageRecord[];
+  summary?: UsageRecordSummary | null;
+}
+
+interface UsageRecordFilters {
+  startAt?: string | null;
+  endAt?: string | null;
+  requestType?: string | null;
+  modelName?: string | null;
 }
 
 export function billingSummary(): Promise<BillingSummary> {
@@ -3514,8 +3534,31 @@ export function billingSummary(): Promise<BillingSummary> {
 export function billingUsageRecords(
   page: number,
   size: number,
+  filters?: UsageRecordFilters,
 ): Promise<UsageRecordsPage> {
-  return invoke<UsageRecordsPage>("billing_usage_records", { page, size });
+  return invoke<UsageRecordsPage>("billing_usage_records", {
+    page,
+    size,
+    startAt: filters?.startAt ?? null,
+    endAt: filters?.endAt ?? null,
+    requestType: filters?.requestType ?? null,
+    modelName: filters?.modelName ?? null,
+  });
+}
+
+export function enterpriseUsageRecords(
+  page: number,
+  size: number,
+  filters?: UsageRecordFilters,
+): Promise<UsageRecordsPage> {
+  return invoke<UsageRecordsPage>("enterprise_usage_records", {
+    page,
+    size,
+    startAt: filters?.startAt ?? null,
+    endAt: filters?.endAt ?? null,
+    requestType: filters?.requestType ?? null,
+    modelName: filters?.modelName ?? null,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────

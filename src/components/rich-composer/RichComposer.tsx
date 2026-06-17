@@ -8,7 +8,7 @@ import {
 } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, ArrowUp, Blocks, Check, ChevronDown, Folder, Plus, Shield, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, ArrowUp, Blocks, BrainCircuit, Check, ChevronDown, Folder, Plus, Shield, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import { buildComposerExtensions } from './composerSchema'
@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { PermissionMode } from '@/lib/tauri'
+import type { PermissionMode, ReasoningMode } from '@/lib/tauri'
 
 // `/` should open the skill picker only where a real slash-command could
 // start: an empty doc, or right after whitespace. Anywhere else (mid-word,
@@ -64,6 +64,8 @@ export interface RichComposerProps {
   onClearSkillCommand?: () => void
   permissionMode?: PermissionMode
   onPermissionModeChange?: (mode: PermissionMode) => void
+  reasoningMode?: ReasoningMode
+  onReasoningModeChange?: (mode: ReasoningMode) => void
 
   projectLabel?: string
   onPickProject?: () => void
@@ -103,6 +105,8 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     onClearSkillCommand,
     permissionMode = 'default',
     onPermissionModeChange,
+    reasoningMode = 'auto',
+    onReasoningModeChange,
     projectLabel = 'Desktop',
     onPickProject,
     showProjectButton = true,
@@ -244,6 +248,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   const sendDisabled = disabled || isEmpty || submittingRef.current
   const stopIcon = <span className="block h-3 w-3 rounded-md bg-current" />
   const fullAccess = permissionMode === 'fullAccess'
+  const deepReasoning = reasoningMode === 'deep'
 
   return (
     <div className="relative z-10 flex w-full flex-col gap-2">
@@ -387,6 +392,71 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                       <li>{t('composer.fullAccessRuleSwitchBack')}</li>
                     </ul>
                   </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+            {onReasoningModeChange ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={deepReasoning ? 'secondary' : 'ghost'}
+                    size="sm"
+                    disabled={disabled}
+                    className="focus-visible:ring-0 data-[state=open]:bg-muted/70"
+                    aria-label={t('composer.reasoningModeLabel', {
+                      mode: deepReasoning
+                        ? t('composer.reasoningModeDeep')
+                        : t('composer.reasoningModeAuto'),
+                    })}
+                    aria-pressed={deepReasoning}
+                    icon={<BrainCircuit />}
+                    style={
+                      deepReasoning
+                        ? { background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' }
+                        : undefined
+                    }
+                  >
+                    {deepReasoning ? t('composer.reasoningModeDeep') : t('composer.reasoningModeAuto')}
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className="w-[292px] p-1.5"
+                >
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm"
+                    onSelect={() => onReasoningModeChange('auto')}
+                  >
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-foreground">
+                      {!deepReasoning ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block truncate">{t('composer.reasoningModeAutoLong')}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {t('composer.reasoningModeAutoDesc')}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm"
+                    onSelect={() => onReasoningModeChange('deep')}
+                  >
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-foreground">
+                      {deepReasoning ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block truncate">{t('composer.reasoningModeDeepLong')}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {t('composer.reasoningModeDeepDesc')}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}

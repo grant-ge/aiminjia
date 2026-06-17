@@ -154,4 +154,16 @@ describe('resendLastUserMessage', () => {
     expect(sendArgs.content).toBe('latest')
     expect(sendArgs.clientMessageId).toBe('u2')
   })
+
+  it('preserves the original reasoning mode when resending', async () => {
+    useChatStore.getState().setMessages([
+      userMsg({ content: { text: 'deep retry', reasoningMode: 'deep' } }),
+    ])
+
+    await resendLastUserMessage('conv-1')
+
+    const sendCall = invokeMock.mock.calls.find((c) => c[0] === 'send_message')!
+    const sendArgs = sendCall[1] as { reasoningMode: string }
+    expect(sendArgs.reasoningMode).toBe('deep')
+  })
 })

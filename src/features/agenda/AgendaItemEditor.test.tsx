@@ -371,16 +371,19 @@ describe('AgendaItemEditor', () => {
   })
 
   it('lets users pick an exact start hour and minute from the editor', async () => {
+    const itemStartAt = '2026-05-07T01:00:00.000Z'
     const item = {
       id: 'a1',
       title: '巡检汇总',
       prompt: '生成报表',
-      startAt: '2026-05-07T01:00:00.000Z',
+      startAt: itemStartAt,
       timezone: 'Asia/Shanghai',
       organizerEmployeeId: 'emp-2',
       rule: null,
       workspacePath: null,
     } as unknown as Parameters<typeof AgendaItemEditor>[0]['initial']
+    const expectedStartAt = new Date(itemStartAt)
+    expectedStartAt.setHours(10, 45, 0, 0)
 
     render(
       <AgendaItemEditor
@@ -401,7 +404,7 @@ describe('AgendaItemEditor', () => {
         expect.objectContaining({
           id: 'a1',
           request: expect.objectContaining({
-            startAt: new Date('2026-05-07T10:45').toISOString(),
+            startAt: expectedStartAt.toISOString(),
           }),
         }),
       )

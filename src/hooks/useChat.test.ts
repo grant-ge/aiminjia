@@ -57,6 +57,7 @@ describe('useChat sendUserMessage', () => {
       expect.any(String),
       null,
       undefined,
+      undefined,
     )
   })
 
@@ -99,6 +100,7 @@ describe('useChat sendUserMessage', () => {
         command: '/dingtalk-workspace',
       },
       undefined,
+      undefined,
     )
     expect(useChatStore.getState().messages[0].content.skillCommand).toEqual({
       id: 'dingtalk-workspace',
@@ -106,6 +108,26 @@ describe('useChat sendUserMessage', () => {
       command: '/dingtalk-workspace',
     })
     expect(useChatStore.getState().messages[0].content.commandText).toBe('/dingtalk-workspace')
+  })
+
+  it('passes per-turn reasoning mode and keeps it on the optimistic user message', async () => {
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.sendUserMessage('做一份复杂薪酬审查', undefined, null, 'default', 'deep')
+    })
+
+    expect(tauriMock.sendMessage).toHaveBeenCalledWith(
+      'conv-test',
+      '做一份复杂薪酬审查',
+      undefined,
+      null,
+      expect.any(String),
+      null,
+      'default',
+      'deep',
+    )
+    expect(useChatStore.getState().messages[0].content.reasoningMode).toBe('deep')
   })
 
   it('stopCurrentStream clears busy state immediately so stopped turns do not keep rendering as active', () => {

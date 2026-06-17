@@ -7,9 +7,9 @@
 //! enabled, the router automatically selects the reasoning variant (e.g.
 //! DeepSeek-R1) for reasoning tasks using the same API key.
 //!
-//! **Important**: Analysis tasks always use the primary model with tools
+//! **Important**: Reasoning routes can keep tools enabled; the cloud gateway
+//! validates `reasoning + tool_calling` against configured route capabilities.
 #![allow(dead_code)]
-//! enabled, because the 6-step analysis workflow requires tool calls.
 
 use crate::llm::streaming::ChatMessage;
 use crate::models::settings::AppSettings;
@@ -63,14 +63,13 @@ pub fn get_provider_capabilities(provider: &str) -> ProviderCapabilities {
 pub enum TaskType {
     /// General conversation / Q&A
     General,
-    /// Deep analysis requiring reasoning (compensation fairness, statistics)
-    /// NOTE: Always routed to primary model WITH tools enabled.
+    /// Deep analysis requiring reasoning (compensation fairness, statistics).
     Analysis,
     /// Code generation (Python scripts for data processing)
     CodeGen,
     /// Web search synthesis
     Search,
-    /// Pure reasoning task (explicitly requested, no tools needed)
+    /// Pure reasoning task (explicitly requested).
     Reasoning,
 }
 
@@ -186,8 +185,10 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
     // custom-provider configuration was removed from the product, so there is
     // no non-cloud path. Reasoning tasks force the reasoner endpoint; every
     // other task uses the model_type implied by the user's selection
-    // (default "chat"). The session_key is injected by the gateway, so
-    // `api_key` here is just a placeholder carrier.
+    // (default "chat"). Tools stay enabled so Lotus can require a route that
+    // explicitly supports reasoning + tool_calling when the request needs both.
+    // The session_key is injected by the gateway, so `api_key` here is just a
+    // placeholder carrier.
     let model_type = if *task_type == TaskType::Reasoning {
         "reasoner"
     } else if settings.cloud_model_type.is_empty() {
@@ -199,7 +200,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         provider: "aijia-v2".to_string(),
         api_key: settings.primary_api_key.clone(),
         model_hint: settings.cloud_model.clone(),
-        use_tools: model_type != "reasoner",
+        use_tools: true,
         endpoint_url: String::new(),
         model_type: model_type.to_string(),
     }
@@ -327,8 +328,7 @@ mod tests {
         let route = select_route(&TaskType::Reasoning, &settings);
         assert_eq!(route.provider, "aijia-v2");
         assert_eq!(route.model_type, "reasoner");
-        // The reasoner endpoint runs without tools.
-        assert!(!route.use_tools);
+        assert!(route.use_tools);
     }
 
     #[test]

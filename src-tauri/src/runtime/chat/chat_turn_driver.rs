@@ -422,9 +422,17 @@ fn looks_like_waiting_for_teammates(content: &str) -> bool {
     if trimmed.is_empty() || has_substantial_expert_team_deliverable(trimmed) {
         return false;
     }
-    ["等待", "继续等", "继续静待", "只差", "稍候", "未收到", "还没收到"]
-        .iter()
-        .any(|needle| trimmed.contains(needle))
+    [
+        "等待",
+        "继续等",
+        "继续静待",
+        "只差",
+        "稍候",
+        "未收到",
+        "还没收到",
+    ]
+    .iter()
+    .any(|needle| trimmed.contains(needle))
 }
 
 fn should_request_final_report_after_spawn_limit(
@@ -524,10 +532,26 @@ pub struct SkillCommandRef {
     pub command: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReasoningMode {
+    Auto,
+    Deep,
+}
+
 pub fn build_user_content_json_with_skill(
     content: &str,
     attachments: &[ChatAttachmentRef],
     skill_command: Option<&SkillCommandRef>,
+) -> serde_json::Value {
+    build_user_content_json_with_skill_and_reasoning(content, attachments, skill_command, None)
+}
+
+pub fn build_user_content_json_with_skill_and_reasoning(
+    content: &str,
+    attachments: &[ChatAttachmentRef],
+    skill_command: Option<&SkillCommandRef>,
+    reasoning_mode: Option<ReasoningMode>,
 ) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
     if let Some(skill) = skill_command {
@@ -541,6 +565,12 @@ pub fn build_user_content_json_with_skill(
             "id": skill.id,
             "label": label,
             "command": command,
+        });
+    }
+    if let Some(mode) = reasoning_mode {
+        value["reasoningMode"] = serde_json::Value::String(match mode {
+            ReasoningMode::Auto => "auto".to_string(),
+            ReasoningMode::Deep => "deep".to_string(),
         });
     }
     if !attachments.is_empty() {
@@ -594,6 +624,7 @@ pub struct ChatTurnRequest {
     pub content: String,
     pub attachments: Vec<ChatAttachmentRef>,
     pub skill_command: Option<SkillCommandRef>,
+    pub reasoning_mode: Option<ReasoningMode>,
     /// Optional per-turn channel context from transports such as IM connectors.
     /// This is injected into dynamic context only; it must not be persisted as
     /// user-visible message content.
@@ -656,6 +687,7 @@ impl ChatTurnRequest {
             content: content.into(),
             attachments,
             skill_command: None,
+            reasoning_mode: None,
             channel_context: None,
             turn_origin: TurnOrigin::App,
             output_binding: OutputBinding::AppOnly,
@@ -753,6 +785,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _content: &str,
         _attachments: &[ChatAttachmentRef],
         _skill_command: Option<&SkillCommandRef>,
+        _reasoning_mode: Option<ReasoningMode>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
@@ -2418,6 +2451,7 @@ impl RuntimeChatTurnDriver {
                     &[],
                     None,
                     None,
+                    None,
                 )
                 .await
             {
@@ -2466,7 +2500,14 @@ impl RuntimeChatTurnDriver {
         // persist peer messages XML as user message (best-effort)
         if let Some(xml) = peer_xml {
             match executor
-                .persist_user_message(request.conversation_id.as_str(), &xml, &[], None, None)
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &xml,
+                    &[],
+                    None,
+                    None,
+                    None,
+                )
                 .await
             {
                 Ok(msg_id) => {
@@ -2550,6 +2591,7 @@ impl RuntimeChatTurnDriver {
                     &request.content,
                     &request.attachments,
                     request.skill_command.as_ref(),
+                    request.reasoning_mode,
                     request.client_message_id.as_deref(),
                 )
                 .await
@@ -2576,10 +2618,11 @@ impl RuntimeChatTurnDriver {
                 RuntimeEventKind::StreamStarted,
             ))
             .await?;
-        let pending_user_content = build_user_content_json_with_skill(
+        let pending_user_content = build_user_content_json_with_skill_and_reasoning(
             &request.content,
             &request.attachments,
             request.skill_command.as_ref(),
+            request.reasoning_mode,
         );
         // Skip emitting MessagePersisted for the resume-sentinel: it's an
         // internal wake signal, not a user-visible turn. Emitting it would
@@ -3283,7 +3326,9 @@ impl RuntimeChatTurnDriver {
                             "role": "assistant",
                             "content": content,
                         }));
-                        state.messages.push(final_report_without_team_delete_reminder());
+                        state
+                            .messages
+                            .push(final_report_without_team_delete_reminder());
                         pending_task_notifications.clear();
                         continue 'turn;
                     }
@@ -3405,12 +3450,11 @@ impl RuntimeChatTurnDriver {
                     {
                         let removed_task_tools =
                             strip_expert_team_disallowed_tool_calls(&mut tool_calls);
-                        let removed_premature_delete =
-                            strip_premature_expert_team_delete(
-                                &mut tool_calls,
-                                &assistant_content,
-                                &state.full_content,
-                            );
+                        let removed_premature_delete = strip_premature_expert_team_delete(
+                            &mut tool_calls,
+                            &assistant_content,
+                            &state.full_content,
+                        );
                         let removed_waiting_delete =
                             strip_expert_team_delete_while_waiting_for_peers(
                                 &mut tool_calls,
@@ -3647,15 +3691,14 @@ impl RuntimeChatTurnDriver {
                             pending_task_notifications.clear();
                             continue 'turn;
                         }
-                        state.final_only_content = if has_substantial_expert_team_deliverable(
-                            &state.final_only_content,
-                        ) {
-                            state.final_only_content.clone()
-                        } else if state.full_content.trim().is_empty() {
-                            TEAM_DELETE_TURN_STOP_NOTICE.to_string()
-                        } else {
-                            TEAM_DELETE_AFTER_DELIVERABLE_NOTICE.to_string()
-                        };
+                        state.final_only_content =
+                            if has_substantial_expert_team_deliverable(&state.final_only_content) {
+                                state.final_only_content.clone()
+                            } else if state.full_content.trim().is_empty() {
+                                TEAM_DELETE_TURN_STOP_NOTICE.to_string()
+                            } else {
+                                TEAM_DELETE_AFTER_DELIVERABLE_NOTICE.to_string()
+                            };
                         turn_completed_normally = true;
                         break 'turn;
                     }
@@ -5277,6 +5320,7 @@ mod tests {
         let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
 
         assert_eq!(request.permission_mode, PermissionMode::Default);
+        assert_eq!(request.reasoning_mode, None);
     }
 
     #[test]
@@ -5334,6 +5378,21 @@ mod tests {
         assert_eq!(
             content["skillCommand"]["command"].as_str(),
             Some("/dingtalk-workspace")
+        );
+    }
+
+    #[test]
+    fn build_user_content_json_includes_reasoning_mode() {
+        let content = build_user_content_json_with_skill_and_reasoning(
+            "做复杂分析",
+            &[],
+            None,
+            Some(ReasoningMode::Deep),
+        );
+
+        assert_eq!(
+            content.get("reasoningMode").and_then(|v| v.as_str()),
+            Some("deep")
         );
     }
 
@@ -5869,6 +5928,7 @@ mod tests {
             _content: &str,
             _attachments: &[ChatAttachmentRef],
             _skill_command: Option<&SkillCommandRef>,
+            _reasoning_mode: Option<ReasoningMode>,
             _client_message_id: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())

@@ -131,6 +131,7 @@ export interface RenderTurn {
     createdAt: string;
     commandText?: string;
     skillCommand?: SkillCommandBreadcrumb;
+    reasoningMode?: Message["content"]["reasoningMode"];
     files?: FileAttachment[];
   };
   aiSegments: RenderAiSegment[];
@@ -582,6 +583,7 @@ function normalizeUserMessageForRender(
       createdAt: message.createdAt,
       commandText: message.content.commandText,
       skillCommand: message.content.skillCommand,
+      reasoningMode: message.content.reasoningMode,
       files,
     };
   }
@@ -594,6 +596,7 @@ function normalizeUserMessageForRender(
       id: message.id,
       text: rawText,
       createdAt: message.createdAt,
+      reasoningMode: message.content.reasoningMode,
       files,
     };
   }
@@ -607,6 +610,7 @@ function normalizeUserMessageForRender(
     createdAt: message.createdAt,
     commandText: rawText,
     skillCommand: { id: skillId, label: skillId, command },
+    reasoningMode: message.content.reasoningMode,
     files,
   };
 }
