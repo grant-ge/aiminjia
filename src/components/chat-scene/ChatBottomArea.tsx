@@ -348,6 +348,26 @@ export function ChatBottomArea({
     }
   }, []);
 
+  const clearStaleTurnStage = useCallback(
+    async (
+      sessionId: string,
+      expectedKind: "waitingPermission" | "waitingInteraction",
+    ) => {
+      const stage = useStreamingStore.getState().streamStates[sessionId]?.turnStage;
+      if (stage?.kind !== expectedKind) return;
+      try {
+        await clearActiveTurnStage(sessionId);
+      } catch (err) {
+        console.error("[turn-stage:stale] persisted clear failed", err);
+        return;
+      }
+      useStreamingStore.getState().clearConversationTurnStage(sessionId);
+      useChatStore.getState().removeBusyConversation(sessionId);
+      void useSidebarStatusStore.getState().clearStatus(sessionId);
+    },
+    [],
+  );
+
   // Fetch pending queue snapshot when conversation switches.
   // Backend pushes incremental updates via pending:queued/drained/removed events.
   useEffect(() => {
@@ -369,8 +389,10 @@ export function ChatBottomArea({
   // live permission ask that just arrived through the event stream.
   useEffect(() => {
     if (!pendingSessionId) return;
+    let cancelled = false;
     pendingPermissionSnapshotForSession(pendingSessionId)
       .then((asks) => {
+        if (cancelled) return;
         const store = useStreamingStore.getState();
         asks.forEach((ask) => store.addPendingAsk(ask));
         if (asks[0]) {
@@ -388,11 +410,17 @@ export function ChatBottomArea({
         ) {
           void useSidebarStatusStore.getState().clearStatus(pendingSessionId);
         }
+        if (asks.length === 0) {
+          void clearStaleTurnStage(pendingSessionId, "waitingPermission");
+        }
       })
       .catch((e) => {
         console.warn("[permission] snapshot fetch failed", e);
       });
-  }, [pendingSessionId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [clearStaleTurnStage, pendingSessionId]);
 
   // Fetch active user interactions when switching conversations. The runtime
   // can still be awaiting AskUserQuestion after HMR/reload even though the
@@ -419,11 +447,14 @@ export function ChatBottomArea({
         ) {
           void useSidebarStatusStore.getState().clearStatus(pendingSessionId);
         }
+        if (interactions.length === 0) {
+          void clearStaleTurnStage(pendingSessionId, "waitingInteraction");
+        }
       })
       .catch((e) => {
         console.warn("[interaction] snapshot fetch failed", e);
       });
-  }, [pendingSessionId]);
+  }, [clearStaleTurnStage, pendingSessionId]);
 
   return (
     <footer data-testid="chat-bottom-area" className="relative shrink-0">

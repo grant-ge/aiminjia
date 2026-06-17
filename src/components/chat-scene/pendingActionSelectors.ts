@@ -98,11 +98,15 @@ export function selectPendingActionForSession({
   pendingAsks,
   pendingInteractions,
   turnStage,
+  recoverableStalePermissionToolCallIds,
+  recoverableStaleInteractionIds,
 }: {
   sessionId: string | null;
   pendingAsks: Map<string, PendingAsk>;
   pendingInteractions: InteractionRequiredPayload[];
   turnStage?: TurnStageKind | null;
+  recoverableStalePermissionToolCallIds?: ReadonlySet<string>;
+  recoverableStaleInteractionIds?: ReadonlySet<string>;
 }): PendingAction | null {
   return (
     selectPendingActionsForSession({
@@ -110,6 +114,8 @@ export function selectPendingActionForSession({
       pendingAsks,
       pendingInteractions,
       turnStage,
+      recoverableStalePermissionToolCallIds,
+      recoverableStaleInteractionIds,
     })[0] ?? null
   );
 }
@@ -119,11 +125,15 @@ export function selectPendingActionsForSession({
   pendingAsks,
   pendingInteractions,
   turnStage,
+  recoverableStalePermissionToolCallIds,
+  recoverableStaleInteractionIds,
 }: {
   sessionId: string | null;
   pendingAsks: Map<string, PendingAsk>;
   pendingInteractions: InteractionRequiredPayload[];
   turnStage?: TurnStageKind | null;
+  recoverableStalePermissionToolCallIds?: ReadonlySet<string>;
+  recoverableStaleInteractionIds?: ReadonlySet<string>;
 }): PendingAction[] {
   if (!sessionId) return [];
 
@@ -135,6 +145,7 @@ export function selectPendingActionsForSession({
 
   if (
     turnStage?.kind === "waitingPermission" &&
+    recoverableStalePermissionToolCallIds?.has(turnStage.toolCallId) === true &&
     !activeAsks.some((ask) => ask.toolCallId === turnStage.toolCallId)
   ) {
     actions.push({
@@ -156,6 +167,7 @@ export function selectPendingActionsForSession({
 
   if (
     turnStage?.kind === "waitingInteraction" &&
+    recoverableStaleInteractionIds?.has(turnStage.interactionId) === true &&
     !activeInteractions.some(
       (interaction) => interaction.interactionId === turnStage.interactionId,
     )

@@ -244,7 +244,7 @@ describe('selectPendingActionForSession', () => {
     ])
   })
 
-  it('falls back to persisted waitingPermission stage when pending ask memory is empty', () => {
+  it('does not fall back to stale permission without an explicit recovery marker', () => {
     const stage: TurnStageKind = {
       kind: 'waitingPermission',
       toolName: 'Glob',
@@ -258,6 +258,24 @@ describe('selectPendingActionForSession', () => {
       turnStage: stage,
     })
 
+    expect(result).toBeNull()
+  })
+
+  it('falls back to stale permission when the recovery marker matches the stage', () => {
+    const stage: TurnStageKind = {
+      kind: 'waitingPermission',
+      toolName: 'Glob',
+      toolCallId: 'tool-stage',
+    }
+
+    const result = selectPendingActionForSession({
+      sessionId: 'conv-1',
+      pendingAsks: new Map(),
+      pendingInteractions: [],
+      turnStage: stage,
+      recoverableStalePermissionToolCallIds: new Set(['tool-stage']),
+    })
+
     expect(result).toEqual<PendingAction>({
       kind: 'stale-permission',
       sessionId: 'conv-1',
@@ -266,7 +284,7 @@ describe('selectPendingActionForSession', () => {
     })
   })
 
-  it('falls back to persisted waitingInteraction stage when pending interaction memory is empty', () => {
+  it('does not fall back to stale interaction without an explicit recovery marker', () => {
     const stage: TurnStageKind = {
       kind: 'waitingInteraction',
       interactionKind: 'askUserQuestion',
@@ -278,6 +296,24 @@ describe('selectPendingActionForSession', () => {
       pendingAsks: new Map(),
       pendingInteractions: [],
       turnStage: stage,
+    })
+
+    expect(result).toBeNull()
+  })
+
+  it('falls back to stale interaction when the recovery marker matches the stage', () => {
+    const stage: TurnStageKind = {
+      kind: 'waitingInteraction',
+      interactionKind: 'askUserQuestion',
+      interactionId: 'interaction-stage',
+    }
+
+    const result = selectPendingActionForSession({
+      sessionId: 'conv-1',
+      pendingAsks: new Map(),
+      pendingInteractions: [],
+      turnStage: stage,
+      recoverableStaleInteractionIds: new Set(['interaction-stage']),
     })
 
     expect(result).toEqual<PendingAction>({

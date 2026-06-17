@@ -544,8 +544,7 @@ describe("ChatBottomArea", () => {
     );
   });
 
-  it("intercepts the composer from persisted waitingPermission stage when no pending ask survived reload", async () => {
-    const user = userEvent.setup();
+  it("clears persisted waitingPermission stage when no pending ask survived reload", async () => {
     useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
@@ -568,24 +567,62 @@ describe("ChatBottomArea", () => {
 
     render(<ChatBottomArea />);
 
-    expect(await screen.findByText("需要恢复任务状态")).toBeInTheDocument();
-    expect(screen.getByText(/Glob/)).toBeInTheDocument();
-    expect(document.querySelector(".ProseMirror")).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "停止任务" }));
-
     await waitFor(() =>
-      expect(tauriMocks.stopStreaming).toHaveBeenCalledWith("conv-1"),
+      expect(tauriMocks.pendingPermissionSnapshotForSession).toHaveBeenCalledWith(
+        "conv-1",
+      ),
     );
     await waitFor(() =>
       expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
     );
+    expect(tauriMocks.stopStreaming).not.toHaveBeenCalled();
     expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
+    expect(
+      useStreamingStore.getState().streamStates["conv-1"]?.turnStage,
+    ).toBeNull();
+    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
     expect(document.querySelector(".ProseMirror")).toBeTruthy();
   });
 
-  it("intercepts the composer from persisted waitingInteraction stage when no pending interaction survived reload", async () => {
-    const user = userEvent.setup();
+  it("keeps the composer available for a running waitingPermission stage after recovery snapshot", async () => {
+    const { rerender } = render(<ChatBottomArea />);
+
+    await waitFor(() =>
+      expect(tauriMocks.pendingPermissionSnapshotForSession).toHaveBeenCalledWith(
+        "conv-1",
+      ),
+    );
+    await waitFor(() =>
+      expect(document.querySelector(".ProseMirror")).toBeTruthy(),
+    );
+
+    act(() => {
+      useStreamingStore.setState({
+        pendingAsks: new Map(),
+        streamStates: {
+          "conv-1": {
+            isStreaming: true,
+            streamingContent: "",
+            toolExecutions: [],
+            turnStage: {
+              kind: "waitingPermission",
+              toolName: "Bash",
+              toolCallId: "tool-running",
+            },
+            stageStartedAt: Date.now(),
+            lastHeartbeatAt: Date.now(),
+            turnStartedAt: Date.now(),
+          },
+        },
+      });
+    });
+    rerender(<ChatBottomArea />);
+
+    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
+    expect(document.querySelector(".ProseMirror")).toBeTruthy();
+  });
+
+  it("clears persisted waitingInteraction stage when no pending interaction survived reload", async () => {
     useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
@@ -608,19 +645,20 @@ describe("ChatBottomArea", () => {
 
     render(<ChatBottomArea />);
 
-    expect(await screen.findByText("需要恢复任务状态")).toBeInTheDocument();
-    expect(screen.getByText(/askUserQuestion/)).toBeInTheDocument();
-    expect(document.querySelector(".ProseMirror")).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "停止任务" }));
-
     await waitFor(() =>
-      expect(tauriMocks.stopStreaming).toHaveBeenCalledWith("conv-1"),
+      expect(tauriMocks.pendingInteractionSnapshotForSession).toHaveBeenCalledWith(
+        "conv-1",
+      ),
     );
     await waitFor(() =>
       expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
     );
+    expect(tauriMocks.stopStreaming).not.toHaveBeenCalled();
     expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
+    expect(
+      useStreamingStore.getState().streamStates["conv-1"]?.turnStage,
+    ).toBeNull();
+    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
     expect(document.querySelector(".ProseMirror")).toBeTruthy();
   });
 
@@ -695,6 +733,28 @@ describe("ChatBottomArea", () => {
     render(<ChatBottomArea />);
 
     await user.click(await screen.findByRole("button", { name: "提交" }));
+
+    await waitFor(() =>
+      expect(tauriMocks.approvePermissionRequest).toHaveBeenCalledWith(
+        "tool-1",
+        null,
+        false,
+        "session",
+        "用户允许了这个权限申请（仅本次）。",
+      ),
+    );
+    expect(useStreamingStore.getState().pendingAsks.has("tool-1")).toBe(false);
+  });
+
+  it("submits permission choice with Enter", async () => {
+    useStreamingStore.getState().addPendingAsk(pendingAsk());
+
+    render(<ChatBottomArea />);
+
+    expect(
+      await screen.findByText(/需要你允许我用提升权限只读检查/),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Enter", code: "Enter" });
 
     await waitFor(() =>
       expect(tauriMocks.approvePermissionRequest).toHaveBeenCalledWith(
@@ -787,6 +847,28 @@ describe("ChatBottomArea", () => {
     expect(useStreamingStore.getState().pendingAsks.has("tool-1")).toBe(false);
   });
 
+  it("rejects permission choice with Escape", async () => {
+    useStreamingStore.getState().addPendingAsk(pendingAsk());
+
+    render(<ChatBottomArea />);
+
+    expect(
+      await screen.findByText(/需要你允许我用提升权限只读检查/),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
+
+    await waitFor(() =>
+      expect(tauriMocks.denyPermissionRequest).toHaveBeenCalledWith(
+        "tool-1",
+        "用户拒绝了这个权限申请",
+        false,
+        "session",
+      ),
+    );
+    expect(tauriMocks.cancelPermissionRequest).not.toHaveBeenCalled();
+    expect(useStreamingStore.getState().pendingAsks.has("tool-1")).toBe(false);
+  });
+
   it("localizes permission reject feedback sent back to the runtime", async () => {
     const user = userEvent.setup();
     useStreamingStore.getState().addPendingAsk(pendingAsk());
@@ -841,6 +923,26 @@ describe("ChatBottomArea", () => {
     expect(useInteractionStore.getState().pendingInteractions).toEqual([]);
   });
 
+  it("submits AskUserQuestion with Enter", async () => {
+    const user = userEvent.setup();
+    useInteractionStore.getState().addInteraction(pendingInteraction());
+
+    render(<ChatBottomArea />);
+
+    await user.click(await screen.findByRole("radio", { name: "Yes" }));
+    fireEvent.keyDown(document, { key: "Enter", code: "Enter" });
+
+    await waitFor(() =>
+      expect(tauriMocks.submitUserInteraction).toHaveBeenCalledWith("ask-1", {
+        answers: { "Need input?": "Yes" },
+        annotations: {
+          userChoiceSummary: "用户回答了补充问题：Need input? = Yes",
+        },
+      }),
+    );
+    expect(useInteractionStore.getState().pendingInteractions).toEqual([]);
+  });
+
   it("keeps AskUserQuestion pending when submit fails", async () => {
     const user = userEvent.setup();
     tauriMocks.submitUserInteraction.mockRejectedValueOnce(new Error("boom"));
@@ -864,6 +966,23 @@ describe("ChatBottomArea", () => {
     render(<ChatBottomArea />);
 
     await user.click(await screen.findByRole("button", { name: /忽略/ }));
+
+    await waitFor(() =>
+      expect(tauriMocks.cancelUserInteraction).toHaveBeenCalledWith(
+        "ask-1",
+        "用户忽略了这个补充问题。请基于已有信息继续；不要输出空标题、空书名号或空占位符，缺少关键名称时请使用通用名称。",
+      ),
+    );
+    expect(useInteractionStore.getState().pendingInteractions).toEqual([]);
+  });
+
+  it("cancels AskUserQuestion with Escape", async () => {
+    useInteractionStore.getState().addInteraction(pendingInteraction());
+
+    render(<ChatBottomArea />);
+
+    expect(await screen.findByText("Need input?")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
 
     await waitFor(() =>
       expect(tauriMocks.cancelUserInteraction).toHaveBeenCalledWith(

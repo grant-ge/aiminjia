@@ -487,6 +487,25 @@ impl SessionRuntime {
             .resolve(tool_call_id, resolution.clone())?;
         if let Some(request) = pending_request.as_ref() {
             self.persist_resolved_permission(request, &resolution);
+            let event = crate::runtime::events::RuntimeEvent::new(
+                request.session_id.clone(),
+                request.run_id.clone(),
+                crate::runtime::events::RuntimeEventKind::PermissionAskResolved {
+                    tool_call_id: tool_call_id.clone(),
+                },
+            );
+            let event_bus = self.event_bus.clone();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    if let Err(err) = event_bus.emit(event).await {
+                        log::warn!(
+                            "[session-runtime] failed to emit permission resolved event: {err:#}"
+                        );
+                    }
+                });
+            } else {
+                self.event_bus.record_only(event);
+            }
         }
         Ok(())
     }
@@ -1779,6 +1798,19 @@ mod tests {
             found,
             "append_path_allow_rule must have been called with pattern '{}': {:?}",
             expected_pattern, entries.allow_rules
+        );
+        let events = runtime.event_bus().recorded();
+        assert!(
+            events.iter().any(|event| {
+                matches!(
+                    &event.kind,
+                    crate::runtime::events::RuntimeEventKind::PermissionAskResolved {
+                        tool_call_id: resolved_tool_call_id,
+                    } if resolved_tool_call_id == &tool_call_id
+                )
+            }),
+            "SessionRuntime::resolve_permission_request should record a resolved event: {:?}",
+            events
         );
     }
 

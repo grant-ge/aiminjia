@@ -150,7 +150,9 @@ function App() {
     getSettings()
       .then((settings) => {
         useSettingsStore.getState().setSettings(settings)
-        useSidebarStatusStore.getState().hydrateFromSettings(settings)
+        const sidebarStatusStore = useSidebarStatusStore.getState()
+        sidebarStatusStore.hydrateFromSettings(settings)
+        void sidebarStatusStore.reconcileWithRuntimeSnapshots()
       })
       .catch((err) => console.error('Failed to load settings:', err))
   }, [])

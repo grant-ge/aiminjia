@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 
-import { getSettings, updateSettings } from '@/lib/tauri'
+import {
+  getSettings,
+  pendingInteractionSnapshotForSession,
+  pendingPermissionSnapshotForSession,
+  updateSettings,
+} from '@/lib/tauri'
 import type { Settings } from '@/types/settings'
 
 export type SidebarCachedStatusKind = 'permission-review' | 'waiting-reply'
@@ -21,6 +26,7 @@ interface SidebarStatusState {
     status: Omit<SidebarCachedStatus, 'updatedAt'> & { updatedAt?: number },
   ) => Promise<void>
   clearStatus: (conversationId: string) => Promise<void>
+  reconcileWithRuntimeSnapshots: () => Promise<void>
   reset: () => void
 }
 
@@ -63,6 +69,27 @@ async function persistStatuses(statuses: Record<string, SidebarCachedStatus>) {
   })
 }
 
+async function hasMatchingRuntimeStatus(
+  conversationId: string,
+  status: SidebarCachedStatus,
+): Promise<boolean> {
+  try {
+    if (status.kind === 'permission-review') {
+      const asks = await pendingPermissionSnapshotForSession(conversationId)
+      if (!status.toolCallId) return asks.length > 0
+      return asks.some((ask) => ask.toolCallId === status.toolCallId)
+    }
+    const interactions = await pendingInteractionSnapshotForSession(conversationId)
+    if (!status.interactionId) return interactions.length > 0
+    return interactions.some(
+      (interaction) => interaction.interactionId === status.interactionId,
+    )
+  } catch (err) {
+    console.warn('[sidebarStatus] runtime snapshot reconcile failed', err)
+    return true
+  }
+}
+
 export const useSidebarStatusStore = create<SidebarStatusState>((set, get) => ({
   statuses: {},
 
@@ -86,6 +113,28 @@ export const useSidebarStatusStore = create<SidebarStatusState>((set, get) => ({
     if (!current[conversationId]) return
     const next = { ...current }
     delete next[conversationId]
+    set({ statuses: next })
+    await persistStatuses(next)
+  },
+
+  reconcileWithRuntimeSnapshots: async () => {
+    const current = get().statuses
+    const entries = Object.entries(current)
+    if (entries.length === 0) return
+
+    const keepEntries = await Promise.all(
+      entries.map(async ([conversationId, status]) => [
+        conversationId,
+        status,
+        await hasMatchingRuntimeStatus(conversationId, status),
+      ] as const),
+    )
+    const next: Record<string, SidebarCachedStatus> = {}
+    keepEntries.forEach(([conversationId, status, keep]) => {
+      if (keep) next[conversationId] = status
+    })
+    if (Object.keys(next).length === Object.keys(current).length) return
+
     set({ statuses: next })
     await persistStatuses(next)
   },
