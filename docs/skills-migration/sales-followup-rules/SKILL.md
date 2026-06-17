@@ -43,7 +43,7 @@ metadata:
 
 配置可以来自两条路径：
 
-- **路径 B（用户在 EmployeeDrawer ⚙️ 配置资源里填好的）**：派活 prompt 的"资源配置"段会带上完整的 `{ baseId, tableId, fieldMapping, scope }`。
+- **路径 B（用户在雇佣配置流程里填好的）**：派活 prompt 的"资源配置"段会带上完整的 `{ baseId, tableId, fieldMapping, scope }`。
 - **路径 A（首次派活，用户没在表单里填）**：prompt 没有"资源配置"段，需要在对话中向用户引导取值，然后用 `WriteMemory` 持久化（namespace `sales:config`），下次直接从 memory 读，不再问用户。
 
 需要的字段：
@@ -87,7 +87,7 @@ metadata:
 5. 拼好整个 config JSON，复述给用户，等用户回 "确认"。
 6. `WriteMemory` namespace=`sales:config`，把整个对象存进去。
 
-之后每次派活都从 memory 直接读。如果用户想修改配置，可以在对话里说"重新配置"，员工就 `WriteMemory` 覆写；或在 EmployeeDrawer ⚙️ 配置资源里直接改（路径 B 优先级最高）。
+之后每次派活都从 memory 直接读。如果用户想修改配置，可以在对话里说"重新配置"，员工就 `WriteMemory` 覆写；雇佣配置流程传入的资源配置仍是最高优先级。
 
 ### 1. 拉取客户列表
 

@@ -53,7 +53,7 @@ pub struct Persona {
     pub expertise: Vec<String>,
     /// Memory hints override (replaces daily.md memory whitelist).
     pub memory_hints: Vec<String>,
-    /// Linked skill categories (WelcomeScreen expands these groups).
+    /// Linked skill categories for skill-aware entry surfaces.
     pub linked_categories: Vec<String>,
     pub created_at: String,
     pub updated_at: String,

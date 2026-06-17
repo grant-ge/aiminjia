@@ -23,10 +23,10 @@
 //!     orphaned LLM JSON spills).
 //!
 //! Anything **not** in the list — including `state.json`, `data_version`,
-//! `.migrated`, `device_id`, `personas/`, `playwright-profile/`, workspace
-//! artefacts (`analysis/`, `charts/`, ...) and the legacy `temp/` /
-//! `tmpImage/` dirs — is left alone, either because the code still reads
-//! the root path, or because it falls under a separate cleanup track.
+//! `.migrated`, `device_id`, `personas/`, workspace artefacts (`analysis/`,
+//! `charts/`, ...) and the legacy `temp/` / `tmpImage/` dirs — is left alone,
+//! either because the code still reads the root path, or because it falls
+//! under a separate cleanup track.
 //!
 //! ## Guards
 //!
@@ -370,8 +370,6 @@ mod tests {
         // NOT in the archive list — must survive.
         fs::write(root.join("data_version"), b"1").unwrap();
         fs::write(root.join("device_id"), b"dev").unwrap();
-        fs::create_dir_all(root.join("playwright-profile")).unwrap();
-        fs::write(root.join("playwright-profile/cookies"), b"c").unwrap();
 
         let claimed_at = Utc::now() - Duration::days(2);
         let state = root.join("global/state.json");
@@ -399,7 +397,6 @@ mod tests {
         // Out-of-scope files untouched.
         assert!(root.join("data_version").exists());
         assert!(root.join("device_id").exists());
-        assert!(root.join("playwright-profile/cookies").exists());
 
         // State.json records the archive.
         let st = read_state(&state);

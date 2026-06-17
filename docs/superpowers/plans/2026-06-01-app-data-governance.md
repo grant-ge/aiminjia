@@ -14,7 +14,6 @@
 
 The user approved the direction and expanded today's work from directory audit report enhancement to include a code-backed directory contract. Do not implement runtime cleanup or migration in this slice. First produce and review:
 
-- `docs/superpowers/specs/2026-06-01-app-data-layout-audit.md`
 - updated references in the design doc
 - `src-tauri/src/storage/app_data_contract.rs`
 
@@ -29,7 +28,6 @@ Implementation tasks below remain the next phase after the audit matrix is accep
 Implemented behavior:
 
 - Classify known root entries into `StableRoot`, `TransitionalRoot`, `WorkspaceArtifact`, `Temporary`, `DeprecatedArchiveCandidate`, and `ReviewOnly`.
-- Keep `playwright-profile` as `TransitionalRoot`, with target `users/{scope}/playwright-profile`.
 - Keep unknown old-user entries non-blocking through runtime audit classification.
 - Hard-fail tests when production code outside `storage/aijia_home.rs` adds a direct root join not declared in the contract.
 - Register legacy `config.json` as `TransitionalRoot` because `data_version` still needs it for old-version `cloud_auth` recovery.
@@ -75,7 +73,6 @@ mod tests {
         assert_eq!(classify_root_entry("temp"), RootEntryClass::TemporaryLegacy);
         assert_eq!(classify_root_entry("tmpImage"), RootEntryClass::TemporaryLegacy);
         assert_eq!(classify_root_entry("logs"), RootEntryClass::KeepRoot);
-        assert_eq!(classify_root_entry("playwright-profile"), RootEntryClass::TransitionalRoot);
         assert_eq!(
             classify_root_entry("expert-team-templates"),
             RootEntryClass::DeprecatedArchiveCandidate
@@ -118,7 +115,6 @@ pub fn classify_root_entry(name: &str) -> RootEntryClass {
             RootEntryClass::KeepRoot
         }
         name if name.starts_with(".archived-legacy-") => RootEntryClass::KeepRoot,
-        "playwright-profile" => RootEntryClass::TransitionalRoot,
         "expert-team-templates" => RootEntryClass::DeprecatedArchiveCandidate,
         "analysis" | "charts" | "generated" | "exports" | "reports" | "uploads" => {
             RootEntryClass::WorkspaceArtifact

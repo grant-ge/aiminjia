@@ -1,4 +1,4 @@
-// 内置员工模板"身份元数据"——只保留 EmployeeCard / EmployeeDrawer / localizeEmployeeDisplay
+// 内置员工模板"身份元数据"——只保留 EmployeeCard / HireWizard / localizeEmployeeDisplay
 // 需要的最小字段（templateId / name / role / description / resourceConfigKind / avatar / badge）。
 //
 // 历史背景（2026-06）：之前 BUILTIN_TEMPLATES 兼任 HireWizard 的"离线兜底员工列表"，
@@ -42,9 +42,9 @@ export interface EmployeeTemplate {
   badge: string
   /** When set, dispatch_employee_run prepends "请第一步调用 load_skill('<id>')" to the user message. */
   defaultSkillId: string | null
-  /** When set, EmployeeDrawer.handleTrigger opens a file picker before calling employee_trigger. */
+  /** When set, dispatch flow opens a file picker before calling employee_trigger. */
   requiresAttachment: RequiresAttachmentSpec | null
-  /** Drives which ResourceConfigForm subcomponent is shown in HireWizard step 3 + the Drawer ⚙️ button. */
+  /** Drives which HireWizard resource config subcomponent is shown in step 3. */
   resourceConfigKind: ResourceConfigKind
   /** True when an employee with this templateId requires `dingtalk_status().connected === true` before dispatch. */
   requiresDingtalk: boolean

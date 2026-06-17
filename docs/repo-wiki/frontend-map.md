@@ -15,7 +15,7 @@ Billing/account/network 链路由 `billing-subscription-account-network` 增强�
 - `SettingsMenu.tsx` 是设置侧栏入口，`account-billing` 当前按 personal tenant 做前端可见性 gating，`usage` 等入口仍 disabled。
 - `GeneralPanel.tsx` 是账户展示/退出登录/外观设置，`AccountBillingPanel.tsx` 才是余额、本月消耗、请求数和流水入口。
 - `billingStore.ts` 通过 `src/lib/tauri.ts` 调 `billing_summary` / `billing_usage_records`，前端不直连 billing HTTP API。
-- `UsagePanel.tsx` 存在但未接入活跃路由；当前工作树未见 checkout、recharge、customer portal 或 invoice 的桌面端闭环。
+- 账号用量页当前由 `AccountBillingPanel.tsx` 承载；工作树未见 checkout、recharge、customer portal 或 invoice 的桌面端闭环。
 - `networkStore.ts` 和 `updaterStore.ts` 与 settings 相邻，但分别走 network probe 与 updater command，不属于 billing 主链。
 
 ## Chat State And Rendering
@@ -86,7 +86,7 @@ Pending 队列是事件驱动状态，不是普通 UI 弹窗：
 1. `src/features/employees/HireWizard.tsx` 读取 catalog 并创建员工。
 2. `src/features/employees/templates.ts` 归一化模板快照和 resource config。
 3. `src/features/employees/triggerPrechecks.ts` 判断资源配置和知识源索引状态。
-4. `src/features/employees/EmployeeDrawer.tsx` 触发派活。
+4. `src/features/employees/EmployeeTemplateDetailDialog.tsx` / `EmployeesPage.tsx` 触发派活。
 5. `src/features/employees/seedDispatchConversation.ts` 预置会话锚点。
 6. `src/stores/chatStore.ts` 和 `src/stores/uiStore.ts` 让聊天页立即可见。
 

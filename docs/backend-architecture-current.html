@@ -505,14 +505,14 @@
         },
         {
           id: "connector",
-          name: "ConnectorEngine + Playwright",
+          name: "Connector Integrations",
           layer: "infra",
           x: 390,
           y: 670,
           w: 230,
           h: 84,
-          role: "真实场景：工具需要网页采集或自动化点击时，通过 ConnectorEngine 驱动 Playwright 完成导航、提取、截图等动作。",
-          files: ["src-tauri/src/connector/engine.rs", "src-tauri/src/connector/playwright_browser.rs"]
+          role: "真实场景：宿主侧 connector 提供钉钉、IM 等集成；浏览器自动化当前通过 browser skill 调用外部 playwright-cli，不再由 Rust sidecar 承载。",
+          files: ["src-tauri/src/connector/dingtalk.rs", "src-tauri/src/connector/im/manager.rs"]
         },
         {
           id: "auth",

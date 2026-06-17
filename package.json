@@ -8,7 +8,6 @@
     "prebuild": "node -e \"fetch('https://ai.renlijia.com/changelog.json').then(r=>r.ok?r.text():'{\\\"versions\\\":[]}').catch(()=>'{\\\"versions\\\":[]}').then(t=>require('fs').writeFileSync('src-tauri/changelog.json',t))\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "capture:ui": "node scripts/capture-ui.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
