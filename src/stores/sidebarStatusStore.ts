@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 
-import { getSettings, updateSettings } from '@/lib/tauri'
-import type { Settings } from '@/types/settings'
-
 export type SidebarCachedStatusKind = 'permission-review' | 'waiting-reply'
+
+export const SIDEBAR_STATUS_SESSION_KEY =
+  'aijia.sidebarConversationStatuses.v1'
 
 export interface SidebarCachedStatus {
   kind: SidebarCachedStatusKind
@@ -15,7 +15,7 @@ export interface SidebarCachedStatus {
 
 interface SidebarStatusState {
   statuses: Record<string, SidebarCachedStatus>
-  hydrateFromSettings: (settings: Pick<Settings, 'uiSidebarConversationStatuses'>) => void
+  hydrateFromSession: () => void
   setStatus: (
     conversationId: string,
     status: Omit<SidebarCachedStatus, 'updatedAt'> & { updatedAt?: number },
@@ -55,19 +55,42 @@ function parseStatuses(raw?: string): Record<string, SidebarCachedStatus> {
   }
 }
 
-async function persistStatuses(statuses: Record<string, SidebarCachedStatus>) {
-  const settings = await getSettings()
-  await updateSettings({
-    ...settings,
-    uiSidebarConversationStatuses: JSON.stringify(statuses),
-  })
+function readSessionStatuses(): Record<string, SidebarCachedStatus> {
+  if (typeof window === 'undefined') return {}
+  try {
+    return parseStatuses(
+      window.sessionStorage.getItem(SIDEBAR_STATUS_SESSION_KEY) ?? undefined,
+    )
+  } catch {
+    return {}
+  }
+}
+
+function persistStatuses(statuses: Record<string, SidebarCachedStatus>) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(
+      SIDEBAR_STATUS_SESSION_KEY,
+      JSON.stringify(statuses),
+    )
+  } catch {
+    // Session cache is only a UI hint; losing it must not block the chat flow.
+  }
+}
+
+function clearSessionStatuses() {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(SIDEBAR_STATUS_SESSION_KEY)
+  } catch {
+    // Session cache is only a UI hint; losing it must not block the chat flow.
+  }
 }
 
 export const useSidebarStatusStore = create<SidebarStatusState>((set, get) => ({
-  statuses: {},
+  statuses: readSessionStatuses(),
 
-  hydrateFromSettings: (settings) =>
-    set({ statuses: parseStatuses(settings.uiSidebarConversationStatuses) }),
+  hydrateFromSession: () => set({ statuses: readSessionStatuses() }),
 
   setStatus: async (conversationId, status) => {
     const next = {
@@ -78,7 +101,7 @@ export const useSidebarStatusStore = create<SidebarStatusState>((set, get) => ({
       },
     }
     set({ statuses: next })
-    await persistStatuses(next)
+    persistStatuses(next)
   },
 
   clearStatus: async (conversationId) => {
@@ -87,8 +110,11 @@ export const useSidebarStatusStore = create<SidebarStatusState>((set, get) => ({
     const next = { ...current }
     delete next[conversationId]
     set({ statuses: next })
-    await persistStatuses(next)
+    persistStatuses(next)
   },
 
-  reset: () => set({ statuses: {} }),
+  reset: () => {
+    set({ statuses: {} })
+    clearSessionStatuses()
+  },
 }))

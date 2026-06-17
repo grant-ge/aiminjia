@@ -544,8 +544,7 @@ describe("ChatBottomArea", () => {
     );
   });
 
-  it("intercepts the composer from persisted waitingPermission stage when no pending ask survived reload", async () => {
-    const user = userEvent.setup();
+  it("does not intercept the composer from persisted waitingPermission stage when no pending ask survived reload", async () => {
     useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
@@ -568,24 +567,13 @@ describe("ChatBottomArea", () => {
 
     render(<ChatBottomArea />);
 
-    expect(await screen.findByText("需要恢复任务状态")).toBeInTheDocument();
-    expect(screen.getByText(/Glob/)).toBeInTheDocument();
-    expect(document.querySelector(".ProseMirror")).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "停止任务" }));
-
-    await waitFor(() =>
-      expect(tauriMocks.stopStreaming).toHaveBeenCalledWith("conv-1"),
-    );
-    await waitFor(() =>
-      expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
-    );
-    expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
+    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
     expect(document.querySelector(".ProseMirror")).toBeTruthy();
+    expect(tauriMocks.stopStreaming).not.toHaveBeenCalled();
+    expect(tauriMocks.clearActiveTurnStage).not.toHaveBeenCalled();
   });
 
-  it("intercepts the composer from persisted waitingInteraction stage when no pending interaction survived reload", async () => {
-    const user = userEvent.setup();
+  it("does not intercept the composer from persisted waitingInteraction stage when no pending interaction survived reload", async () => {
     useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
@@ -608,20 +596,10 @@ describe("ChatBottomArea", () => {
 
     render(<ChatBottomArea />);
 
-    expect(await screen.findByText("需要恢复任务状态")).toBeInTheDocument();
-    expect(screen.getByText(/askUserQuestion/)).toBeInTheDocument();
-    expect(document.querySelector(".ProseMirror")).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "停止任务" }));
-
-    await waitFor(() =>
-      expect(tauriMocks.stopStreaming).toHaveBeenCalledWith("conv-1"),
-    );
-    await waitFor(() =>
-      expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
-    );
-    expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
+    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
     expect(document.querySelector(".ProseMirror")).toBeTruthy();
+    expect(tauriMocks.stopStreaming).not.toHaveBeenCalled();
+    expect(tauriMocks.clearActiveTurnStage).not.toHaveBeenCalled();
   });
 
   it("restores the composer when pending action is resolved while viewing another conversation", async () => {

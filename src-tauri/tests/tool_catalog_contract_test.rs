@@ -30,6 +30,34 @@ fn all_new_plan_c_tools_are_in_catalog() {
     }
 }
 
+#[test]
+fn ask_user_question_catalog_forbids_model_supplied_other_option() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    let entry = TOOL_CATALOG
+        .get_entry("AskUserQuestion")
+        .expect("AskUserQuestion should be registered in TOOL_CATALOG");
+
+    let description = &entry.definition.description;
+    assert!(
+        description.contains("不要在 options 中添加")
+            && description.contains("其他")
+            && description.contains("Other"),
+        "AskUserQuestion description must tell the model not to add custom/Other options: {description}"
+    );
+
+    let options_description = entry.json_schema["properties"]["questions"]["items"]["properties"]
+        ["options"]["description"]
+        .as_str()
+        .expect("AskUserQuestion options schema should describe option constraints");
+    assert!(
+        options_description.contains("不要添加")
+            && options_description.contains("其他")
+            && options_description.contains("Other"),
+        "AskUserQuestion options schema must forbid model-supplied Other options: {options_description}"
+    );
+}
+
 #[tokio::test]
 async fn get_all_schemas_returns_builtin_then_mcp_partitions() {
     use app_lib::plugin::registry::ToolRegistry;

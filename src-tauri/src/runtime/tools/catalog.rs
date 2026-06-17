@@ -561,7 +561,8 @@ fn build_default_catalog() -> ToolCatalog {
             "AskUserQuestion",
             "向用户提出结构化多选问题，等待用户回答后继续。\
             \n\n用途：收集用户偏好、澄清歧义、让用户在多个方案中选择。\
-            \n\n每次调用支持 1-4 个问题，每个问题 2-4 个选项，用户始终可以选择 Other 输入自定义回答。",
+            \n\n每次调用支持 1-4 个问题，每个问题 2-4 个选项。\
+            \n\n不要在 options 中添加“其他”“其它”“Other”“Other (please specify)”或任何同义的自定义回答选项；如果现有选项都不合适，用户界面会自己提供自定义输入入口。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true),
@@ -582,6 +583,7 @@ fn build_default_catalog() -> ToolCatalog {
                             "header": { "type": "string" },
                             "options": {
                                 "type": "array",
+                                "description": "只填写具体、互斥的业务选项；不要添加“其他”“其它”“Other”或要求用户说明的兜底选项。",
                                 "minItems": 2,
                                 "maxItems": 4,
                                 "items": {

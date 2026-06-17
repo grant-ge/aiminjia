@@ -118,7 +118,6 @@ export function selectPendingActionsForSession({
   sessionId,
   pendingAsks,
   pendingInteractions,
-  turnStage,
 }: {
   sessionId: string | null;
   pendingAsks: Map<string, PendingAsk>;
@@ -131,42 +130,16 @@ export function selectPendingActionsForSession({
   const activeAsks = Array.from(pendingAsks.values()).filter(
     (ask) => ask.conversationId === sessionId,
   );
-  actions.push(...groupPermissionActions(activeAsks));
-
-  if (
-    turnStage?.kind === "waitingPermission" &&
-    !activeAsks.some((ask) => ask.toolCallId === turnStage.toolCallId)
-  ) {
-    actions.push({
-      kind: "stale-permission",
-      sessionId,
-      toolName: turnStage.toolName,
-      toolCallId: turnStage.toolCallId,
-    });
-  }
-
+  const permissionActions = groupPermissionActions(activeAsks);
   const activeInteractions = pendingInteractions.filter(
     (interaction) => interaction.conversationId === sessionId,
   );
-  actions.push(
-    ...activeInteractions.map(
-      (interaction): PendingAction => ({ kind: "user-question", interaction }),
-    ),
+  const interactionActions = activeInteractions.map(
+    (interaction): PendingAction => ({ kind: "user-question", interaction }),
   );
 
-  if (
-    turnStage?.kind === "waitingInteraction" &&
-    !activeInteractions.some(
-      (interaction) => interaction.interactionId === turnStage.interactionId,
-    )
-  ) {
-    actions.push({
-      kind: "stale-interaction",
-      sessionId,
-      interactionKind: turnStage.interactionKind,
-      interactionId: turnStage.interactionId,
-    });
-  }
+  actions.push(...permissionActions);
+  actions.push(...interactionActions);
 
   return actions;
 }

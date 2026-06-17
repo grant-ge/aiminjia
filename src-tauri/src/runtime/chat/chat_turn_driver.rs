@@ -422,9 +422,17 @@ fn looks_like_waiting_for_teammates(content: &str) -> bool {
     if trimmed.is_empty() || has_substantial_expert_team_deliverable(trimmed) {
         return false;
     }
-    ["等待", "继续等", "继续静待", "只差", "稍候", "未收到", "还没收到"]
-        .iter()
-        .any(|needle| trimmed.contains(needle))
+    [
+        "等待",
+        "继续等",
+        "继续静待",
+        "只差",
+        "稍候",
+        "未收到",
+        "还没收到",
+    ]
+    .iter()
+    .any(|needle| trimmed.contains(needle))
 }
 
 fn should_request_final_report_after_spawn_limit(
@@ -3283,7 +3291,9 @@ impl RuntimeChatTurnDriver {
                             "role": "assistant",
                             "content": content,
                         }));
-                        state.messages.push(final_report_without_team_delete_reminder());
+                        state
+                            .messages
+                            .push(final_report_without_team_delete_reminder());
                         pending_task_notifications.clear();
                         continue 'turn;
                     }
@@ -3405,12 +3415,11 @@ impl RuntimeChatTurnDriver {
                     {
                         let removed_task_tools =
                             strip_expert_team_disallowed_tool_calls(&mut tool_calls);
-                        let removed_premature_delete =
-                            strip_premature_expert_team_delete(
-                                &mut tool_calls,
-                                &assistant_content,
-                                &state.full_content,
-                            );
+                        let removed_premature_delete = strip_premature_expert_team_delete(
+                            &mut tool_calls,
+                            &assistant_content,
+                            &state.full_content,
+                        );
                         let removed_waiting_delete =
                             strip_expert_team_delete_while_waiting_for_peers(
                                 &mut tool_calls,
@@ -3647,15 +3656,14 @@ impl RuntimeChatTurnDriver {
                             pending_task_notifications.clear();
                             continue 'turn;
                         }
-                        state.final_only_content = if has_substantial_expert_team_deliverable(
-                            &state.final_only_content,
-                        ) {
-                            state.final_only_content.clone()
-                        } else if state.full_content.trim().is_empty() {
-                            TEAM_DELETE_TURN_STOP_NOTICE.to_string()
-                        } else {
-                            TEAM_DELETE_AFTER_DELIVERABLE_NOTICE.to_string()
-                        };
+                        state.final_only_content =
+                            if has_substantial_expert_team_deliverable(&state.final_only_content) {
+                                state.final_only_content.clone()
+                            } else if state.full_content.trim().is_empty() {
+                                TEAM_DELETE_TURN_STOP_NOTICE.to_string()
+                            } else {
+                                TEAM_DELETE_AFTER_DELIVERABLE_NOTICE.to_string()
+                            };
                         turn_completed_normally = true;
                         break 'turn;
                     }

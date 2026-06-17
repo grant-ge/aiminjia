@@ -150,9 +150,12 @@ function App() {
     getSettings()
       .then((settings) => {
         useSettingsStore.getState().setSettings(settings)
-        useSidebarStatusStore.getState().hydrateFromSettings(settings)
       })
       .catch((err) => console.error('Failed to load settings:', err))
+  }, [])
+
+  useEffect(() => {
+    useSidebarStatusStore.getState().hydrateFromSession()
   }, [])
 
   useEffect(() => {

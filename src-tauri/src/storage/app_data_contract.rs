@@ -392,11 +392,7 @@ mod tests {
 
     #[test]
     fn runtime_audit_keeps_old_user_unknown_entries_non_blocking() {
-        let report = audit_root_entries([
-            "global",
-            "users",
-            "old-dir-from-0-4-x",
-        ]);
+        let report = audit_root_entries(["global", "users", "old-dir-from-0-4-x"]);
 
         assert_eq!(report.known.len(), 2);
         assert_eq!(report.review_only, vec!["old-dir-from-0-4-x"]);

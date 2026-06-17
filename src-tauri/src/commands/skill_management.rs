@@ -1028,7 +1028,8 @@ pub async fn preview_marketplace_skill(
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
     let archive_path = tmp.join("marketplace-skill-preview.zip");
     std::fs::write(&archive_path, zip_bytes.as_ref()).map_err(|e| e.to_string())?;
-    let raw_content = read_marketplace_archive_skill_md(&archive_path, &tmp.join("unpacked"), &plugin_id);
+    let raw_content =
+        read_marketplace_archive_skill_md(&archive_path, &tmp.join("unpacked"), &plugin_id);
     let _ = std::fs::remove_dir_all(&tmp);
 
     Ok(MarketplaceSkillPreview {
