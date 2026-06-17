@@ -1,31 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-const tauriMocks = vi.hoisted(() => ({
-  getSettings: vi.fn(),
-  updateSettings: vi.fn(),
-  pendingPermissionSnapshotForSession: vi.fn(),
-  pendingInteractionSnapshotForSession: vi.fn(),
-}))
-
-vi.mock('@/lib/tauri', () => tauriMocks)
-
-import { DEFAULT_SETTINGS } from '@/types/settings'
-import { useSidebarStatusStore } from './sidebarStatusStore'
+import {
+  SIDEBAR_STATUS_SESSION_KEY,
+  useSidebarStatusStore,
+} from './sidebarStatusStore'
 
 describe('sidebarStatusStore', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    tauriMocks.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS })
-    tauriMocks.updateSettings.mockResolvedValue(undefined)
-    tauriMocks.pendingPermissionSnapshotForSession.mockResolvedValue([])
-    tauriMocks.pendingInteractionSnapshotForSession.mockResolvedValue([])
     useSidebarStatusStore.setState({ statuses: {} })
+    window.sessionStorage.clear()
   })
 
-  it('hydrates cached statuses from settings json', () => {
-    useSidebarStatusStore.getState().hydrateFromSettings({
-      ...DEFAULT_SETTINGS,
-      uiSidebarConversationStatuses: JSON.stringify({
+  it('hydrates cached statuses from the current browser session', () => {
+    window.sessionStorage.setItem(
+      SIDEBAR_STATUS_SESSION_KEY,
+      JSON.stringify({
         'conv-1': {
           kind: 'permission-review',
           updatedAt: 1780000000000,
@@ -33,7 +22,9 @@ describe('sidebarStatusStore', () => {
           toolCallId: 'tool-1',
         },
       }),
-    })
+    )
+
+    useSidebarStatusStore.getState().hydrateFromSession()
 
     expect(useSidebarStatusStore.getState().statuses).toMatchObject({
       'conv-1': {
@@ -44,7 +35,7 @@ describe('sidebarStatusStore', () => {
     })
   })
 
-  it('persists permission and waiting-reply statuses into settings', async () => {
+  it('persists permission and waiting-reply statuses into session storage', async () => {
     await useSidebarStatusStore.getState().setStatus('conv-1', {
       kind: 'permission-review',
       runId: 'run-1',
@@ -57,14 +48,14 @@ describe('sidebarStatusStore', () => {
       interactionId: 'ask-1',
     })
 
-    const lastUpdate = tauriMocks.updateSettings.mock.calls.at(-1)?.[0]
-    expect(JSON.parse(lastUpdate.uiSidebarConversationStatuses)).toMatchObject({
+    const stored = window.sessionStorage.getItem(SIDEBAR_STATUS_SESSION_KEY)
+    expect(JSON.parse(stored ?? '{}')).toMatchObject({
       'conv-1': { kind: 'permission-review', toolCallId: 'tool-1' },
       'conv-2': { kind: 'waiting-reply', interactionId: 'ask-1' },
     })
   })
 
-  it('removes a cached status from settings', async () => {
+  it('removes a cached status from session storage', async () => {
     useSidebarStatusStore.setState({
       statuses: {
         'conv-1': {
@@ -74,84 +65,38 @@ describe('sidebarStatusStore', () => {
         },
       },
     })
+    window.sessionStorage.setItem(
+      SIDEBAR_STATUS_SESSION_KEY,
+      JSON.stringify(useSidebarStatusStore.getState().statuses),
+    )
 
     await useSidebarStatusStore.getState().clearStatus('conv-1')
 
-    const lastUpdate = tauriMocks.updateSettings.mock.calls.at(-1)?.[0]
-    expect(JSON.parse(lastUpdate.uiSidebarConversationStatuses)).toEqual({})
+    expect(
+      JSON.parse(
+        window.sessionStorage.getItem(SIDEBAR_STATUS_SESSION_KEY) ?? '{}',
+      ),
+    ).toEqual({})
   })
 
-  it('clears hydrated permission status when runtime has no pending permission', async () => {
-    useSidebarStatusStore.getState().hydrateFromSettings({
-      ...DEFAULT_SETTINGS,
-      uiSidebarConversationStatuses: JSON.stringify({
-        'conv-1': {
-          kind: 'permission-review',
-          updatedAt: 1780000000000,
-          runId: 'run-1',
-          toolCallId: 'tool-1',
-        },
-      }),
-    })
-
-    await useSidebarStatusStore.getState().reconcileWithRuntimeSnapshots()
-
-    expect(tauriMocks.pendingPermissionSnapshotForSession).toHaveBeenCalledWith('conv-1')
-    expect(useSidebarStatusStore.getState().statuses).toEqual({})
-    const lastUpdate = tauriMocks.updateSettings.mock.calls.at(-1)?.[0]
-    expect(JSON.parse(lastUpdate.uiSidebarConversationStatuses)).toEqual({})
-  })
-
-  it('keeps hydrated permission status when runtime still has the pending permission', async () => {
-    tauriMocks.pendingPermissionSnapshotForSession.mockResolvedValueOnce([
-      {
-        conversationId: 'conv-1',
-        runId: 'run-1',
-        toolCallId: 'tool-1',
-        toolName: 'Read',
-        message: 'Allow?',
-        suggestions: null,
-        mode: 'default',
-        rememberOptions: null,
-        defaultDestination: null,
-      },
-    ])
-    useSidebarStatusStore.getState().hydrateFromSettings({
-      ...DEFAULT_SETTINGS,
-      uiSidebarConversationStatuses: JSON.stringify({
-        'conv-1': {
-          kind: 'permission-review',
-          updatedAt: 1780000000000,
-          runId: 'run-1',
-          toolCallId: 'tool-1',
-        },
-      }),
-    })
-
-    await useSidebarStatusStore.getState().reconcileWithRuntimeSnapshots()
-
-    expect(useSidebarStatusStore.getState().statuses).toMatchObject({
-      'conv-1': { kind: 'permission-review', toolCallId: 'tool-1' },
-    })
-    expect(tauriMocks.updateSettings).not.toHaveBeenCalled()
-  })
-
-  it('clears hydrated waiting-reply status when runtime has no pending interaction', async () => {
-    useSidebarStatusStore.getState().hydrateFromSettings({
-      ...DEFAULT_SETTINGS,
-      uiSidebarConversationStatuses: JSON.stringify({
+  it('clears the session cached statuses on reset', () => {
+    useSidebarStatusStore.setState({
+      statuses: {
         'conv-1': {
           kind: 'waiting-reply',
           updatedAt: 1780000000000,
-          runId: 'run-1',
           interactionId: 'ask-1',
         },
-      }),
+      },
     })
+    window.sessionStorage.setItem(
+      SIDEBAR_STATUS_SESSION_KEY,
+      JSON.stringify(useSidebarStatusStore.getState().statuses),
+    )
 
-    await useSidebarStatusStore.getState().reconcileWithRuntimeSnapshots()
+    useSidebarStatusStore.getState().reset()
 
-    expect(tauriMocks.pendingInteractionSnapshotForSession).toHaveBeenCalledWith('conv-1')
     expect(useSidebarStatusStore.getState().statuses).toEqual({})
+    expect(window.sessionStorage.getItem(SIDEBAR_STATUS_SESSION_KEY)).toBeNull()
   })
 })

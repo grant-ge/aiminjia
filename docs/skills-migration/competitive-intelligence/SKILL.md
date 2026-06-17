@@ -42,7 +42,7 @@ metadata:
 { "monitoringTargets": [{ "name": "Anthropic", "url": "https://anthropic.com/news", "tags": ["llm"] }] }
 ```
 
-如果 monitoringTargets 为空或缺失：礼貌提示用户先打开 EmployeeDrawer ⚙️"配置资源"补充监测对象，然后退出本次工作流。
+如果 monitoringTargets 为空或缺失：礼貌提示用户在对话中提供监测对象名称和 URL，或回到雇佣配置流程补充资源，然后退出本次工作流。
 
 ## 工作流程
 

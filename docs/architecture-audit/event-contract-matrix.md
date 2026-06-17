@@ -22,7 +22,6 @@
 | **analysis:step-changed** | `llm/tool_executor/progress.rs:37`（`handle_update_progress()` 工具调用时） | `src/lib/tauri.ts:705`（`onAnalysisStepChanged`） | `step: number`, `status: string` | 在 `update_progress` tool 执行成功后 emit；步骤状态变化的辅助通知 |
 | **file:generated** | `chat_runtime_impl.rs:2822`（tool 返回 `file_meta` 时，在 tool 结果处理阶段） | `src/hooks/useStreaming.ts:321` → 显示文件降级 warning toast | `conversationId: string`, `fileId: string`, `fileName: string`, `requestedFormat: string`, `actualFormat: string`, `fileSize: number`, `storedPath: string`, `category: string`, `isDegraded: boolean`, 可选 `degradationNotice: string` | 在 `tool:completed` 之前（同一工具执行循环内，file:generated 先 emit）；多个文件则多次 emit |
 | **auth:expired** | `chat_runtime_impl.rs:234`（cloud auth 过期时，get_session_key 失败且非"未登录"） | `src/lib/tauri.ts:836`（`onAuthExpired`） | `message: string` | 发出后立即 return，不继续处理消息 |
-| **browser:navigating** | `connector/playwright_browser.rs:87` | 无注册消费者（内部监控用） | `url: string` | 无 |
 
 ---
 

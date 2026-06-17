@@ -10,7 +10,7 @@
 
 ### 1.1 当前架构形态
 
-Lotus-App 是一个 Tauri 桌面应用，运行时为 `WebView(React/TS) + Tauri Host(Rust) + 子进程(Python/Playwright)`。
+Lotus-App 是一个 Tauri 桌面应用，运行时为 `WebView(React/TS) + Tauri Host(Rust) + 子进程(Python / 外部 CLI)`。
 
 当前后端核心链路：
 
@@ -79,7 +79,7 @@ CLI 入口 (src/entrypoints/cli.tsx)
 - 约束：**通过 repository trait 访问，底层实现可替换**
 
 ### L6: Infra Adapter
-- 职责：LLM provider、Python bridge、Playwright/browser、file manager、auth、connector
+- 职责：LLM provider、Python bridge、file manager、auth、connector、外部 CLI 能力
 - 约束：**只提供能力，不参与主流程编排**
 
 ---

@@ -4,7 +4,7 @@
 
 ## 数字员工 SKILL bundle + ResourceConfig + 派活前置补全（2026-05）
 
-5 个内置员工各带 `defaultSkillId / requiresAttachment / resourceConfigKind / requiresDingtalk` 元数据（`src/features/employees/templates.ts`）。派活前 `runTriggerPrechecks` 决定是否弹文件 picker / 资源 form / 钉钉 alert，因此**派活的唯一入口是 EmployeeDrawer 底部按钮**（卡片点击只打开 Drawer，不再有 inline 派活按钮）。SKILL 内容（`competitive-intelligence`, `sales-followup-rules`）以 managed global skills bundle 分发到 `~/.renlijia/skills/`。dispatch prompt 强制末尾"请立即开始按职责执行"以避免 LLM 等用户指示。详见 `~/lotus/docs/desktop/superpowers/plans/2026-05-05-employee-skills-and-resources-plan.md`。
+5 个内置员工各带 `defaultSkillId / requiresAttachment / resourceConfigKind / requiresDingtalk` 元数据（`src/features/employees/templates.ts`）。派活前 `runTriggerPrechecks` 决定是否需要文件 picker / 资源补全 / 钉钉登录提示；当前派活入口收敛在员工目录卡片详情弹窗的启动按钮，缺失资源时优先在对话内补全。SKILL 内容（`competitive-intelligence`, `sales-followup-rules`）以 managed global skills bundle 分发到 `~/.renlijia/skills/`。dispatch prompt 强制末尾"请立即开始按职责执行"以避免 LLM 等用户指示。详见 `~/lotus/docs/desktop/superpowers/plans/2026-05-05-employee-skills-and-resources-plan.md`。
 
 ## 数字员工配置表单 = 软校验（2026-05-14）
 
@@ -24,7 +24,7 @@
 
 ## HireWizard 接入后端 catalog（2026-05-10 / PR4）
 
-`HireWizard.tsx` 第 1 步的模板网格不再渲染前端硬编码 `BUILTIN_TEMPLATES`。`useEffect` on `open` 触发：先 fire-and-forget `employeeTemplateRefresh()`（拉最新版本到 cache，失败只 warn），再 `employeeTemplateCatalog()` 取合并后的列表（bootstrap ∪ cache），用 `snapshotToTemplate()` 映射为前端 `EmployeeTemplate` 类型后填到 `catalog` state。任何步骤失败都回退到 `BUILTIN_TEMPLATES`，保证离线或服务挂掉时雇佣流不挂。`snapshotToTemplate()` 在 `templates.ts` 新增，做三件事：① 同 `templateId` 已在 `BUILTIN_TEMPLATES` 里时**直接返回硬编码副本**（保证 v1.0.0 期间桌面端 UX 完全等价于 PR4 之前，避免微妙差异如 emoji 渲染）② 不认识的 id 按字段映射（`cron === ''` → `null`，`defaultSkillId === ''` → `null`，等）③ `resourceConfigKind` 来自 `RESOURCE_CONFIG_KIND_BY_ID` 硬编码 map，自定义 org 模板默认 `'none'`（PR6 会用 `resourceConfigSchema` JSON Schema 替代这个闭合枚举）。`findTemplate()` / `EmployeeCard` / `EmployeeDrawer` / `triggerPrechecks` 仍读 `BUILTIN_TEMPLATES`——它们查的是**老员工 record 引用的模板**，按 id 反查是稳定的（PR5 会改成读员工目录里的 `template/template.json` 快照，PR6 删 `RESOURCE_CONFIG_KIND_BY_ID`）。3 个 vitest 单测：`builtin:` 同 id 走 BUILTIN_TEMPLATES verbatim / 不认识的 id 按字段映射 / 空串 → null 的字段归一。
+`HireWizard.tsx` 第 1 步的模板网格不再渲染前端硬编码 `BUILTIN_TEMPLATES`。`useEffect` on `open` 触发：先 fire-and-forget `employeeTemplateRefresh()`（拉最新版本到 cache，失败只 warn），再 `employeeTemplateCatalog()` 取合并后的列表（bootstrap ∪ cache），用 `snapshotToTemplate()` 映射为前端 `EmployeeTemplate` 类型后填到 `catalog` state。任何步骤失败都回退到 `BUILTIN_TEMPLATES`，保证离线或服务挂掉时雇佣流不挂。`snapshotToTemplate()` 在 `templates.ts` 新增，做三件事：① 同 `templateId` 已在 `BUILTIN_TEMPLATES` 里时**直接返回硬编码副本**（保证 v1.0.0 期间桌面端 UX 完全等价于 PR4 之前，避免微妙差异如 emoji 渲染）② 不认识的 id 按字段映射（`cron === ''` → `null`，`defaultSkillId === ''` → `null`，等）③ `resourceConfigKind` 来自 `RESOURCE_CONFIG_KIND_BY_ID` 硬编码 map，自定义 org 模板默认 `'none'`（PR6 会用 `resourceConfigSchema` JSON Schema 替代这个闭合枚举）。`findTemplate()` / `EmployeeCard` / `triggerPrechecks` 仍读 `BUILTIN_TEMPLATES`——它们查的是**老员工 record 引用的模板**，按 id 反查是稳定的（PR5 会改成读员工目录里的 `template/template.json` 快照，PR6 删 `RESOURCE_CONFIG_KIND_BY_ID`）。3 个 vitest 单测：`builtin:` 同 id 走 BUILTIN_TEMPLATES verbatim / 不认识的 id 按字段映射 / 空串 → null 的字段归一。
 
 ## 运行时 snapshot-first 读取（2026-05-10 / PR5）
 

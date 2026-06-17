@@ -100,15 +100,6 @@ const i18nMock = vi.hoisted(() => ({
       "composer.fullAccessRuleTrusted":
         "仅建议在你信任当前任务时使用",
       "composer.fullAccessRuleSwitchBack": "你可随时切回默认权限",
-      "composer.reasoningModeLabel": "思考模式：{{mode}}",
-      "composer.reasoningModeAuto": "自动",
-      "composer.reasoningModeDeep": "深度思考",
-      "composer.reasoningModeAutoLong": "自动思考",
-      "composer.reasoningModeDeepLong": "深度思考",
-      "composer.reasoningModeAutoDesc":
-        "按任务复杂度走默认推理策略，兼顾速度和质量。",
-      "composer.reasoningModeDeepDesc":
-        "为复杂分析、审查和长任务增加推理预算，可能更慢、用量更高。",
     },
     "en-US": {
       "pendingAction.permission.allowedFeedback":
@@ -228,7 +219,7 @@ beforeEach(() => {
     activeConversationId: "conv-1",
     messages: [],
   });
-  useUiStore.setState({ permissionModesBySession: {}, reasoningModesBySession: {} });
+  useUiStore.setState({ permissionModesBySession: {} });
   useStreamingStore.setState({ pendingAsks: new Map() });
   useInteractionStore.setState({ pendingInteractions: [] });
   useSkillStore.setState({
@@ -439,27 +430,6 @@ describe("ChatBottomArea", () => {
     );
   });
 
-  it("toggles session reasoning mode and passes it on submit", async () => {
-    const user = userEvent.setup();
-    render(<ChatBottomArea />);
-    await waitFor(() =>
-      expect(document.querySelector(".ProseMirror")).toBeTruthy(),
-    );
-
-    await user.click(screen.getByRole("button", { name: "思考模式：自动" }));
-    await user.click(await screen.findByText("深度思考"));
-    const editor = document.querySelector(".ProseMirror") as HTMLElement;
-    await user.click(editor);
-    await user.type(editor, "analyze this");
-    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
-
-    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1));
-    expect(mockSendUserMessage.mock.calls[0][4]).toBe("deep");
-    expect(useUiStore.getState().reasoningModesBySession["conv-1"]).toBe(
-      "deep",
-    );
-  });
-
   it("uses the permission mode already bound to the active conversation", async () => {
     useUiStore.setState({
       permissionModesBySession: {
@@ -574,7 +544,7 @@ describe("ChatBottomArea", () => {
     );
   });
 
-  it("clears persisted waitingPermission stage when no pending ask survived reload", async () => {
+  it("does not intercept the composer from persisted waitingPermission stage when no pending ask survived reload", async () => {
     useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
@@ -597,62 +567,13 @@ describe("ChatBottomArea", () => {
 
     render(<ChatBottomArea />);
 
-    await waitFor(() =>
-      expect(tauriMocks.pendingPermissionSnapshotForSession).toHaveBeenCalledWith(
-        "conv-1",
-      ),
-    );
-    await waitFor(() =>
-      expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
-    );
+    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
+    expect(document.querySelector(".ProseMirror")).toBeTruthy();
     expect(tauriMocks.stopStreaming).not.toHaveBeenCalled();
-    expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
-    expect(
-      useStreamingStore.getState().streamStates["conv-1"]?.turnStage,
-    ).toBeNull();
-    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
-    expect(document.querySelector(".ProseMirror")).toBeTruthy();
+    expect(tauriMocks.clearActiveTurnStage).not.toHaveBeenCalled();
   });
 
-  it("keeps the composer available for a running waitingPermission stage after recovery snapshot", async () => {
-    const { rerender } = render(<ChatBottomArea />);
-
-    await waitFor(() =>
-      expect(tauriMocks.pendingPermissionSnapshotForSession).toHaveBeenCalledWith(
-        "conv-1",
-      ),
-    );
-    await waitFor(() =>
-      expect(document.querySelector(".ProseMirror")).toBeTruthy(),
-    );
-
-    act(() => {
-      useStreamingStore.setState({
-        pendingAsks: new Map(),
-        streamStates: {
-          "conv-1": {
-            isStreaming: true,
-            streamingContent: "",
-            toolExecutions: [],
-            turnStage: {
-              kind: "waitingPermission",
-              toolName: "Bash",
-              toolCallId: "tool-running",
-            },
-            stageStartedAt: Date.now(),
-            lastHeartbeatAt: Date.now(),
-            turnStartedAt: Date.now(),
-          },
-        },
-      });
-    });
-    rerender(<ChatBottomArea />);
-
-    expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
-    expect(document.querySelector(".ProseMirror")).toBeTruthy();
-  });
-
-  it("clears persisted waitingInteraction stage when no pending interaction survived reload", async () => {
+  it("does not intercept the composer from persisted waitingInteraction stage when no pending interaction survived reload", async () => {
     useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
@@ -675,21 +596,10 @@ describe("ChatBottomArea", () => {
 
     render(<ChatBottomArea />);
 
-    await waitFor(() =>
-      expect(tauriMocks.pendingInteractionSnapshotForSession).toHaveBeenCalledWith(
-        "conv-1",
-      ),
-    );
-    await waitFor(() =>
-      expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
-    );
-    expect(tauriMocks.stopStreaming).not.toHaveBeenCalled();
-    expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
-    expect(
-      useStreamingStore.getState().streamStates["conv-1"]?.turnStage,
-    ).toBeNull();
     expect(screen.queryByText("需要恢复任务状态")).not.toBeInTheDocument();
     expect(document.querySelector(".ProseMirror")).toBeTruthy();
+    expect(tauriMocks.stopStreaming).not.toHaveBeenCalled();
+    expect(tauriMocks.clearActiveTurnStage).not.toHaveBeenCalled();
   });
 
   it("restores the composer when pending action is resolved while viewing another conversation", async () => {
@@ -763,28 +673,6 @@ describe("ChatBottomArea", () => {
     render(<ChatBottomArea />);
 
     await user.click(await screen.findByRole("button", { name: "提交" }));
-
-    await waitFor(() =>
-      expect(tauriMocks.approvePermissionRequest).toHaveBeenCalledWith(
-        "tool-1",
-        null,
-        false,
-        "session",
-        "用户允许了这个权限申请（仅本次）。",
-      ),
-    );
-    expect(useStreamingStore.getState().pendingAsks.has("tool-1")).toBe(false);
-  });
-
-  it("submits permission choice with Enter", async () => {
-    useStreamingStore.getState().addPendingAsk(pendingAsk());
-
-    render(<ChatBottomArea />);
-
-    expect(
-      await screen.findByText(/需要你允许我用提升权限只读检查/),
-    ).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: "Enter", code: "Enter" });
 
     await waitFor(() =>
       expect(tauriMocks.approvePermissionRequest).toHaveBeenCalledWith(
@@ -877,28 +765,6 @@ describe("ChatBottomArea", () => {
     expect(useStreamingStore.getState().pendingAsks.has("tool-1")).toBe(false);
   });
 
-  it("rejects permission choice with Escape", async () => {
-    useStreamingStore.getState().addPendingAsk(pendingAsk());
-
-    render(<ChatBottomArea />);
-
-    expect(
-      await screen.findByText(/需要你允许我用提升权限只读检查/),
-    ).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
-
-    await waitFor(() =>
-      expect(tauriMocks.denyPermissionRequest).toHaveBeenCalledWith(
-        "tool-1",
-        "用户拒绝了这个权限申请",
-        false,
-        "session",
-      ),
-    );
-    expect(tauriMocks.cancelPermissionRequest).not.toHaveBeenCalled();
-    expect(useStreamingStore.getState().pendingAsks.has("tool-1")).toBe(false);
-  });
-
   it("localizes permission reject feedback sent back to the runtime", async () => {
     const user = userEvent.setup();
     useStreamingStore.getState().addPendingAsk(pendingAsk());
@@ -953,26 +819,6 @@ describe("ChatBottomArea", () => {
     expect(useInteractionStore.getState().pendingInteractions).toEqual([]);
   });
 
-  it("submits AskUserQuestion with Enter", async () => {
-    const user = userEvent.setup();
-    useInteractionStore.getState().addInteraction(pendingInteraction());
-
-    render(<ChatBottomArea />);
-
-    await user.click(await screen.findByRole("radio", { name: "Yes" }));
-    fireEvent.keyDown(document, { key: "Enter", code: "Enter" });
-
-    await waitFor(() =>
-      expect(tauriMocks.submitUserInteraction).toHaveBeenCalledWith("ask-1", {
-        answers: { "Need input?": "Yes" },
-        annotations: {
-          userChoiceSummary: "用户回答了补充问题：Need input? = Yes",
-        },
-      }),
-    );
-    expect(useInteractionStore.getState().pendingInteractions).toEqual([]);
-  });
-
   it("keeps AskUserQuestion pending when submit fails", async () => {
     const user = userEvent.setup();
     tauriMocks.submitUserInteraction.mockRejectedValueOnce(new Error("boom"));
@@ -996,23 +842,6 @@ describe("ChatBottomArea", () => {
     render(<ChatBottomArea />);
 
     await user.click(await screen.findByRole("button", { name: /忽略/ }));
-
-    await waitFor(() =>
-      expect(tauriMocks.cancelUserInteraction).toHaveBeenCalledWith(
-        "ask-1",
-        "用户忽略了这个补充问题。请基于已有信息继续；不要输出空标题、空书名号或空占位符，缺少关键名称时请使用通用名称。",
-      ),
-    );
-    expect(useInteractionStore.getState().pendingInteractions).toEqual([]);
-  });
-
-  it("cancels AskUserQuestion with Escape", async () => {
-    useInteractionStore.getState().addInteraction(pendingInteraction());
-
-    render(<ChatBottomArea />);
-
-    expect(await screen.findByText("Need input?")).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
 
     await waitFor(() =>
       expect(tauriMocks.cancelUserInteraction).toHaveBeenCalledWith(

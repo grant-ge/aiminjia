@@ -51,7 +51,7 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 1. 项目约束与当前真相源：`AGENTS.md`、`CLAUDE.md`、`docs/README.md`、architecture blueprint 和 decisions。
 2. 前端启动与事件入口：`src/main.tsx`、`src/App.tsx`、`useStreaming`、`usePendingEventListener`、`src/lib/tauri.ts`。
 3. 聊天状态与渲染语义：`useChat`、`chatStore`、`sessionStore`、`streamingStore`、`useTurnRenderModel`、`MessageList`。
-4. 数字员工派活到聊天：`HireWizard`、`EmployeeDrawer`、`triggerPrechecks`、`seedDispatchConversation`、`ChatPage`。
+4. 数字员工派活到聊天：`HireWizard`、`EmployeeTemplateDetailDialog`、`triggerPrechecks`、`seedDispatchConversation`、`ChatPage`。
 5. Tauri Transport 进入 Runtime：chat command、runtime host、`SessionRuntime`、`TauriEventAdapter` 和 command/event contract。
 6. Turn Loop 与工具执行：`RuntimeChatTurnDriver`、`ToolRoundDriver`、`QueryEngine`、`ToolDispatcher`。
 7. MCP 动态工具链：`McpServerManager`、`McpConnection`、`McpRuntimeTool`、`ToolRegistry`。

@@ -147,6 +147,25 @@ AskUserQuestion 卡片或 pending surface 的“其他”必须有意义：
 
 “其他”不是忙时 pending，也不是普通新聊天。
 
+#### 5.3.1 后续：AskUserQuestion option schema 需要表达补充输入
+
+2026-06-17 真实会话暴露了一个产品语义问题：`AskUserQuestion` 现在只有
+`label` / `description` 这类展示字段，无法表达“某个选项被选中后需要用户
+补充输入”。短期先在工具定义中明确要求模型不要把“其他 / Other / 请说明”
+这类自定义回答入口作为普通 option 传入；前端也不应继续扩展基于 label
+关键词的兜底判断。
+
+后续如果产品需要“选中某项后补充信息”，应系统扩展 `AskUserQuestion` 参数，例如：
+
+- option 支持 `requiresInput: true`。
+- option 支持 `inputLabel` / `inputPlaceholder`，例如“请输入手机号”“请说明测试目标”。
+- option 支持基本校验元数据，例如 phone / url / text / number 或 required。
+- 前端只在 option schema 声明需要输入时展示输入框；内置 custom row 是否存在也应由工具参数或统一默认策略决定。
+- IM 文本回复与 App 表单提交应落到同一套 answer shape，避免 App 有输入框、IM 只能传裸文本导致语义不一致。
+
+验收口径：模型不通过“其他（请说明）”这类 label 暗示输入框；UI 根据结构化
+字段决定是否渲染输入框，提交结果中能区分“选择了哪个选项”和“补充输入是什么”。
+
 ## 6. Permission 路由
 
 permission approval 也是 pending interaction，但它多了安全边界，不能把自然语言直接落盘成权限。

@@ -490,6 +490,57 @@ describe("PendingActionSurface", () => {
     );
   });
 
+  it("submits AskUserQuestion with Enter after all answers are selected", async () => {
+    const user = userEvent.setup();
+    const onSubmitInteraction = vi.fn().mockResolvedValue(undefined);
+
+    renderSurface(
+      {
+        kind: "user-question",
+        interaction: userQuestion({
+          payload: {
+            questions: [
+              {
+                header: "Target",
+                question: "测试哪个目标？",
+                options: [
+                  { label: "婴喜爱官网", description: "测试官网" },
+                  { label: "婴喜爱手机APP", description: "测试 APP" },
+                ],
+              },
+              {
+                header: "Scope",
+                question: "测试范围？",
+                options: [
+                  { label: "功能测试", description: "只测功能" },
+                  { label: "全面测试", description: "功能和 UI 都测" },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+      { onSubmitInteraction },
+    );
+
+    await user.click(screen.getByRole("radio", { name: "婴喜爱官网" }));
+    await user.click(screen.getByRole("radio", { name: "全面测试" }));
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(onSubmitInteraction).toHaveBeenCalledWith("ask-1", {
+        answers: {
+          "测试哪个目标？": "婴喜爱官网",
+          "测试范围？": "全面测试",
+        },
+        annotations: {
+          userChoiceSummary:
+            "用户回答了补充问题：测试哪个目标？ = 婴喜爱官网；测试范围？ = 全面测试",
+        },
+      }),
+    );
+  });
+
   it("advances to the next AskUserQuestion after selecting a single-choice option", async () => {
     const user = userEvent.setup();
 

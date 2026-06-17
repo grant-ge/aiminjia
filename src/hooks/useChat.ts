@@ -30,12 +30,17 @@ import {
   archiveConversation as tauriArchiveConversation,
   setConversationPinned as tauriSetConversationPinned,
   getActiveTurnStage,
+  clearActiveTurnStage,
+  pendingPermissionSnapshotForSession,
+  pendingInteractionSnapshotForSession,
   type ChatAttachmentPayload,
   type PermissionMode,
   type ReasoningMode,
   type SkillCommandPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
+import { useSidebarStatusStore } from '@/stores/sidebarStatusStore'
+import { useInteractionStore } from '@/stores/interactionStore'
 
 /** Maximum concurrent conversations allowed (must match backend). */
 const MAX_CONCURRENT_AGENTS = 99
@@ -50,6 +55,15 @@ function parseManualCompactCommand(text: string): string | undefined | null {
   if (!match) return undefined
   const instructions = match[1]?.trim()
   return instructions ? instructions : null
+}
+
+function isUserInteractionToolName(name: string): boolean {
+  const lower = name.trim().toLowerCase()
+  return (
+    lower === 'askuserquestion' ||
+    lower === 'ask_user_question' ||
+    lower === 'request_user_input'
+  )
 }
 
 /** File info passed from chat input UI to sendUserMessage. */
@@ -266,7 +280,107 @@ export function useChat() {
     // the next 2s heartbeat.  Returns null when no turn is active.
     void getActiveTurnStage(id)
       .then(async (snapshot) => {
+        const upsertExecutingTool = (
+          toolCallId: string,
+          toolName: string,
+          input: unknown,
+        ) => {
+          const current = useChatStore.getState()
+          const exists = current.streamStates[id]?.toolExecutions.some(
+            (tool) => tool.toolId === toolCallId,
+          )
+          if (exists) {
+            current.updateConversationToolExecution(id, toolCallId, {
+              toolName,
+              status: 'executing',
+              input,
+            })
+          } else {
+            current.addConversationToolExecution(id, {
+              toolId: toolCallId,
+              toolName,
+              status: 'executing',
+              input,
+              startedAt: Date.now(),
+            })
+          }
+        }
+
+        const hydrateLivePendingHumanAction = async (): Promise<boolean> => {
+          const [asks, interactions] = await Promise.all([
+            pendingPermissionSnapshotForSession(id),
+            pendingInteractionSnapshotForSession(id),
+          ])
+          if (switchVersionRef.current !== loadVersion) return false
+          const latest = useChatStore.getState()
+
+          if (asks[0]) {
+            asks.forEach((ask) => latest.addPendingAsk(ask))
+            void useSidebarStatusStore.getState().setStatus(id, {
+              kind: 'permission-review',
+              runId: asks[0].runId,
+              toolCallId: asks[0].toolCallId,
+            })
+            latest.setConversationTurnStage(
+              id,
+              {
+                kind: 'waitingPermission',
+                toolName: asks[0].toolName,
+                toolCallId: asks[0].toolCallId,
+              },
+              Date.now(),
+            )
+            upsertExecutingTool(asks[0].toolCallId, asks[0].toolName, {
+              message: asks[0].message,
+              suggestions: asks[0].suggestions,
+            })
+            latest.addBusyConversation(id)
+            recordDiagnostic({
+              event: 'turn.stage.hydrated_from_pending_snapshot',
+              conversationId: id,
+              payload: { kind: 'waitingPermission' },
+            })
+            return true
+          }
+
+          if (interactions[0]) {
+            interactions.forEach((interaction) =>
+              useInteractionStore.getState().addInteraction(interaction),
+            )
+            void useSidebarStatusStore.getState().setStatus(id, {
+              kind: 'waiting-reply',
+              runId: interactions[0].runId,
+              toolCallId: interactions[0].toolCallId,
+              interactionId: interactions[0].interactionId,
+            })
+            latest.setConversationTurnStage(
+              id,
+              {
+                kind: 'waitingInteraction',
+                interactionKind: interactions[0].kind,
+                interactionId: interactions[0].interactionId,
+              },
+              Date.now(),
+            )
+            upsertExecutingTool(
+              interactions[0].toolCallId,
+              interactions[0].toolName,
+              interactions[0].payload,
+            )
+            latest.addBusyConversation(id)
+            recordDiagnostic({
+              event: 'turn.stage.hydrated_from_pending_snapshot',
+              conversationId: id,
+              payload: { kind: 'waitingInteraction' },
+            })
+            return true
+          }
+
+          return false
+        }
+
         if (!snapshot) {
+          if (await hydrateLivePendingHumanAction()) return
           if (switchVersionRef.current !== loadVersion) return
           const store = useChatStore.getState()
           store.clearConversationTurnStage(id)
@@ -279,6 +393,125 @@ export function useChat() {
         }
         if (switchVersionRef.current !== loadVersion) return
         const store = useChatStore.getState()
+
+        const clearUnrecoverableStage = async () => {
+          try {
+            await clearActiveTurnStage(id)
+          } catch (err) {
+            console.warn('[useChat] clearActiveTurnStage failed:', err)
+          }
+          if (switchVersionRef.current !== loadVersion) return
+          const latest = useChatStore.getState()
+          latest.clearConversationStreamState(id)
+          latest.removeBusyConversation(id)
+          void useSidebarStatusStore.getState().clearStatus(id)
+          recordDiagnostic({
+            event: 'turn.stage.unrecoverable_cleared',
+            conversationId: id,
+            payload: { kind: snapshot.stage.kind },
+          })
+        }
+
+        if (snapshot.stage.kind === 'waitingPermission') {
+          const asks = await pendingPermissionSnapshotForSession(id)
+          if (switchVersionRef.current !== loadVersion) return
+          if (asks.length === 0) {
+            await clearUnrecoverableStage()
+            return
+          }
+          asks.forEach((ask) => store.addPendingAsk(ask))
+          void useSidebarStatusStore.getState().setStatus(id, {
+            kind: 'permission-review',
+            runId: asks[0].runId,
+            toolCallId: asks[0].toolCallId,
+          })
+          upsertExecutingTool(asks[0].toolCallId, asks[0].toolName, {
+            message: asks[0].message,
+            suggestions: asks[0].suggestions,
+          })
+        } else if (snapshot.stage.kind === 'waitingInteraction') {
+          const interactions = await pendingInteractionSnapshotForSession(id)
+          if (switchVersionRef.current !== loadVersion) return
+          if (interactions.length === 0) {
+            await clearUnrecoverableStage()
+            return
+          }
+          interactions.forEach((interaction) =>
+            useInteractionStore.getState().addInteraction(interaction),
+          )
+          void useSidebarStatusStore.getState().setStatus(id, {
+            kind: 'waiting-reply',
+            runId: interactions[0].runId,
+            toolCallId: interactions[0].toolCallId,
+            interactionId: interactions[0].interactionId,
+          })
+          upsertExecutingTool(
+            interactions[0].toolCallId,
+            interactions[0].toolName,
+            interactions[0].payload,
+          )
+        } else if (snapshot.stage.kind === 'tools') {
+          const interactionTool = snapshot.stage.running.find((tool) =>
+            isUserInteractionToolName(tool.toolName),
+          )
+          if (interactionTool) {
+            const interactions = await pendingInteractionSnapshotForSession(id)
+            if (switchVersionRef.current !== loadVersion) return
+            if (interactions.length > 0) {
+              interactions.forEach((interaction) =>
+                useInteractionStore.getState().addInteraction(interaction),
+              )
+              const matchingInteraction =
+                interactions.find(
+                  (interaction) =>
+                    interaction.toolCallId === interactionTool.toolCallId,
+                ) ?? interactions[0]
+              void useSidebarStatusStore.getState().setStatus(id, {
+                kind: 'waiting-reply',
+                runId: matchingInteraction.runId,
+                toolCallId: matchingInteraction.toolCallId,
+                interactionId: matchingInteraction.interactionId,
+              })
+              snapshot.stage.running.forEach((tool) =>
+                upsertExecutingTool(
+                  tool.toolCallId,
+                  tool.toolName,
+                  tool.toolCallId === matchingInteraction.toolCallId
+                    ? matchingInteraction.payload
+                    : undefined,
+                ),
+              )
+            } else {
+              const busyIds = await syncBusyConversations()
+              if (switchVersionRef.current !== loadVersion) return
+              if (!busyIds.has(id)) {
+                await clearUnrecoverableStage()
+                return
+              }
+              snapshot.stage.running.forEach((tool) =>
+                upsertExecutingTool(tool.toolCallId, tool.toolName, undefined),
+              )
+            }
+          } else {
+            const busyIds = await syncBusyConversations()
+            if (switchVersionRef.current !== loadVersion) return
+            if (!busyIds.has(id)) {
+              await clearUnrecoverableStage()
+              return
+            }
+            snapshot.stage.running.forEach((tool) =>
+              upsertExecutingTool(tool.toolCallId, tool.toolName, undefined),
+            )
+          }
+        } else {
+          const busyIds = await syncBusyConversations()
+          if (switchVersionRef.current !== loadVersion) return
+          if (!busyIds.has(id)) {
+            await clearUnrecoverableStage()
+            return
+          }
+        }
+
         store.setConversationTurnStage(id, snapshot.stage, snapshot.stageStartedAtMs)
         store.addBusyConversation(id)
         recordDiagnostic({

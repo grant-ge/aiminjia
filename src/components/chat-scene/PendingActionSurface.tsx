@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ChevronLeft, ChevronRight, CornerDownLeft, Info } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -137,25 +144,6 @@ function fitTextareaToContent(textarea: HTMLTextAreaElement | null) {
   textarea.style.height = `${Math.max(textarea.scrollHeight, minHeight)}px`;
 }
 
-function isPlainShortcut(event: KeyboardEvent) {
-  return (
-    !event.defaultPrevented &&
-    !event.isComposing &&
-    !event.altKey &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    !event.shiftKey
-  );
-}
-
-function isTextEntryTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target instanceof HTMLTextAreaElement) return true;
-  if (!(target instanceof HTMLInputElement)) return false;
-  return !["button", "checkbox", "radio", "submit"].includes(target.type);
-}
-
 function SurfaceShell({
   title,
   children,
@@ -219,26 +207,6 @@ function PermissionPanel({
       onAllowPermission(action.ask.toolCallId, permissionDecision(destination)),
     );
   }
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!isPlainShortcut(event)) return;
-      if (event.key === "Enter") {
-        if (isTextEntryTarget(event.target)) return;
-        event.preventDefault();
-        void submitPermissionChoice();
-        return;
-      }
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      void runOnce(() =>
-        onDenyPermission(action.ask.toolCallId, denyDecision()),
-      );
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  });
 
   return (
     <section className="rounded-lg border border-border bg-card p-3 shadow-[var(--shadow-md)]">
@@ -315,26 +283,30 @@ function PermissionGroupPanel({
   action: Extract<PendingAction, { kind: "permission-group" }>;
 }) {
   const { t } = useTranslation();
-  const representative = action.asks[0];
-  const destinations = useMemo(() => {
-    if (!representative) return ["session"] satisfies PermissionDestination[];
-    return permissionDestinations({
-      kind: "permission",
-      ask: representative,
-    });
-  }, [representative]);
+  const representative = action.asks[0] ?? null;
+  const representativeAction = useMemo(
+    () =>
+      representative
+        ? {
+            kind: "permission" as const,
+            ask: representative,
+          }
+        : null,
+    [representative],
+  );
+  const destinations = useMemo<PermissionDestination[]>(
+    () =>
+      representativeAction
+        ? permissionDestinations(representativeAction)
+        : ["session"],
+    [representativeAction],
+  );
   const rememberDestination = useMemo(
     () => preferredRememberDestination(destinations),
     [destinations],
   );
-  const defaultDestination = representative
-    ? initialDestination(
-        {
-          kind: "permission",
-          ask: representative,
-        },
-        destinations,
-      )
+  const defaultDestination = representativeAction
+    ? initialDestination(representativeAction, destinations)
     : "session";
   const [choice, setChoice] = useState<PermissionChoice>(() =>
     defaultDestination === "session" ? "allow-once" : "allow-remember",
@@ -349,6 +321,8 @@ function PermissionGroupPanel({
     toolName: ask.toolName,
     target: extractPermissionTarget(ask.message),
   }));
+
+  if (!representative) return null;
 
   async function runOnce(task: () => Promise<void> | void) {
     if (submittingRef.current) return;
@@ -383,26 +357,6 @@ function PermissionGroupPanel({
       }
     });
   }
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!isPlainShortcut(event)) return;
-      if (event.key === "Enter") {
-        if (isTextEntryTarget(event.target)) return;
-        event.preventDefault();
-        void submitPermissionChoice();
-        return;
-      }
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      void denyPermissionChoice();
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  });
-
-  if (!representative) return null;
 
   return (
     <section className="rounded-lg border border-border bg-card p-3 shadow-[var(--shadow-md)]">
@@ -560,22 +514,6 @@ function valuesWithoutCustom(question: Question, answer: string | undefined) {
   return selectedValues(answer).filter((value) => labels.has(value));
 }
 
-function answerForQuestionState(
-  question: Question,
-  answers: Record<string, string>,
-  customSelected: Record<string, boolean>,
-  customAnswers: Record<string, string>,
-) {
-  const key = questionKey(question);
-  if (question.options.length === 0) return (answers[key] ?? "").trim();
-  if (!customSelected[key]) return (answers[key] ?? "").trim();
-  const customAnswer = (customAnswers[key] ?? "").trim();
-  if (!question.multiSelect) return customAnswer;
-  const values = valuesWithoutCustom(question, answers[key]);
-  if (customAnswer) values.push(customAnswer);
-  return values.join(", ").trim();
-}
-
 function isCustomOptionLabel(label: string, customLabel: string) {
   const normalized = label.trim().toLowerCase();
   const normalizedCustom = customLabel.trim().toLowerCase();
@@ -584,6 +522,15 @@ function isCustomOptionLabel(label: string, customLabel: string) {
     normalized === "other" ||
     normalized === "其它"
   );
+}
+
+function shouldIgnoreInteractionSubmitShortcut(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.closest("button,[role='button'],a[href]")) return true;
+  if (target instanceof HTMLInputElement) {
+    return target.type !== "radio" && target.type !== "checkbox";
+  }
+  return false;
 }
 
 function UserQuestionPanel({
@@ -619,14 +566,19 @@ function UserQuestionPanel({
       )
     : [];
 
-  function answerForQuestion(question: Question) {
-    return answerForQuestionState(
-      question,
-      answers,
-      customSelected,
-      customAnswers,
-    );
-  }
+  const answerForQuestion = useCallback(
+    (question: Question) => {
+      const key = questionKey(question);
+      if (question.options.length === 0) return (answers[key] ?? "").trim();
+      if (!customSelected[key]) return (answers[key] ?? "").trim();
+      const customAnswer = (customAnswers[key] ?? "").trim();
+      if (!question.multiSelect) return customAnswer;
+      const values = valuesWithoutCustom(question, answers[key]);
+      if (customAnswer) values.push(customAnswer);
+      return values.join(", ").trim();
+    },
+    [answers, customAnswers, customSelected],
+  );
 
   function resolvedAnswers() {
     return Object.fromEntries(
@@ -684,18 +636,10 @@ function UserQuestionPanel({
     const validationQuestion = questions.find(
       (question) => questionKey(question) === validationKey,
     );
-    if (
-      validationQuestion &&
-      answerForQuestionState(
-        validationQuestion,
-        answers,
-        customSelected,
-        customAnswers,
-      )
-    ) {
+    if (validationQuestion && answerForQuestion(validationQuestion)) {
       setValidationKey(null);
     }
-  }, [answers, customAnswers, customSelected, questions, validationKey]);
+  }, [answerForQuestion, questions, validationKey]);
 
   useEffect(() => {
     if (!activeCustomSelected) return;
@@ -704,16 +648,24 @@ function UserQuestionPanel({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!isPlainShortcut(event)) return;
-      if (event.key === "Enter") {
-        if (isTextEntryTarget(event.target)) return;
+      if (event.key === "Escape") {
         event.preventDefault();
-        void submitInteractionChoice();
+        void cancelInteraction();
         return;
       }
-      if (event.key !== "Escape") return;
+      if (
+        event.key !== "Enter" ||
+        event.shiftKey ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.isComposing ||
+        shouldIgnoreInteractionSubmitShortcut(event.target)
+      ) {
+        return;
+      }
       event.preventDefault();
-      void cancelInteraction();
+      void submitInteractionChoice();
     }
 
     document.addEventListener("keydown", handleKeyDown);
@@ -1196,11 +1148,11 @@ function ActiveActionPanel(props: Props & { action: PendingAction }) {
 
 export function PendingActionSurface(props: Props) {
   const { t } = useTranslation();
-  const actions = Array.isArray(props.action) ? props.action : [props.action];
-  const [selectedKey, setSelectedKey] = useState(() => actionKey(actions[0]));
-  const activeKey = actions.some((action) => actionKey(action) === selectedKey)
-    ? selectedKey
-    : actionKey(actions[0]);
+  const actions = useMemo(
+    () => (Array.isArray(props.action) ? props.action : [props.action]),
+    [props.action],
+  );
+  const [activeKey, setActiveKey] = useState(() => actionKey(actions[0]));
   const activeAction =
     actions.find((action) => actionKey(action) === activeKey) ?? actions[0];
   const activeActionKey = actionKey(activeAction);
@@ -1231,7 +1183,7 @@ export function PendingActionSurface(props: Props) {
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
               )}
-              onClick={() => setSelectedKey(key)}
+              onClick={() => setActiveKey(key)}
             >
               {actionTabLabel(action, actions, index, t)}
             </Button>

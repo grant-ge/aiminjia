@@ -111,7 +111,7 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 - Trigger: 技能中心改造讨论发现“市场/内置/已安装”不是纯前端状态，而是牵动 `skillsConfig.json`、登录用户作用域、marketplace 安装、官方技能更新、runtime catalog 注入、`Skill` 工具执行和 AEIT CLI 的跨层契约。
 - Engineering question: 修改技能启用/关闭、市场添加、内置默认安装或官方技能更新时，哪些前端入口、Tauri IPC、Rust registry、上下文注入、runtime tool 和意图测试必须同步检查。
 - Current boundary: candidate only。本轮先补设计计划和意图测试；不能在实现前把具体源码行为写成 validated wiki fact。
-- Evidence from userwiki cross-check: `SkillCenterPage`、`SkillDetailPage`、`skillStore`、`App.tsx`、`SkillPopover`、`ChatBottomArea`、`HomeTaskComposerCard`、`WelcomeScreen`、`RichComposer`、`CurrentUserStorage`、`UserScopedPaths`、`skill_management.rs`、`sync_command.rs`、`global_sync.rs`、`get_skill_catalog()`、`LoadSkillRuntimeTool`。
+- Evidence from userwiki cross-check: `SkillCenterPage`、`SkillDetailPage`、`skillStore`、`App.tsx`、`SkillPopover`、`ChatBottomArea`、`HomeTaskComposerCard`、`RichComposer`、`CurrentUserStorage`、`UserScopedPaths`、`skill_management.rs`、`sync_command.rs`、`global_sync.rs`、`get_skill_catalog()`、`LoadSkillRuntimeTool`。
 - Writeback scope for docs/test worker: 已补 `docs/test-intents/spec/tasks/技能/rules.md` 的启用状态意图覆盖，新增重新开启恢复与账号隔离；已补 `docs/test-intents/cli-gap.md` 的技能中心原子命令缺口。仍不得把意图规格当成产品已实现证据。
 - Enablement state boundary to preserve in future RepoWiki/enhancement: 用户开关状态应存为当前登录账号 scope 下的 `~/.renlijia/users/{scope}/skillsConfig.json`，采用 `disabledSkillIds` 默认开启模型；不得新增或依赖 `~/.renlijia/global/skillsConfig.json`。
 - Runtime filtering boundary to preserve in future RepoWiki/enhancement: 管理视图需要全量已安装技能和 `enabled` 字段；聊天输入框技能选择、slash 候选、详情页直接使用入口、模型 skill catalog 与 `Skill` runtime tool 必须消费 enabled 视图，不能只靠前端隐藏。

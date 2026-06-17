@@ -12,6 +12,11 @@ const tauriMock = vi.hoisted(() => ({
   getConversations: vi.fn(),
   isAgentBusy: vi.fn(),
   getActiveTurnStage: vi.fn(),
+  clearActiveTurnStage: vi.fn(),
+  pendingPermissionSnapshotForSession: vi.fn(),
+  pendingInteractionSnapshotForSession: vi.fn(),
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
   renameConversation: vi.fn(),
   archiveConversation: vi.fn(),
 }))
@@ -21,6 +26,8 @@ vi.mock('@/i18n', () => ({ default: { t: (key: string) => key } }))
 
 import { useChat } from './useChat'
 import { useChatStore } from '@/stores/chatStore'
+import { useSidebarStatusStore } from '@/stores/sidebarStatusStore'
+import { DEFAULT_SETTINGS } from '@/types/settings'
 
 describe('useChat sendUserMessage', () => {
   beforeEach(() => {
@@ -40,6 +47,12 @@ describe('useChat sendUserMessage', () => {
     tauriMock.getTasks.mockResolvedValue([])
     tauriMock.isAgentBusy.mockResolvedValue([])
     tauriMock.getActiveTurnStage.mockResolvedValue(null)
+    tauriMock.clearActiveTurnStage.mockResolvedValue(undefined)
+    tauriMock.pendingPermissionSnapshotForSession.mockResolvedValue([])
+    tauriMock.pendingInteractionSnapshotForSession.mockResolvedValue([])
+    tauriMock.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS })
+    tauriMock.updateSettings.mockResolvedValue(undefined)
+    useSidebarStatusStore.setState({ statuses: {} })
   })
 
   it('sends slash-prefixed text verbatim without skill metadata', async () => {
@@ -181,6 +194,260 @@ describe('useChat sendUserMessage', () => {
     await waitFor(() =>
       expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(false),
     )
-    expect(useChatStore.getState().streamStates['conv-test']?.turnStage).toBeNull()
+    expect(useChatStore.getState().streamStates['conv-test']?.turnStage ?? null).toBeNull()
+  })
+
+  it('does not hydrate a persisted permission stage when runtime has no recoverable ask', async () => {
+    useSidebarStatusStore.setState({
+      statuses: {
+        'conv-test': {
+          kind: 'permission-review',
+          updatedAt: 1780000000000,
+          toolCallId: 'tool-1',
+        },
+      },
+    })
+    tauriMock.getActiveTurnStage.mockResolvedValueOnce({
+      stage: {
+        kind: 'waitingPermission',
+        toolName: 'Bash',
+        toolCallId: 'tool-1',
+      },
+      stageStartedAtMs: 1780000000000,
+      lastHeartbeatAtMs: 1780000000000,
+    })
+    tauriMock.pendingPermissionSnapshotForSession.mockResolvedValueOnce([])
+
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.switchConversation('conv-test')
+    })
+
+    await waitFor(() =>
+      expect(tauriMock.clearActiveTurnStage).toHaveBeenCalledWith('conv-test'),
+    )
+    expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(false)
+    expect(useChatStore.getState().streamStates['conv-test']?.turnStage ?? null).toBeNull()
+    expect(useSidebarStatusStore.getState().statuses['conv-test']).toBeUndefined()
+    expect(tauriMock.pendingPermissionSnapshotForSession).toHaveBeenCalledWith('conv-test')
+  })
+
+  it('does not hydrate a persisted AskUserQuestion stage when runtime has no recoverable interaction', async () => {
+    useSidebarStatusStore.setState({
+      statuses: {
+        'conv-test': {
+          kind: 'waiting-reply',
+          updatedAt: 1780000000000,
+          interactionId: 'ask-1',
+        },
+      },
+    })
+    tauriMock.getActiveTurnStage.mockResolvedValueOnce({
+      stage: {
+        kind: 'waitingInteraction',
+        interactionKind: 'askUserQuestion',
+        interactionId: 'ask-1',
+      },
+      stageStartedAtMs: 1780000000000,
+      lastHeartbeatAtMs: 1780000000000,
+    })
+    tauriMock.pendingInteractionSnapshotForSession.mockResolvedValueOnce([])
+
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.switchConversation('conv-test')
+    })
+
+    await waitFor(() =>
+      expect(tauriMock.clearActiveTurnStage).toHaveBeenCalledWith('conv-test'),
+    )
+    expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(false)
+    expect(useChatStore.getState().streamStates['conv-test']?.turnStage ?? null).toBeNull()
+    expect(useSidebarStatusStore.getState().statuses['conv-test']).toBeUndefined()
+    expect(tauriMock.pendingInteractionSnapshotForSession).toHaveBeenCalledWith('conv-test')
+  })
+
+  it('restores AskUserQuestion tool loading when a persisted interaction stage is recoverable', async () => {
+    tauriMock.getActiveTurnStage.mockResolvedValueOnce({
+      stage: {
+        kind: 'waitingInteraction',
+        interactionKind: 'askUserQuestion',
+        interactionId: 'ask-1',
+      },
+      stageStartedAtMs: 1780000000000,
+      lastHeartbeatAtMs: 1780000000000,
+    })
+    tauriMock.pendingInteractionSnapshotForSession.mockResolvedValueOnce([
+      {
+        conversationId: 'conv-test',
+        runId: 'run-1',
+        interactionId: 'ask-1',
+        toolCallId: 'tool-1',
+        toolName: 'AskUserQuestion',
+        kind: 'askUserQuestion',
+        payload: {
+          questions: [
+            {
+              header: '范围',
+              question: '测哪个？',
+              options: [{ label: '官网', description: '测试官网' }],
+            },
+          ],
+        },
+      },
+    ])
+
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.switchConversation('conv-test')
+    })
+
+    await waitFor(() =>
+      expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(true),
+    )
+    expect(useChatStore.getState().streamStates['conv-test']?.toolExecutions).toMatchObject([
+      {
+        toolId: 'tool-1',
+        toolName: 'AskUserQuestion',
+        status: 'executing',
+      },
+    ])
+  })
+
+  it('restores AskUserQuestion tool loading from a persisted tools stage', async () => {
+    tauriMock.getActiveTurnStage.mockResolvedValueOnce({
+      stage: {
+        kind: 'tools',
+        iteration: 0,
+        running: [
+          {
+            toolName: 'AskUserQuestion',
+            toolCallId: 'tool-1',
+            startedAtMs: 1780000000000,
+          },
+        ],
+        completedInBatch: 0,
+      },
+      stageStartedAtMs: 1780000000000,
+      lastHeartbeatAtMs: 1780000000000,
+    })
+    tauriMock.pendingInteractionSnapshotForSession.mockResolvedValueOnce([
+      {
+        conversationId: 'conv-test',
+        runId: 'run-1',
+        interactionId: 'ask-1',
+        toolCallId: 'tool-1',
+        toolName: 'AskUserQuestion',
+        kind: 'askUserQuestion',
+        payload: {
+          questions: [
+            {
+              header: '范围',
+              question: '测哪个？',
+              options: [{ label: '官网', description: '测试官网' }],
+            },
+          ],
+        },
+      },
+    ])
+
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.switchConversation('conv-test')
+    })
+
+    await waitFor(() =>
+      expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(true),
+    )
+    expect(useChatStore.getState().streamStates['conv-test']?.toolExecutions).toMatchObject([
+      {
+        toolId: 'tool-1',
+        toolName: 'AskUserQuestion',
+        status: 'executing',
+      },
+    ])
+    expect(useSidebarStatusStore.getState().statuses['conv-test']).toMatchObject({
+      kind: 'waiting-reply',
+      interactionId: 'ask-1',
+    })
+  })
+
+  it('keeps AskUserQuestion loading after refresh when the turn stage is missing but interaction is recoverable', async () => {
+    tauriMock.getActiveTurnStage.mockResolvedValueOnce(null)
+    tauriMock.pendingInteractionSnapshotForSession.mockResolvedValueOnce([
+      {
+        conversationId: 'conv-test',
+        runId: 'run-1',
+        interactionId: 'ask-1',
+        toolCallId: 'tool-1',
+        toolName: 'AskUserQuestion',
+        kind: 'askUserQuestion',
+        payload: {
+          questions: [
+            {
+              header: '范围',
+              question: '测哪个？',
+              options: [{ label: '官网', description: '测试官网' }],
+            },
+          ],
+        },
+      },
+    ])
+
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.switchConversation('conv-test')
+    })
+
+    await waitFor(() =>
+      expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(true),
+    )
+    expect(useChatStore.getState().streamStates['conv-test']?.turnStage).toEqual({
+      kind: 'waitingInteraction',
+      interactionKind: 'askUserQuestion',
+      interactionId: 'ask-1',
+    })
+    expect(useChatStore.getState().streamStates['conv-test']?.toolExecutions).toMatchObject([
+      {
+        toolId: 'tool-1',
+        toolName: 'AskUserQuestion',
+        status: 'executing',
+      },
+    ])
+    expect(useSidebarStatusStore.getState().statuses['conv-test']).toMatchObject({
+      kind: 'waiting-reply',
+      interactionId: 'ask-1',
+    })
+  })
+
+  it('does not hydrate a persisted non-human stage when backend is idle', async () => {
+    tauriMock.getActiveTurnStage.mockResolvedValueOnce({
+      stage: {
+        kind: 'tools',
+        iteration: 0,
+        running: [{ toolName: 'Bash', toolCallId: 'tool-1' }],
+        completedCount: 0,
+      },
+      stageStartedAtMs: 1780000000000,
+      lastHeartbeatAtMs: 1780000000000,
+    })
+    tauriMock.isAgentBusy.mockResolvedValueOnce([])
+
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.switchConversation('conv-test')
+    })
+
+    await waitFor(() =>
+      expect(tauriMock.clearActiveTurnStage).toHaveBeenCalledWith('conv-test'),
+    )
+    expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(false)
+    expect(useChatStore.getState().streamStates['conv-test']?.turnStage ?? null).toBeNull()
   })
 })

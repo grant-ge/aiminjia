@@ -98,6 +98,7 @@ impl RuntimeRunRegistry {
                         run.run_id.as_str(),
                         run_id.as_str()
                     );
+                    let _ = run.cancel.send_replace(true);
                     active_runs.remove(session_id);
                 }
             }
@@ -349,5 +350,27 @@ mod tests {
         assert!(registry.is_session_busy("sess"));
         assert!(!registry.is_session_suspended_for_human("sess"));
         assert_eq!(registry.run_id_for_session("sess").unwrap(), run_id);
+    }
+
+    #[test]
+    fn reserve_replacing_suspended_run_cancels_previous_receiver() {
+        let registry = RuntimeRunRegistry::new();
+
+        registry.reserve("sess", RunId::new("run-old")).unwrap();
+        let cancel_rx = registry
+            .attach_stream("sess", "task-old".to_string())
+            .expect("stream receiver should attach");
+        registry.suspend_for_human("sess", "interaction-1").unwrap();
+
+        registry.reserve("sess", RunId::new("run-new")).unwrap();
+
+        assert!(
+            *cancel_rx.borrow(),
+            "old suspended run should be cancelled before a replacement run starts"
+        );
+        assert_eq!(
+            registry.run_id_for_session("sess").unwrap().as_str(),
+            "run-new"
+        );
     }
 }
