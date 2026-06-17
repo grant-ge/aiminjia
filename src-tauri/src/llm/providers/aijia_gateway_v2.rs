@@ -701,7 +701,7 @@ fn resolve_v2_model_plan(request: &LlmRequest, model_type: &str, use_tools: bool
     };
     let requires_opaque_replay = request_requires_opaque_replay(request);
     let has_image_input = request_has_image_input(request);
-    let tools_enabled = use_tools && !is_reasoner && !request.tools.is_empty();
+    let tools_enabled = use_tools && !request.tools.is_empty();
     let reasoning = v2_reasoning_level(
         request.thinking_config.as_ref(),
         is_reasoner,
@@ -1312,7 +1312,7 @@ fn extract_stop_reason(chunk: &str) -> Option<StopReason> {
         .or_else(|| data.get("stopReason"))?
         .as_str()?;
     Some(match reason {
-        "tool_use" => StopReason::ToolUse,
+        "toolUse" | "tool_use" => StopReason::ToolUse,
         "max_tokens" => StopReason::MaxTokens,
         "stop_sequence" => StopReason::StopSequence,
         "aborted" => StopReason::Aborted,
@@ -1588,7 +1588,7 @@ mod tests {
     }
 
     #[test]
-    fn build_request_uses_reasoner_route_without_tools() {
+    fn build_request_uses_reasoner_route_with_tools_when_available() {
         let req = LlmRequest {
             messages: vec![ChatMessage::text("user", "think")],
             tools: vec![crate::llm::streaming::ToolDefinition {
@@ -1605,10 +1605,11 @@ mod tests {
         assert_eq!(canonical.model_policy.logical_model, "default-reasoner");
         assert_eq!(
             canonical.model_policy.allowed_capabilities,
-            vec!["text", "reasoning"]
+            vec!["text", "tool_calling", "reasoning"]
         );
         assert_eq!(canonical.model_policy.reasoning.as_deref(), Some("high"));
-        assert!(canonical.tools.is_empty());
+        assert_eq!(canonical.tools.len(), 1);
+        assert_eq!(canonical.tools[0].name, "lookup");
     }
 
     #[test]
@@ -1821,6 +1822,22 @@ mod tests {
                 assert_eq!(stop_reason, StopReason::Aborted);
                 assert_eq!(usage.input_tokens, 1);
                 assert_eq!(usage.output_tokens, 2);
+            }
+            other => panic!("expected done event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_response_completed_tool_use_stop_reason_from_gateway() {
+        let event = chunk_to_stream_event(
+            "event: response.completed\ndata: {\"stop_reason\":\"toolUse\",\"usage\":{\"input\":3,\"output\":5,\"cache_read\":0,\"cache_write\":0}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Done { stop_reason, usage } => {
+                assert_eq!(stop_reason, StopReason::ToolUse);
+                assert_eq!(usage.input_tokens, 3);
+                assert_eq!(usage.output_tokens, 5);
             }
             other => panic!("expected done event, got {other:?}"),
         }

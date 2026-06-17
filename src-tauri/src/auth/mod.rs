@@ -770,10 +770,24 @@ impl AuthManager {
         &self,
         page: u32,
         size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
     ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
         let session_key = self.get_session_key().await?;
         self.client
-            .get_billing_usage_records(&session_key, page, size)
+            .get_billing_usage_records(&session_key, page, size, query)
+            .await
+    }
+
+    /// Fetch a page of enterprise current-user usage records.
+    pub async fn get_enterprise_usage_records(
+        &self,
+        page: u32,
+        size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        let session_key = self.get_session_key().await?;
+        self.client
+            .get_enterprise_usage_records(&session_key, page, size, query)
             .await
     }
 

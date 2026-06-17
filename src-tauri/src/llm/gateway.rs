@@ -680,6 +680,7 @@ impl LlmGateway {
                 }
             }
         }
+        force_cloud_route_to_v2(&mut route);
 
         log::info!(
             "{}",

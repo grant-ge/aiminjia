@@ -22,7 +22,11 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useSkillStore } from "@/stores/skillStore";
 import { useStreamingStore } from "@/stores/streamingStore";
 import { useInteractionStore } from "@/stores/interactionStore";
-import { DRAFT_PERMISSION_SESSION_ID, useUiStore } from "@/stores/uiStore";
+import {
+  DRAFT_PERMISSION_SESSION_ID,
+  DRAFT_REASONING_SESSION_ID,
+  useUiStore,
+} from "@/stores/uiStore";
 import {
   approvePermissionRequest,
   cancelPermissionRequest,
@@ -35,6 +39,7 @@ import {
   stopStreaming,
   submitUserInteraction,
   type PermissionMode,
+  type ReasoningMode,
 } from "@/lib/tauri";
 import { localizeSkill, localizedSkillName } from "@/lib/skillLocalization";
 import { PendingChips } from "@/features/chat/PendingChips";
@@ -85,6 +90,8 @@ export function ChatBottomArea({
   const defaultPermissionMode = useSettingsStore((s) => s.defaultPermissionMode ?? "default");
   const permissionModesBySession = useUiStore((s) => s.permissionModesBySession);
   const setPermissionModeForSession = useUiStore((s) => s.setPermissionModeForSession);
+  const reasoningModesBySession = useUiStore((s) => s.reasoningModesBySession);
+  const setReasoningModeForSession = useUiStore((s) => s.setReasoningModeForSession);
   const pendingAsks = useStreamingStore((s) => s.pendingAsks);
   const pendingTurnStage = useStreamingStore((s) =>
     pendingSessionId
@@ -102,6 +109,8 @@ export function ChatBottomArea({
   });
   const permissionModeKey = pendingSessionId ?? DRAFT_PERMISSION_SESSION_ID;
   const permissionMode = permissionModesBySession[permissionModeKey] ?? defaultPermissionMode;
+  const reasoningModeKey = pendingSessionId ?? DRAFT_REASONING_SESSION_ID;
+  const reasoningMode = reasoningModesBySession[reasoningModeKey] ?? "auto";
   // Snapshot of the installed skills as composer-friendly tokens.  The list
   // drives both the slash-command input rule inside the editor and the chip
   // rendered for any inline skill token already in the document.
@@ -198,6 +207,7 @@ export function ChatBottomArea({
           fileInfos.length > 0 ? fileInfos : undefined,
           skillForThisTurn,
           permissionMode,
+          reasoningMode,
         );
       } catch (err) {
         console.error("[ChatBottomArea] sendUserMessage failed:", err);
@@ -210,12 +220,17 @@ export function ChatBottomArea({
       messageCount,
       i18n.language,
       permissionMode,
+      reasoningMode,
     ],
   );
 
   const handlePermissionModeChange = useCallback((mode: PermissionMode) => {
     setPermissionModeForSession(permissionModeKey, mode);
   }, [permissionModeKey, setPermissionModeForSession]);
+
+  const handleReasoningModeChange = useCallback((mode: ReasoningMode) => {
+    setReasoningModeForSession(reasoningModeKey, mode);
+  }, [reasoningModeKey, setReasoningModeForSession]);
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments();
@@ -473,6 +488,8 @@ export function ChatBottomArea({
                 skillTokens={skillTokens}
                 permissionMode={permissionMode}
                 onPermissionModeChange={handlePermissionModeChange}
+                reasoningMode={reasoningMode}
+                onReasoningModeChange={handleReasoningModeChange}
                 onOpenAttachment={
                   isPickingAttachments
                     ? undefined

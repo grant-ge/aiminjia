@@ -121,10 +121,13 @@ export interface SkillCommandBreadcrumb {
   command: string
 }
 
+export type ReasoningMode = 'auto' | 'deep'
+
 export interface MessageContent {
   text?: string
   commandText?: string
   skillCommand?: SkillCommandBreadcrumb
+  reasoningMode?: ReasoningMode
   files?: FileAttachment[]
   codeBlocks?: CodeBlock[]
   codeResults?: CodeResult[]

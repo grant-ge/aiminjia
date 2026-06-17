@@ -15,12 +15,12 @@ fn review_dingtalk_reroute_must_reuse_pending_queue() {
     let worker = extract_between(
         source,
         "[channel/dingtalk] worker observed inactive flag",
-        "let card_target = match",
+        "self.platform_state_mutate(Platform::Dingtalk",
     );
     let branch = extract_between(
         worker,
-        "if let Some(content) = queued_behind_approval",
-        "if chat_attachments.is_empty()",
+        "let (chat_attachments, download_failures)",
+        "Ok(crate::runtime::pending::EnqueueOutcome::Rejected",
     );
 
     assert!(
@@ -28,8 +28,18 @@ fn review_dingtalk_reroute_must_reuse_pending_queue() {
         "Dingtalk pending approval queue branch must ACK immediately before attachment download"
     );
     assert!(
-        branch.contains("enqueue_or_send") || branch.contains("enqueue_behind_pending_approval"),
+        branch.contains("build_pending_item_from_dingtalk") && branch.contains("enqueue_or_send"),
         "Dingtalk pending approval queue branch must reuse PendingQueueManager::enqueue_or_send; direct send_chat_request drops messages when the session is busy"
+    );
+    let build_pending_index = branch
+        .find("build_pending_item_from_dingtalk")
+        .expect("Dingtalk branch must build a PendingItem after attachment conversion");
+    let enqueue_index = branch
+        .find("enqueue_or_send")
+        .expect("Dingtalk branch must route through PendingQueueManager");
+    assert!(
+        build_pending_index < enqueue_index,
+        "Dingtalk branch must construct the PendingItem before calling enqueue_or_send"
     );
     assert!(
         branch.contains("chat_attachments") && branch.contains("download_failures"),

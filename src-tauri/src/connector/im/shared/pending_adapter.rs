@@ -211,6 +211,7 @@ fn build_pending_item_inner(
         sender_nick: nick,
         attachments: pending_attachments,
         skill_command: None,
+        reasoning_mode: None,
         received_at: chrono::Utc::now().to_rfc3339(),
         origin,
         output_binding,

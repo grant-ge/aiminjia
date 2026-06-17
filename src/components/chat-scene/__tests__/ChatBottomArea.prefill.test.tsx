@@ -20,7 +20,7 @@ vi.mock('@/hooks/useChatAttachments', () => ({
     resolvePastedPaths: vi.fn(),
   }),
 }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }))
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'zh-CN' } }) }))
 
 beforeEach(() => {
   useUiStore.setState({ prefillText: '帮我看看销售数据' })

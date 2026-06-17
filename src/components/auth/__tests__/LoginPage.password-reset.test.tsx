@@ -28,6 +28,13 @@ vi.mock('@/lib/tauri', () => ({
   cloudSendSmsCode: mocks.sendSmsCode,
   cloudSendEmailCode: mocks.sendEmailCode,
   cloudResetPassword: mocks.resetPassword,
+  getDevEnvironment: vi.fn().mockResolvedValue({
+    currentTenant: 'https://ai.renlijia.com',
+    currentOps: 'https://ops.renlijia.com',
+    isOverride: false,
+    presets: [],
+  }),
+  setDevEnvironment: vi.fn(),
 }))
 
 import { useNotificationStore } from '@/stores/notificationStore'

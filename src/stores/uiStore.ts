@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import type { PermissionMode } from '@/lib/tauri'
+import type { PermissionMode, ReasoningMode } from '@/lib/tauri'
 
 export type Route =
   | { kind: 'home' }
@@ -43,6 +43,7 @@ export interface PendingSkillSelection {
 }
 
 export const DRAFT_PERMISSION_SESSION_ID = '__draft__'
+export const DRAFT_REASONING_SESSION_ID = '__draft__'
 
 interface UiState {
   route: Route
@@ -55,6 +56,7 @@ interface UiState {
   pendingSkill: PendingSkillSelection | null
   skillDetailDialogId: string | null
   permissionModesBySession: Record<string, PermissionMode>
+  reasoningModesBySession: Record<string, ReasoningMode>
   setRoute: (route: Route) => void
   replaceRoute: (route: Route) => void
   goBack: () => void
@@ -74,12 +76,15 @@ interface UiState {
   closeSkillDetailDialog: () => void
   setPermissionModeForSession: (sessionId: string, mode: PermissionMode) => void
   getPermissionModeForSession: (sessionId: string) => PermissionMode | undefined
+  setReasoningModeForSession: (sessionId: string, mode: ReasoningMode) => void
+  getReasoningModeForSession: (sessionId: string) => ReasoningMode | undefined
 }
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
 const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
 const SIDEBAR_HIDDEN_STORAGE_KEY = 'aijia-sidebar-hidden'
 const PERMISSION_MODES_STORAGE_KEY = 'aijia-permission-modes-by-session'
+const REASONING_MODES_STORAGE_KEY = 'aijia-reasoning-modes-by-session'
 const DEFAULT_ROUTE: Route = { kind: 'home' }
 const MAX_ROUTE_HISTORY = 80
 const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
@@ -89,6 +94,7 @@ const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
   'acceptEdits',
   'fullAccess',
 ])
+const KNOWN_REASONING_MODES = new Set<ReasoningMode>(['auto', 'deep'])
 
 function isRoute(value: unknown): value is Route {
   if (!value || typeof value !== 'object') return false
@@ -184,6 +190,10 @@ function isPermissionMode(value: unknown): value is PermissionMode {
   return typeof value === 'string' && KNOWN_PERMISSION_MODES.has(value as PermissionMode)
 }
 
+function isReasoningMode(value: unknown): value is ReasoningMode {
+  return typeof value === 'string' && KNOWN_REASONING_MODES.has(value as ReasoningMode)
+}
+
 function loadPersistedPermissionModes(): Record<string, PermissionMode> {
   if (typeof localStorage === 'undefined') return {}
   try {
@@ -210,6 +220,32 @@ function persistPermissionModes(modes: Record<string, PermissionMode>) {
   }
 }
 
+function loadPersistedReasoningModes(): Record<string, ReasoningMode> {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(REASONING_MODES_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const entries = Object.entries(parsed).filter(
+      (entry): entry is [string, ReasoningMode] =>
+        typeof entry[0] === 'string' && isReasoningMode(entry[1]),
+    )
+    return Object.fromEntries(entries)
+  } catch {
+    return {}
+  }
+}
+
+function persistReasoningModes(modes: Record<string, ReasoningMode>) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(REASONING_MODES_STORAGE_KEY, JSON.stringify(modes))
+  } catch {
+    // Ignore storage failures; current session still keeps the mode in memory.
+  }
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
   backStack: [],
@@ -221,6 +257,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   pendingSkill: null,
   skillDetailDialogId: null,
   permissionModesBySession: loadPersistedPermissionModes(),
+  reasoningModesBySession: loadPersistedReasoningModes(),
   setRoute: (route) => {
     const current = get().route
     if (routesEqual(current, route)) {
@@ -264,7 +301,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   canGoForward: () => get().forwardStack.length > 0,
   openSettings: (key) => {
     const normalized: SettingsModalKey =
-      (key as string) === 'general' ? 'permissions' : (key as SettingsModalKey)
+      (key as string) === 'general'
+        ? 'permissions'
+        : (key as string) === 'usage'
+          ? 'account-billing'
+          : (key as SettingsModalKey)
     set({ settingsModal: DISABLED_SETTINGS_KEYS.has(normalized) ? 'account' : normalized })
   },
   closeSettings: () => set({ settingsModal: null }),
@@ -301,6 +342,12 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ permissionModesBySession: next })
   },
   getPermissionModeForSession: (sessionId) => get().permissionModesBySession[sessionId],
+  setReasoningModeForSession: (sessionId, mode) => {
+    const next = { ...get().reasoningModesBySession, [sessionId]: mode }
+    persistReasoningModes(next)
+    set({ reasoningModesBySession: next })
+  },
+  getReasoningModeForSession: (sessionId) => get().reasoningModesBySession[sessionId],
 }))
 
 // ---------------------------------------------------------------------------

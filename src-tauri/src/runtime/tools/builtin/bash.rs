@@ -1210,8 +1210,9 @@ mod tests {
     #[tokio::test]
     async fn check_permissions_asks_for_redirect_write_outside_workspace() {
         let workspace = tempfile::tempdir().expect("workspace");
-        let outside = tempfile::tempdir().expect("outside");
-        let target = outside.path().join("out.txt");
+        let target = dirs::home_dir()
+            .expect("home dir")
+            .join(".aijia-bash-path-auth-outside-test.txt");
         let ctx = ctx_with_permission(
             workspace.path(),
             crate::runtime::path_auth::ToolPermissionContext::empty(),

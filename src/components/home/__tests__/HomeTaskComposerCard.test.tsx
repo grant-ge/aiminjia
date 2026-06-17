@@ -5,7 +5,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HomeTaskComposerCard } from '../HomeTaskComposerCard'
 import { useChatStore } from '@/stores/chatStore'
-import { DRAFT_PERMISSION_SESSION_ID, useUiStore } from '@/stores/uiStore'
+import { DRAFT_PERMISSION_SESSION_ID, DRAFT_REASONING_SESSION_ID, useUiStore } from '@/stores/uiStore'
 import { useHomeStore } from '@/stores/homeStore'
 
 vi.mock('@tiptap/react', async (importOriginal) => {
@@ -60,6 +60,7 @@ beforeEach(() => {
     route: { kind: 'home' },
     prefillText: undefined,
     permissionModesBySession: {},
+    reasoningModesBySession: {},
   })
   useHomeStore.setState({ selectedWorkspace: null, recentWorkspaces: [] })
 })
@@ -123,6 +124,25 @@ describe('HomeTaskComposerCard', () => {
     expect(mockSendUserMessage.mock.calls[0][3]).toBe('fullAccess')
     expect(useUiStore.getState().permissionModesBySession[DRAFT_PERMISSION_SESSION_ID]).toBe('fullAccess')
     expect(useUiStore.getState().permissionModesBySession['new-conv-1']).toBe('fullAccess')
+  })
+
+  it('binds the selected reasoning mode to the new conversation and sends with it', async () => {
+    const user = userEvent.setup()
+    render(<HomeTaskComposerCard />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+
+    await user.click(screen.getByRole('button', { name: '思考模式：自动' }))
+    await user.click(await screen.findByText('深度思考'))
+
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'deep task')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendUserMessage.mock.calls[0][4]).toBe('deep')
+    expect(useUiStore.getState().reasoningModesBySession[DRAFT_REASONING_SESSION_ID]).toBe('deep')
+    expect(useUiStore.getState().reasoningModesBySession['new-conv-1']).toBe('deep')
   })
 
   it('attachment via picker shows token + Enter sends with file refs', async () => {

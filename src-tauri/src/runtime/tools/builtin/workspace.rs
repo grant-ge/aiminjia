@@ -6,7 +6,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use crate::runtime::path_auth::{decide, Decision, PathOp};
@@ -88,6 +88,11 @@ pub(crate) async fn resolve_and_authorize_path(
 
     // Canonicalize the path.
     let raw = Path::new(input);
+    if is_relative_traversal(raw) {
+        return Err(ToolError::PermissionDenied(format!(
+            "Relative path must stay inside workspace: {input}"
+        )));
+    }
     let canonical = if raw.is_absolute() {
         decide::canonicalize_or_ancestor(raw)
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to resolve path: {e}")))?
@@ -162,6 +167,12 @@ pub(crate) fn check_path_permission(
         .unwrap_or_else(|| cap.workspace_path.clone());
 
     let raw = Path::new(path_str);
+    if is_relative_traversal(raw) {
+        return Some(PermissionDecision::Deny {
+            message: format!("Relative path must stay inside workspace: {path_str}"),
+            reason: PermissionReason::Capability,
+        });
+    }
     let canonical = if raw.is_absolute() {
         decide::canonicalize_or_ancestor(raw).ok()?
     } else {
@@ -248,6 +259,13 @@ pub(crate) fn check_path_permission(
             })
         }
     }
+}
+
+fn is_relative_traversal(path: &Path) -> bool {
+    !path.is_absolute()
+        && path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
 }
 
 /// Returns true if this is a step-4b write Ask (inside additional_working_dirs, not primary).

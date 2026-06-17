@@ -87,6 +87,12 @@ describe("UserMessageBubble", () => {
     expect(screen.queryByText("/salary-query")).not.toBeInTheDocument();
   });
 
+  it("renders a visible deep reasoning token when the turn used deep thinking", () => {
+    render(<UserMessageBubble text="分析一下" reasoningMode="deep" />);
+
+    expect(screen.getByText("深度思考")).toBeInTheDocument();
+  });
+
   it("collapses long user messages and toggles expanded content", () => {
     const longText = Array.from(
       { length: 20 },
