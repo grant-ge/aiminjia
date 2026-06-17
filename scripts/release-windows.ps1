@@ -1,6 +1,6 @@
 ﻿# AIjia Windows release - one-shot end-to-end script.
 #
-# Downloads unsigned exe from OSS staging, Authenticode-signs it via signtool,
+# Downloads unsigned MSI from OSS staging, Authenticode-signs it via signtool,
 # generates the Tauri updater .sig, uploads everything to the public OSS path,
 # and cleans up staging. Zero Python dependency - uses Node (ali-oss) for OSS.
 #
@@ -54,10 +54,10 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Split-Path -Parent $ScriptDir
 Set-Location $RepoRoot
 
-$ExeName  = "AIjia_${Version}_x64-setup.exe"
+$MsiName  = "AIjia_${Version}_x64-setup.msi"
 $WorkDir  = Join-Path $RepoRoot 'build\windows-unsigned'
-$ExePath  = Join-Path $WorkDir $ExeName
-$SigPath  = "$ExePath.sig"
+$MsiPath  = Join-Path $WorkDir $MsiName
+$SigPath  = "$MsiPath.sig"
 $TauriKey = Join-Path $HOME '.tauri\aijia.key'
 
 $StagingBase = "https://lotus.renlijia.com/aijia/staging/unsigned/v$Version"
@@ -270,15 +270,15 @@ Write-Ok "thumbprint=$thumbPrefix... oss key id=$ossPrefix..."
 # -- 2. Download unsigned artifacts ---------------------------------------
 Write-Section "Step 2/5: Download unsigned artifacts from OSS staging"
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
-$exeUrl = "$StagingBase/$ExeName"
-$sigUrl = "$StagingBase/$ExeName.sig"
-Write-Host "  $exeUrl"
-Invoke-WebRequest -Uri $exeUrl -OutFile $ExePath -UseBasicParsing
+$msiUrl = "$StagingBase/$MsiName"
+$sigUrl = "$StagingBase/$MsiName.sig"
+Write-Host "  $msiUrl"
+Invoke-WebRequest -Uri $msiUrl -OutFile $MsiPath -UseBasicParsing
 Write-Host "  $sigUrl"
 Invoke-WebRequest -Uri $sigUrl -OutFile $SigPath -UseBasicParsing
-$exeSize = (Get-Item $ExePath).Length
-Write-Ok ("exe downloaded: {0:N0} bytes" -f $exeSize)
-# We always regenerate .sig from the SIGNED exe - drop the staging copy now.
+$msiSize = (Get-Item $MsiPath).Length
+Write-Ok ("MSI downloaded: {0:N0} bytes" -f $msiSize)
+# We always regenerate .sig from the SIGNED MSI - drop the staging copy now.
 Remove-Item $SigPath -ErrorAction SilentlyContinue
 
 # -- 3. Authenticode sign with signtool -----------------------------------
@@ -286,11 +286,11 @@ Write-Section "Step 3/5: Authenticode sign (signtool + EV token)"
 $signtool = Get-Signtool
 Write-Host "  signtool: $signtool"
 Write-Host "  timestamp: $TimestampUrl"
-& $signtool sign /v /fd sha256 /sha1 $Thumbprint /tr $TimestampUrl /td sha256 $ExePath
+& $signtool sign /v /fd sha256 /sha1 $Thumbprint /tr $TimestampUrl /td sha256 $MsiPath
 if ($LASTEXITCODE -ne 0) { throw "signtool sign failed (exit $LASTEXITCODE)" }
-& $signtool verify /pa /v $ExePath | Out-Null
+& $signtool verify /pa /v $MsiPath | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "signtool verify failed (exit $LASTEXITCODE)" }
-$auth = Get-AuthenticodeSignature $ExePath
+$auth = Get-AuthenticodeSignature $MsiPath
 if ($auth.Status -ne 'Valid') { throw "Authenticode status not Valid: $($auth.Status)" }
 if (-not $auth.TimeStamperCertificate) { Write-Warn 'No timestamp present - signature will expire with cert!' }
 $subjectCn = ($auth.SignerCertificate.Subject -replace '^CN=([^,]*).*', '$1')
@@ -307,7 +307,7 @@ $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $TauriKeyPwd
 $tauriCliPkg = '@tauri-apps/cli@latest'
 $npx = Get-NpxCommand
 Write-Host "  npx: $npx"
-& $npx --yes $tauriCliPkg signer sign -f $TauriKey $ExePath
+& $npx --yes $tauriCliPkg signer sign -f $TauriKey $MsiPath
 $signerExit = $LASTEXITCODE
 Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
 if ($signerExit -ne 0) { throw "tauri signer failed (exit $signerExit)" }
@@ -320,7 +320,7 @@ Write-Section "Step 5/5: Upload to OSS (Node + ali-oss)"
 $env:OSS_ACCESS_KEY_ID = $OssKeyId
 $env:OSS_ACCESS_KEY_SECRET = $OssKeySecret
 $uploadScript = Join-Path $ScriptDir 'ci-upload-windows.mjs'
-& node $uploadScript $Version $Type $ExePath
+& node $uploadScript $Version $Type $MsiPath
 $uploadExit = $LASTEXITCODE
 Remove-Item Env:\OSS_ACCESS_KEY_ID -ErrorAction SilentlyContinue
 Remove-Item Env:\OSS_ACCESS_KEY_SECRET -ErrorAction SilentlyContinue
@@ -342,7 +342,7 @@ if (-not $KeepStaging) {
 # finishes; Windows usually runs AFTER macOS, so without this step the page
 # only lists the macOS artifacts. Re-run the page generator on demand.
 # Hard-fail: previously we silently skipped this when python wasn't on PATH,
-# which is exactly how 0.5.28-beta.1 shipped without its Windows exe listed.
+# which is exactly how 0.5.28-beta.1 shipped without its Windows installer listed.
 Write-Section "Refresh downloads.html"
 $PageScript = Join-Path $ScriptDir "ci-generate-download-page.py"
 if (-not (Test-Path $PageScript)) {
@@ -369,4 +369,4 @@ Write-Host "================================================================" -F
 Write-Host " [OK] Windows v$Version ($Type) released" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
 $publicPrefix = if ($Type -eq 'beta') { 'beta/' } else { '' }
-Write-Host "  Download: https://lotus.renlijia.com/aijia/${publicPrefix}v$Version/AIjia_${Version}_x64-setup.exe"
+Write-Host "  Download: https://lotus.renlijia.com/aijia/${publicPrefix}v$Version/AIjia_${Version}_x64-setup.msi"

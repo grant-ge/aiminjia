@@ -55,6 +55,10 @@ def format_time(ts):
 def detect_platform(name):
     """Return a human-readable platform label for a release artifact filename."""
     n = name.lower()
+    if n.endswith(".msi.sig"):
+        return "Windows updater sig"
+    if n.endswith(".msi"):
+        return "Windows x64"
     if n.endswith(".exe.sig"):
         return "Windows updater sig"
     if n.endswith(".exe"):
@@ -75,12 +79,12 @@ def detect_platform(name):
 
 
 def _platform_sort_key(name):
-    # Sort: macOS arm64 dmg → macOS x64 dmg → Windows exe → updaters/sigs
+    # Sort: macOS arm64 dmg → macOS x64 dmg → Windows installer → updaters/sigs
     order = [
         (lambda n: n.endswith(".dmg") and ("aarch64" in n or "arm64" in n), 0),
         (lambda n: n.endswith(".dmg") and ("x64" in n or "x86_64" in n), 1),
         (lambda n: n.endswith(".dmg"), 2),
-        (lambda n: n.endswith(".exe"), 3),
+        (lambda n: n.endswith(".msi") or n.endswith(".exe"), 3),
         (lambda n: n.endswith(".tar.gz"), 4),
         (lambda n: True, 5),
     ]
@@ -109,13 +113,17 @@ def _semver_key(v):
 def _pick_installers(files):
     """From a version's files, pick the user-facing installers per platform.
 
-    Returns (windows_exe, mac_arm_dmg, mac_intel_dmg) — each a file dict or None.
+    Returns (windows_installer, mac_arm_dmg, mac_intel_dmg) — each a file dict or None.
     Updater tar.gz / .sig are skipped (those are for the auto-updater, not humans).
     """
     win = mac_arm = mac_intel = None
     for f in files:
         n = f["name"].lower()
-        if n.endswith(".exe"):
+        if n.endswith(".msi"):
+            win = f
+        elif n.endswith(".exe") and win is None:
+            # Historical releases used NSIS .exe. Keep them visible, but prefer
+            # the MSI when both are present for a version.
             win = f
         elif n.endswith(".dmg"):
             if "aarch64" in n or "arm64" in n:
@@ -328,7 +336,7 @@ def main():
         if len(parts) >= 4:
             ver = parts[2]  # e.g., "v0.5.22"
             # Only include downloadable files
-            if f["name"].endswith((".dmg", ".exe", ".tar.gz")):
+            if f["name"].endswith((".dmg", ".msi", ".exe", ".tar.gz")):
                 beta_versions.setdefault(ver, []).append(f)
 
     release_versions = {}
@@ -336,7 +344,7 @@ def main():
         parts = f["key"].split("/")
         if len(parts) >= 3 and parts[1].startswith("v"):
             ver = parts[1]
-            if f["name"].endswith((".dmg", ".exe", ".tar.gz")):
+            if f["name"].endswith((".dmg", ".msi", ".exe", ".tar.gz")):
                 release_versions.setdefault(ver, []).append(f)
 
     print(f"  dev: {len(dev_files)} files")

@@ -2,17 +2,17 @@
 # signature, and upload to OSS.
 #
 # Workflow:
-#   1. CI builds unsigned exe on GitHub-hosted runner
+#   1. CI builds unsigned MSI on GitHub-hosted runner
 #   2. Download "windows-installers" artifact from GitHub Actions
-#   3. Sign the exe with SimpleSign (EV certificate)
+#   3. Sign the MSI with SimpleSign (EV certificate)
 #   4. Run this script
 #
 # Usage:
-#   .\scripts\sign-and-upload-windows.ps1 <version> <release|beta> [exe-path]
+#   .\scripts\sign-and-upload-windows.ps1 <version> <release|beta> [msi-path]
 #
 # Examples:
 #   .\scripts\sign-and-upload-windows.ps1 0.5.22 beta
-#   .\scripts\sign-and-upload-windows.ps1 0.5.22 beta C:\Downloads\AIjia_0.5.22_x64-setup.exe
+#   .\scripts\sign-and-upload-windows.ps1 0.5.22 beta C:\Downloads\AIjia_0.5.22_x64-setup.msi
 #
 # Prerequisites:
 #   - Node.js (for npx @tauri-apps/cli signer)
@@ -23,44 +23,44 @@
 $ErrorActionPreference = "Stop"
 
 if ($args.Count -lt 2) {
-    Write-Host "Usage: .\scripts\sign-and-upload-windows.ps1 <version> <release|beta> [exe-path]"
+    Write-Host "Usage: .\scripts\sign-and-upload-windows.ps1 <version> <release|beta> [msi-path]"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\scripts\sign-and-upload-windows.ps1 0.5.22 beta"
-    Write-Host "  .\scripts\sign-and-upload-windows.ps1 0.5.22 beta C:\Downloads\AIjia_0.5.22_x64-setup.exe"
+    Write-Host "  .\scripts\sign-and-upload-windows.ps1 0.5.22 beta C:\Downloads\AIjia_0.5.22_x64-setup.msi"
     exit 1
 }
 
 $version = $args[0]
 $releaseType = $args[1]
-$ExeName = "AIjia_${version}_x64-setup.exe"
+$MsiName = "AIjia_${version}_x64-setup.msi"
 
-# Find exe: explicit path > current dir > Downloads
+# Find MSI: explicit path > current dir > Downloads
 if ($args.Count -ge 3) {
-    $ExePath = $args[2]
-} elseif (Test-Path $ExeName) {
-    $ExePath = Resolve-Path $ExeName
-} elseif (Test-Path (Join-Path $env:USERPROFILE "Downloads\$ExeName")) {
-    $ExePath = Join-Path $env:USERPROFILE "Downloads\$ExeName"
+    $MsiPath = $args[2]
+} elseif (Test-Path $MsiName) {
+    $MsiPath = Resolve-Path $MsiName
+} elseif (Test-Path (Join-Path $env:USERPROFILE "Downloads\$MsiName")) {
+    $MsiPath = Join-Path $env:USERPROFILE "Downloads\$MsiName"
 } else {
-    Write-Host "ERROR: Cannot find $ExeName" -ForegroundColor Red
+    Write-Host "ERROR: Cannot find $MsiName" -ForegroundColor Red
     Write-Host "  Looked in: current dir, ~/Downloads"
-    Write-Host "  Or specify path: .\scripts\sign-and-upload-windows.ps1 $version $releaseType C:\path\to\$ExeName"
+    Write-Host "  Or specify path: .\scripts\sign-and-upload-windows.ps1 $version $releaseType C:\path\to\$MsiName"
     exit 1
 }
 
-$ExePath = [System.IO.Path]::GetFullPath($ExePath)
-$SigPath = "${ExePath}.sig"
-Write-Host "Exe: $ExePath"
+$MsiPath = [System.IO.Path]::GetFullPath($MsiPath)
+$SigPath = "${MsiPath}.sig"
+Write-Host "MSI: $MsiPath"
 Write-Host ""
 
 # ── 1. Verify Authenticode signature ──
 Write-Host "=== Step 1: Verify Authenticode signature ===" -ForegroundColor Cyan
-$sig = Get-AuthenticodeSignature $ExePath
+$sig = Get-AuthenticodeSignature $MsiPath
 if ($sig.Status -eq "Valid") {
     Write-Host "  Signature valid: $($sig.SignerCertificate.Subject)" -ForegroundColor Green
 } else {
-    Write-Host "  WARNING: Exe is NOT signed (status: $($sig.Status))" -ForegroundColor Yellow
+    Write-Host "  WARNING: MSI is NOT signed (status: $($sig.Status))" -ForegroundColor Yellow
     Write-Host "  Sign it with SimpleSign first, then re-run this script."
     $confirm = Read-Host "  Continue anyway? (y/N)"
     if ($confirm -ne "y") { exit 1 }
@@ -79,10 +79,10 @@ if (Test-Path $SigPath) { Remove-Item $SigPath }
 # Prefer globally installed tauri-cli, fallback to npx
 if (Get-Command tauri -ErrorAction SilentlyContinue) {
     Write-Host "  Using global tauri-cli"
-    tauri signer sign "$ExePath"
+    tauri signer sign "$MsiPath"
 } else {
     Write-Host "  Using npx @tauri-apps/cli (tip: npm install -g @tauri-apps/cli for faster runs)"
-    npx --yes @tauri-apps/cli@latest signer sign "$ExePath"
+    npx --yes @tauri-apps/cli@latest signer sign "$MsiPath"
 }
 if ($LASTEXITCODE -ne 0) { throw "Tauri signer failed" }
 if (-not (Test-Path $SigPath)) { throw ".sig not created at $SigPath" }
@@ -116,8 +116,8 @@ auth = oss2.Auth(os.environ['OSS_ACCESS_KEY_ID'], os.environ['OSS_ACCESS_KEY_SEC
 bucket = oss2.Bucket(auth, 'https://oss-cn-beijing.aliyuncs.com', 'lotus-releases')
 prefix = f'aijia/{"beta/" if release_type == "beta" else ""}v{version}'
 for ext in ['', '.sig']:
-    local = r'$($ExePath.Replace("'","''"))' + ext
-    key = f'{prefix}/AIjia_{version}_x64-setup.exe{ext}'
+    local = r'$($MsiPath.Replace("'","''"))' + ext
+    key = f'{prefix}/AIjia_{version}_x64-setup.msi{ext}'
     if not os.path.exists(local):
         print(f'[skip] {local} not found')
         continue
@@ -128,10 +128,10 @@ for ext in ['', '.sig']:
     else:
         bucket.put_object_from_file(key, local)
 if release_type == 'release':
-    exe_key = f'{prefix}/AIjia_{version}_x64-setup.exe'
-    bucket.copy_object('lotus-releases', exe_key, f'aijia/latest/windows-x64',
+    msi_key = f'{prefix}/AIjia_{version}_x64-setup.msi'
+    bucket.copy_object('lotus-releases', msi_key, f'aijia/latest/windows-x64',
         headers={'x-oss-metadata-directive':'REPLACE','Content-Type':'application/octet-stream',
-                 'Content-Disposition':f'attachment; filename="AIjia_{version}_x64-setup.exe"'})
+                 'Content-Disposition':f'attachment; filename="AIjia_{version}_x64-setup.msi"'})
     print('  -> latest updated')
 print(f'\n[ok] Windows v{version} ({release_type}) uploaded')
 "@

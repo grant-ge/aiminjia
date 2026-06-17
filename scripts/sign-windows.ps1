@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-    Download unsigned Windows exe from OSS, code-sign locally, regenerate Tauri
+    Download unsigned Windows MSI from OSS, code-sign locally, regenerate Tauri
     updater signature (.sig), upload signed artifacts to OSS final path.
 
 .DESCRIPTION
     This script runs on the local Windows signing machine. It:
-    1. Downloads the unsigned .exe from OSS staging
+    1. Downloads the unsigned .msi from OSS staging
     2. Signs it with signtool (Windows Authenticode)
     3. Regenerates the Tauri updater .sig file (minisign via tauri CLI)
-    4. Uploads signed exe + new .sig to the final OSS path
+    4. Uploads signed MSI + new .sig to the final OSS path
 
     For beta builds: uploads to aijia/beta/v{version}/
     For release builds: uploads to aijia/v{version}/
@@ -58,14 +58,14 @@ $ErrorActionPreference = "Stop"
 $OssBucket = "lotus-releases"
 $OssEndpoint = "https://oss-cn-beijing.aliyuncs.com"
 $OssPrefix = "aijia"
-$ExeFilename = "AIjia_${Version}_x64-setup.exe"
-$SigFilename = "${ExeFilename}.sig"
+$MsiFilename = "AIjia_${Version}_x64-setup.msi"
+$SigFilename = "${MsiFilename}.sig"
 
 $WorkDir = Join-Path $PSScriptRoot ".." "signing-workspace"
 if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Path $WorkDir | Out-Null }
 $WorkDir = Resolve-Path $WorkDir
 
-$ExePath = Join-Path $WorkDir $ExeFilename
+$MsiPath = Join-Path $WorkDir $MsiFilename
 $SigPath = Join-Path $WorkDir $SigFilename
 
 # --- Validation ---
@@ -76,9 +76,9 @@ if (-not $TauriSigningKey) {
     Write-Error "Tauri signing key required. Set -TauriSigningKey or env TAURI_SIGNING_PRIVATE_KEY"
 }
 
-# --- Step 1: Download unsigned exe from OSS staging ---
+# --- Step 1: Download unsigned MSI from OSS staging ---
 if (-not $SkipDownload) {
-    Write-Host "`n=== Step 1: Download unsigned exe from OSS ===" -ForegroundColor Cyan
+    Write-Host "`n=== Step 1: Download unsigned MSI from OSS ===" -ForegroundColor Cyan
 
     $OssKeyId = $env:OSS_ACCESS_KEY_ID
     $OssKeySecret = $env:OSS_ACCESS_KEY_SECRET
@@ -86,7 +86,7 @@ if (-not $SkipDownload) {
         Write-Error "OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET required"
     }
 
-    $StagingKey = "$OssPrefix/staging/$ReleaseType/v$Version/$($ExeFilename -replace '\.exe$', '.unsigned.exe')"
+    $StagingKey = "$OssPrefix/staging/$ReleaseType/v$Version/$($MsiFilename -replace '\.msi$', '.unsigned.msi')"
 
     # Use Python + oss2 for download (consistent with other scripts)
     $downloadScript = @"
@@ -94,7 +94,7 @@ import oss2, os, sys
 auth = oss2.Auth(os.environ['OSS_ACCESS_KEY_ID'], os.environ['OSS_ACCESS_KEY_SECRET'])
 bucket = oss2.Bucket(auth, '$OssEndpoint', '$OssBucket')
 key = '$StagingKey'
-local = r'$ExePath'
+local = r'$MsiPath'
 print(f'Downloading {key} ...')
 bucket.get_object_to_file(key, local)
 size = os.path.getsize(local) / 1024 / 1024
@@ -104,8 +104,8 @@ print(f'Downloaded: {size:.1f}MB')
     if ($LASTEXITCODE -ne 0) { throw "Download failed" }
 } else {
     Write-Host "`n=== Step 1: Using local file (skip download) ===" -ForegroundColor Cyan
-    if (-not (Test-Path $ExePath)) {
-        Write-Error "File not found: $ExePath"
+    if (-not (Test-Path $MsiPath)) {
+        Write-Error "File not found: $MsiPath"
     }
 }
 
@@ -126,14 +126,14 @@ if (-not $SignTool) {
 }
 
 Write-Host "Using signtool: $SignTool"
-Write-Host "Signing: $ExePath"
+Write-Host "Signing: $MsiPath"
 Write-Host "Certificate: $CertThumbprint"
 
-& $SignTool sign /sha1 $CertThumbprint /tr http://timestamp.digicert.com /td sha256 /fd sha256 "$ExePath"
+& $SignTool sign /sha1 $CertThumbprint /tr http://timestamp.digicert.com /td sha256 /fd sha256 "$MsiPath"
 if ($LASTEXITCODE -ne 0) { throw "Code signing failed" }
 
 # Verify signature
-& $SignTool verify /pa "$ExePath"
+& $SignTool verify /pa "$MsiPath"
 if ($LASTEXITCODE -ne 0) { throw "Signature verification failed" }
 
 Write-Host "Code signing successful!" -ForegroundColor Green
@@ -154,7 +154,7 @@ $signed = $false
 $tauriCli = Get-Command "cargo-tauri" -ErrorAction SilentlyContinue
 if ($tauriCli) {
     Write-Host "Using cargo-tauri signer"
-    & cargo-tauri signer sign "$ExePath"
+    & cargo-tauri signer sign "$MsiPath"
     if ($LASTEXITCODE -eq 0) { $signed = $true }
 }
 
@@ -165,7 +165,7 @@ if (-not $signed) {
     if (Test-Path $npxTauri) {
         Write-Host "Using local node_modules tauri CLI"
         Push-Location $projectDir
-        & $npxTauri signer sign "$ExePath"
+        & $npxTauri signer sign "$MsiPath"
         if ($LASTEXITCODE -eq 0) { $signed = $true }
         Pop-Location
     }
@@ -178,7 +178,7 @@ if (-not $signed) {
         Write-Host "Using npx to download @tauri-apps/cli (may take a moment)..."
         $projectDir = Join-Path $PSScriptRoot ".."
         Push-Location $projectDir
-        npx @tauri-apps/cli signer sign "$ExePath"
+        npx @tauri-apps/cli signer sign "$MsiPath"
         if ($LASTEXITCODE -eq 0) { $signed = $true }
         Pop-Location
     }
@@ -208,10 +208,10 @@ if ($ReleaseType -eq "beta") {
 } else {
     $FinalPrefix = "$OssPrefix/v$Version"
 }
-# Tauri bundler already names the exe AIjia_<Version>_x64-setup.exe; if
+# Tauri bundler already names the MSI AIjia_<Version>_x64-setup.msi; if
 # Version is a pre-release like 0.5.22-beta.1 the suffix is naturally in
 # the filename. No extra retagging needed.
-$UploadExeName = $ExeFilename
+$UploadMsiName = $MsiFilename
 $UploadSigName = $SigFilename
 
 $uploadScript = @"
@@ -220,13 +220,13 @@ import oss2, os, sys
 auth = oss2.Auth(os.environ['OSS_ACCESS_KEY_ID'], os.environ['OSS_ACCESS_KEY_SECRET'])
 bucket = oss2.Bucket(auth, '$OssEndpoint', '$OssBucket')
 
-exe_local = r'$ExePath'
+msi_local = r'$MsiPath'
 sig_local = r'$SigPath'
-exe_key = '$FinalPrefix/$UploadExeName'
+msi_key = '$FinalPrefix/$UploadMsiName'
 sig_key = '$FinalPrefix/$UploadSigName'
 
-print(f'Uploading signed exe: {exe_key}')
-oss2.resumable_upload(bucket, exe_key, exe_local,
+print(f'Uploading signed MSI: {msi_key}')
+oss2.resumable_upload(bucket, msi_key, msi_local,
     multipart_threshold=10*1024*1024, part_size=5*1024*1024, num_threads=4)
 
 print(f'Uploading signature: {sig_key}')
@@ -236,10 +236,10 @@ bucket.put_object_from_file(sig_key, sig_local)
 release_type = '$ReleaseType'
 if release_type == 'release':
     latest_key = '$OssPrefix/latest/windows-x64'
-    bucket.copy_object('$OssBucket', exe_key, latest_key, headers={
+    bucket.copy_object('$OssBucket', msi_key, latest_key, headers={
         'x-oss-metadata-directive': 'REPLACE',
         'Content-Type': 'application/octet-stream',
-        'Content-Disposition': f'attachment; filename="$ExeFilename"',
+        'Content-Disposition': f'attachment; filename="$MsiFilename"',
     })
     print(f'  -> latest: {latest_key}')
 
@@ -259,5 +259,5 @@ if ($ReleaseType -eq "release") {
     Write-Host "  -> Actions -> Finalize Release -> Run workflow -> version: $Version"
 } elseif ($ReleaseType -eq "beta") {
     Write-Host "`nBeta available at:"
-    Write-Host "  https://lotus.renlijia.com/$OssPrefix/beta/v$Version/$ExeFilename"
+    Write-Host "  https://lotus.renlijia.com/$OssPrefix/beta/v$Version/$MsiFilename"
 }
