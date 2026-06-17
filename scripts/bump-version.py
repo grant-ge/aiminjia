@@ -3,9 +3,8 @@
 
 Accepts plain semver (0.5.22) or pre-release (0.5.22-beta.1). Pre-release
 strings flow into the binary's About dialog and into Tauri/Cargo crates,
-which both accept full SemVer. The OSS upload scripts and Homebrew cask
-read the same version string verbatim, so file naming stays consistent
-end-to-end.
+which both accept full SemVer. Windows MSI ProductVersion is stricter, so the
+script also writes bundle.windows.wix.version as a numeric MSI version.
 
 Usage:
     python scripts/bump-version.py 0.5.22
@@ -18,6 +17,32 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def msi_version_for(version: str) -> str:
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$", version)
+    if not match:
+        raise ValueError(f"invalid version format '{version}'")
+
+    major, minor, patch, prerelease = match.groups()
+    parts = [int(major), int(minor), int(patch)]
+    limits = [255, 255, 65535]
+    for value, limit in zip(parts, limits):
+        if value > limit:
+            raise ValueError(f"MSI version component {value} exceeds {limit}")
+
+    if not prerelease:
+        return f"{major}.{minor}.{patch}"
+
+    numeric_identifiers = [
+        int(part)
+        for part in re.split(r"[.-]", prerelease)
+        if re.match(r"^\d+$", part)
+    ]
+    build = numeric_identifiers[-1] if numeric_identifiers else 0
+    if build > 65535:
+        raise ValueError(f"MSI build component {build} exceeds 65535")
+    return f"{major}.{minor}.{patch}.{build}"
 
 
 def main():
@@ -46,6 +71,7 @@ def main():
     conf_path = PROJECT_ROOT / "src-tauri" / "tauri.conf.json"
     conf = json.loads(conf_path.read_text(encoding="utf-8"))
     conf["version"] = version
+    conf.setdefault("bundle", {}).setdefault("windows", {}).setdefault("wix", {})["version"] = msi_version_for(version)
     conf_path.write_text(json.dumps(conf, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"  updated src-tauri/tauri.conf.json")
 
