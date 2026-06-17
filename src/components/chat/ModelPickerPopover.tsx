@@ -54,16 +54,6 @@ const MODEL_OPTIONS: Array<{
     },
   },
   {
-    value: 'claude',
-    badge: '长文本',
-    tone: {
-      bg: 'linear-gradient(180deg, rgba(252,247,241,0.98), rgba(247,238,228,0.98))',
-      border: 'rgba(177, 125, 84, 0.26)',
-      text: '#6D4325',
-      muted: '#8D6245',
-    },
-  },
-  {
     value: 'custom',
     badge: '自定义',
     tone: {

@@ -45,7 +45,7 @@ pub struct TenantInfo {
     pub font_family: Option<String>,
 }
 
-/// Cloud model info returned by /v1/models.
+/// Cloud logical model info returned by AIjia Gateway V2.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudModelInfo {

@@ -28,8 +28,8 @@ describe('ModelPickerPopover', () => {
       <ModelPickerPopover open value="deepseek-v3" onChange={onChange} onClose={onClose} />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /Claude/i }))
-    expect(onChange).toHaveBeenCalledWith('claude')
+    fireEvent.click(screen.getByRole('button', { name: /Custom/i }))
+    expect(onChange).toHaveBeenCalledWith('custom')
     expect(onClose).toHaveBeenCalled()
   })
 })

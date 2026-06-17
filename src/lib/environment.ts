@@ -26,7 +26,7 @@ let current: Environment = { tenant: PROD_TENANT, ops: PROD_OPS }
 
 /**
  * Collapse a user-entered URL to its bare origin (scheme + host + port). A path
- * would get concatenated with fixed ingress paths (e.g. `/anthropic/v1/messages`)
+ * would get concatenated with fixed API paths (e.g. `/aijia/v2/ai/responses`)
  * and break the URL, so paths/query/hash are dropped. Returns null for
  * unparseable input.
  */

@@ -120,14 +120,14 @@ fn ae4_workspace_settings_loaded() {
     storage
         .set_setting("primaryModel", "deepseek-v3")
         .expect("set global primary model");
-    write_workspace_settings(&workspace, json!({ "primaryModel": "claude" }));
+    write_workspace_settings(&workspace, json!({ "primaryModel": "custom" }));
 
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
     assert_eq!(
         settings.get("primaryModel").map(String::as_str),
-        Some("claude")
+        Some("custom")
     );
 }
 
@@ -160,14 +160,14 @@ fn ae4_workspace_settings_partial_override() {
     storage
         .set_setting("autoModelRouting", "true")
         .expect("set global auto routing");
-    write_workspace_settings(&workspace, json!({ "primaryModel": "claude" }));
+    write_workspace_settings(&workspace, json!({ "primaryModel": "custom" }));
 
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
     assert_eq!(
         settings.get("primaryModel").map(String::as_str),
-        Some("claude")
+        Some("custom")
     );
     assert_eq!(
         settings.get("autoModelRouting").map(String::as_str),
@@ -209,7 +209,7 @@ fn ae4_workspace_settings_ignores_sensitive_keys() {
     write_workspace_settings(
         &workspace,
         json!({
-            "primaryModel": "claude",
+            "primaryModel": "custom",
             "primaryApiKey": "plaintext-should-be-ignored"
         }),
     );
@@ -219,7 +219,7 @@ fn ae4_workspace_settings_ignores_sensitive_keys() {
         .expect("load effective settings");
     assert_eq!(
         settings.get("primaryModel").map(String::as_str),
-        Some("claude")
+        Some("custom")
     );
     assert_eq!(
         settings.get("primaryApiKey").map(String::as_str),
@@ -230,7 +230,7 @@ fn ae4_workspace_settings_ignores_sensitive_keys() {
 #[tokio::test]
 async fn ae2_model_override_applied_to_resolved_settings() {
     let executor = Arc::new(CapturingSettingsExecutor::new(ResolvedLlmSettings {
-        primary_model: "claude".to_string(),
+        primary_model: "custom".to_string(),
         primary_api_key: "pk-global".to_string(),
         auto_model_routing: true,
         custom_model_endpoint: String::new(),
@@ -261,7 +261,7 @@ async fn ae2_model_override_applied_to_resolved_settings() {
 
     assert_eq!(
         executor.seen_models.lock().unwrap().as_slice(),
-        &["claude".to_string()]
+        &["custom".to_string()]
     );
 }
 

@@ -1,7 +1,7 @@
 /**
  * Billing store — personal-tenant balance + usage records.
  *
- * Backed by `/v1/billing/{summary,usage-records}` on lotus gateway via Tauri.
+ * Backed by `/v1/billing/{summary,usage-records}` on the tenant gateway via Tauri.
  * Used only when `tenant.type === 'personal'` (panel & menu hidden otherwise).
  */
 import { create } from 'zustand'

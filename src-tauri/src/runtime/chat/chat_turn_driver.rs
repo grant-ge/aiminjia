@@ -698,7 +698,7 @@ fn should_build_image_blocks_for_turn(
         return true;
     }
 
-    crate::llm::vision_support::supports_lotus_anthropic_vision(&llm_settings.cloud_model)
+    crate::llm::vision_support::supports_gateway_vision(&llm_settings.cloud_model)
 }
 
 /// S4 新 trait：executor 只做 provider streaming adapter。
@@ -2244,8 +2244,8 @@ impl RuntimeChatTurnDriver {
             tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(120),
-            // All chat routes through the lotus gateway now: ask for an
-            // aspirational ceiling and let the gateway clamp to the real
+            // All chat routes through AIjia Gateway V2: ask for an aspirational
+            // ceiling and let the gateway clamp to the real
             // per-upstream-model cap (Step 1).
             token_budget: overrides.token_budget.unwrap_or(1_000_000),
             chunk_timeout_secs: 90,

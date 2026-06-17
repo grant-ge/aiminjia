@@ -58,7 +58,6 @@ pub fn estimate_tokens_from_json(messages: &[serde_json::Value]) -> usize {
 
 pub fn context_window_for_provider(provider: &str) -> usize {
     match provider {
-        "claude" => CONTEXT_WINDOW_CLAUDE,
         "deepseek-v3" | "deepseek-r1" => CONTEXT_WINDOW_DEEPSEEK,
         _ => CONTEXT_WINDOW_DEFAULT,
     }

@@ -40,23 +40,18 @@ pub fn get_provider_capabilities(provider: &str) -> ProviderCapabilities {
             reasoning_provider: None, // TODO: add o1 support
             models_desc: "主力: GPT-4o",
         },
-        "claude" => ProviderCapabilities {
-            primary_provider: "claude",
-            reasoning_provider: None,
-            models_desc: "主力: Claude Sonnet",
-        },
         "custom" => ProviderCapabilities {
             primary_provider: "custom",
             reasoning_provider: None,
             models_desc: "自定义 OpenAI 兼容模型",
         },
-        "lotus" => ProviderCapabilities {
-            primary_provider: "lotus",
+        "aijia-v2" => ProviderCapabilities {
+            primary_provider: "aijia-v2",
             reasoning_provider: None,
             models_desc: "云端模型（登录后可用）",
         },
         _ => ProviderCapabilities {
-            primary_provider: "lotus",
+            primary_provider: "aijia-v2",
             reasoning_provider: None,
             models_desc: "",
         },
@@ -82,7 +77,7 @@ pub enum TaskType {
 /// Result of routing: which provider + model to use.
 #[derive(Debug, Clone)]
 pub struct RouteResult {
-    /// Provider identifier, e.g. "openai", "claude", "custom", "lotus"
+    /// Provider identifier, e.g. "openai", "custom", "aijia-v2"
     pub provider: String,
     /// API key for the selected provider
     pub api_key: String,
@@ -92,7 +87,7 @@ pub struct RouteResult {
     pub use_tools: bool,
     /// Custom endpoint URL (only used by "custom" provider)
     pub endpoint_url: String,
-    /// Model type for Lotus cloud routing: "chat" or "reasoner"
+    /// Model type for AIjia Gateway V2 routing: "chat" or "reasoner"
     pub model_type: String,
 }
 
@@ -187,7 +182,7 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 /// The reasoning model is auto-determined from provider capabilities.
 /// No separate configuration is needed — the same API key is used.
 pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult {
-    // All chat routes through the Lotus cloud gateway. Local-model and
+    // All chat routes through the AIjia v2 cloud gateway. Local-model and
     // custom-provider configuration was removed from the product, so there is
     // no non-cloud path. Reasoning tasks force the reasoner endpoint; every
     // other task uses the model_type implied by the user's selection
@@ -201,7 +196,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         &settings.cloud_model_type
     };
     RouteResult {
-        provider: "lotus".to_string(),
+        provider: "aijia-v2".to_string(),
         api_key: settings.primary_api_key.clone(),
         model_hint: settings.cloud_model.clone(),
         use_tools: model_type != "reasoner",
@@ -291,11 +286,10 @@ mod tests {
     }
 
     #[test]
-    fn test_route_general_uses_lotus_with_tools() {
+    fn test_route_general_uses_aijia_v2_with_tools() {
         let settings = default_settings();
         let route = select_route(&TaskType::General, &settings);
-        // Everything routes through the lotus gateway now.
-        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.provider, "aijia-v2");
         assert_eq!(route.api_key, "sk-sess-test");
         assert_eq!(route.model_hint, "claude-sonnet-4-5");
         assert_eq!(route.model_type, "chat");
@@ -303,27 +297,27 @@ mod tests {
     }
 
     #[test]
-    fn test_route_analysis_uses_lotus_with_tools() {
+    fn test_route_analysis_uses_aijia_v2_with_tools() {
         let settings = default_settings();
         let route = select_route(&TaskType::Analysis, &settings);
-        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.provider, "aijia-v2");
         assert_eq!(route.model_type, "chat");
         assert!(route.use_tools);
     }
 
     #[test]
-    fn test_route_codegen_uses_lotus_with_tools() {
+    fn test_route_codegen_uses_aijia_v2_with_tools() {
         let settings = default_settings();
         let route = select_route(&TaskType::CodeGen, &settings);
-        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.provider, "aijia-v2");
         assert!(route.use_tools);
     }
 
     #[test]
-    fn test_route_search_uses_lotus_with_tools() {
+    fn test_route_search_uses_aijia_v2_with_tools() {
         let settings = default_settings();
         let route = select_route(&TaskType::Search, &settings);
-        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.provider, "aijia-v2");
         assert!(route.use_tools);
     }
 
@@ -331,7 +325,7 @@ mod tests {
     fn test_route_reasoning_forces_reasoner_endpoint() {
         let settings = default_settings();
         let route = select_route(&TaskType::Reasoning, &settings);
-        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.provider, "aijia-v2");
         assert_eq!(route.model_type, "reasoner");
         // The reasoner endpoint runs without tools.
         assert!(!route.use_tools);

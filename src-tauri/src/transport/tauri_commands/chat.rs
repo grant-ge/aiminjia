@@ -2058,7 +2058,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             build_assistant_content_json(&filtered_content, tool_calls, None, thinking_blocks)
         };
 
-        // Inject thinking blocks for Anthropic API round-trip (must be echoed back on next turn).
+        // Inject signed thinking blocks for upstream round-trip (must be echoed back on next turn).
         if !thinking_blocks.is_empty() {
             if let Some(obj) = content_value.as_object_mut() {
                 obj.insert(
@@ -5947,7 +5947,7 @@ mod retry_reason_tests {
     fn upstream_5xx_is_upstream_busy() {
         assert_eq!(
             classify_retry_reason(
-                "Anthropic API stream error (502 Bad Gateway): <html>nginx/1.20.1</html>"
+                "AIjia v2 stream error (502 Bad Gateway): <html>nginx/1.20.1</html>"
             ),
             RetryReason::UpstreamBusy
         );

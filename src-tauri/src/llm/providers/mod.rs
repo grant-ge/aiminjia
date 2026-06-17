@@ -9,15 +9,7 @@
 //                  Canonical AIjia v2 responses ingress. Main desktop chat
 //                  routing is forced here after session-key injection.
 //
-// **Compatibility/fallback paths:**
-//   - `lotus.rs`   Legacy Lotus anthropic-native ingress
-//                  (`/anthropic/v1/messages`). Kept for non-stream fallback
-//                  and defensive direct dispatch while v2 non-stream `send`
-//                  remains disabled.
-//   - `claude.rs`  Anthropic protocol implementation (used by lotus.rs and
-//                  direct anthropic.com calls via `ClaudeProvider::new`).
-//                  Parameterized by URL + `is_direct` so the same code
-//                  drives both endpoints.
+// **Direct/custom paths:**
 //   - `custom.rs`  User-supplied OpenAI-compatible endpoint.
 //   - `openai.rs`  OpenAI direct (DEFAULT_MODEL="gpt-4o"). NOTE: the
 //                  `pub(super) send_openai_compat / stream_openai_compat /
@@ -32,9 +24,7 @@
 // ============================================================================
 
 pub mod aijia_gateway_v2;
-pub mod claude;
 pub mod custom;
-pub mod lotus;
 pub mod openai;
 
 use anyhow::Result;
@@ -59,7 +49,7 @@ pub fn build_http_client() -> reqwest::Client {
 /// impl Trait in trait), stable since Rust 1.75, instead of the
 /// `async_trait` macro.
 pub trait LlmProviderTrait: Send + Sync {
-    /// Provider display name (e.g. "DeepSeek V3", "Claude").
+    /// Provider display name (e.g. "DeepSeek V3", "Custom").
     fn name(&self) -> &str;
 
     /// Whether this provider supports tool use.

@@ -10,7 +10,6 @@ export type LlmProvider =
   | "qwen-plus"
   | "volcano"
   | "openai"
-  | "claude"
   | "custom";
 export type FontScale = "small" | "medium" | "large";
 export type ChatWidthMode = "centered" | "full";
@@ -76,7 +75,6 @@ export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
   "qwen-plus": "Qwen Plus",
   volcano: "Volcano Engine",
   openai: "GPT-4o",
-  claude: "Claude",
   custom: "Custom Model",
 };
 
@@ -90,7 +88,6 @@ export const PROVIDER_CAPABILITIES: Record<
   },
   "qwen-plus": { modelsDesc: "Default: qwen-plus", hasReasoning: false },
   openai: { modelsDesc: "Default: GPT-4o", hasReasoning: false },
-  claude: { modelsDesc: "Default: Claude Sonnet", hasReasoning: false },
   volcano: { modelsDesc: "Default: ByteDance LLM", hasReasoning: false },
   custom: { modelsDesc: "Custom OpenAI-compatible model", hasReasoning: false },
 };

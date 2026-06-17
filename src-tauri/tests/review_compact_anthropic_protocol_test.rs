@@ -114,7 +114,7 @@ fn non_stream_gateway_dispatch_handles_aijia_v2_provider() {
 
     assert!(
         dispatch_send.contains("\"aijia-v2\""),
-        "non-stream dispatch_send must route aijia-v2 instead of falling back to lotus"
+        "non-stream dispatch_send must route aijia-v2"
     );
     assert!(
         dispatch_send.contains("aijia_gateway_v2::AijiaGatewayV2Provider::with_route"),

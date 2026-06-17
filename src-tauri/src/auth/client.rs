@@ -1,4 +1,4 @@
-//! HTTP client for the Lotus API Gateway.
+//! HTTP client for the tenant gateway.
 //!
 //! Base URL: `https://ai-tenant.renlijia.com`
 //!
@@ -8,7 +8,7 @@
 //! - PUT  /auth/password        — change password (JWT required)
 //! - POST /auth/logout          — logout (JWT required)
 //! - POST /auth/session-keys    — access_token → session key (sk-sess***)
-//! - GET  /v1/models            — list available models
+//! - GET  /aijia/v2/ai/models   — list available logical models
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -127,7 +127,7 @@ impl SessionKeyResponse {
     }
 }
 
-/// HTTP client for Lotus tenant portal.
+/// HTTP client for the tenant portal.
 pub struct AuthClient {
     client: reqwest_middleware::ClientWithMiddleware,
 }
@@ -216,25 +216,9 @@ impl AuthClient {
             .map_err(|e| anyhow!("服务器响应格式异常: {}", e))
     }
 
-    /// List available models from the server.
-    ///
-    /// Phase C: hits `/anthropic/v1/models` (NOT the OpenAI-shape
-    /// `/v1/models`) so the returned set is exactly the models reachable
-    /// over the anthropic ingress that `LotusProvider` now uses. Returning
-    /// the OpenAI list would let the desktop UI pick a model that has no
-    /// anthropic-protocol route, then fail with `5001 no_route` on first
-    /// real request.
-    ///
-    /// The anthropic response shape is
-    ///   `{ data: [{ type: "model", id, display_name, created_at }], has_more, ... }`
-    /// — different from OpenAI's `{ data: [{ id, type: "chat" | "reasoner", ... }] }`.
-    /// We map it back into our own `CloudModelInfo`. The `model_type`
-    /// distinction (chat / reasoner) used to pick a gateway endpoint
-    /// in the OpenAI-ingress era; under anthropic ingress everything
-    /// goes to a single endpoint, so all entries get `model_type =
-    /// "chat"` as a future-proof default.
+    /// List available logical models from AIjia Gateway V2.
     pub async fn list_models(&self, session_key: &str) -> Result<Vec<CloudModelInfo>> {
-        let url = format!("{}/anthropic/v1/models", base_url());
+        let url = format!("{}/aijia/v2/ai/models", base_url());
         log::info!(
             "[list_models] GET {} session_key_len={}",
             url,
@@ -243,8 +227,7 @@ impl AuthClient {
         let resp = self
             .client
             .get(&url)
-            .header("x-api-key", session_key)
-            .header("anthropic-version", "2023-06-01")
+            .bearer_auth(session_key)
             .send()
             .await?;
 
@@ -271,8 +254,8 @@ impl AuthClient {
             return Err(parse_api_error(status.as_u16(), &body));
         }
 
-        // Anthropic `/v1/models` shape:
-        //   { "data": [{"type":"model","id":"claude-...","display_name":"...","created_at":"..."}], "has_more": false, ... }
+        // AIjia v2 logical model shape:
+        //   { "object": "list", "data": [{"id":"default-chat","intent":"chat",...}] }
         let body: serde_json::Value = resp.json().await?;
         let models = body["data"]
             .as_array()
@@ -280,18 +263,26 @@ impl AuthClient {
                 arr.iter()
                     .map(|m| {
                         let id = m["id"].as_str().unwrap_or("").to_string();
-                        let display = m["display_name"].as_str().unwrap_or("").to_string();
-                        let name = if display.is_empty() {
-                            id.clone()
+                        let intent = m["intent"].as_str().unwrap_or("chat").to_string();
+                        let name = match id.as_str() {
+                            "default-chat" => "默认对话".to_string(),
+                            "default-reasoner" => "默认推理".to_string(),
+                            "default-vision" => "默认视觉".to_string(),
+                            "default-image" => "默认图像".to_string(),
+                            _ => id.clone(),
+                        };
+                        let model_type = if intent == "reasoning" {
+                            "reasoner".to_string()
                         } else {
-                            display
+                            intent
                         };
                         CloudModelInfo {
                             id,
                             name,
-                            model_type: "chat".to_string(),
+                            model_type,
                         }
                     })
+                    .filter(|m| !m.id.is_empty())
                     .collect()
             })
             .unwrap_or_default();
@@ -521,7 +512,7 @@ impl AuthClient {
 }
 
 /// Typed wrapper for API errors so downstream code can branch on the HTTP
-/// status code without parsing message substrings. Lotus gateway returns 401
+/// status code without parsing message substrings. The tenant gateway returns 401
 /// from `/auth/refresh` only on hard token rejection (JWT bad / Redis miss /
 /// user/tenant gone) — those are the cases where AuthManager must clear local
 /// state and force re-login. 5xx / network / 4xx-other are transient: state
