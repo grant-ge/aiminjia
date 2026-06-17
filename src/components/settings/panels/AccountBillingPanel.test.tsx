@@ -88,25 +88,25 @@ describe('AccountBillingPanel', () => {
     }))
   })
 
-  it('applies request type and model search filters', async () => {
+  it('applies model search filters without exposing request type search', async () => {
     const user = userEvent.setup()
     render(<AccountBillingPanel />)
 
     await screen.findByText(/9\.85/)
     vi.clearAllMocks()
 
-    await user.type(screen.getByLabelText('settings.billing.search.type'), 'chat')
+    expect(screen.queryByLabelText('settings.billing.search.type')).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('settings.billing.search.model'), 'reasoner')
     await user.click(screen.getByRole('button', { name: 'settings.billing.search.apply' }))
 
     expect(billingUsageRecords).toHaveBeenCalledTimes(1)
     expect(billingUsageRecords).toHaveBeenCalledWith(1, 20, expect.objectContaining({
-      requestType: 'chat',
+      requestType: null,
       modelName: 'reasoner',
     }))
   })
 
-  it('keeps search filters when moving to the next page', async () => {
+  it('keeps model search filters when moving to the next page', async () => {
     const user = userEvent.setup()
     ;(billingUsageRecords as any).mockResolvedValue({
       page: 1,
@@ -129,7 +129,7 @@ describe('AccountBillingPanel', () => {
         preset: 'thisMonth',
         startDate: '2026-05-01',
         endDate: '2026-05-31',
-        requestType: 'chat',
+        requestType: null,
         modelName: 'reasoner',
       },
     })
@@ -142,9 +142,41 @@ describe('AccountBillingPanel', () => {
     await user.click(screen.getByRole('button', { name: 'settings.billing.nextPage' }))
 
     expect(billingUsageRecords).toHaveBeenCalledWith(2, 20, expect.objectContaining({
-      requestType: 'chat',
+      requestType: null,
       modelName: 'reasoner',
     }))
+  })
+
+  it('formats large token counts with readable units and hides the type column', async () => {
+    ;(billingUsageRecords as any).mockResolvedValue({
+      page: 1,
+      size: 20,
+      total: 1,
+      summary: {
+        request_count: 1,
+        input_tokens: 129_000_000,
+        output_tokens: 993_778,
+        cached_tokens: 0,
+        cost: '12.34',
+      },
+      records: [{
+        id: 1,
+        created_at: '2026-05-19T14:00:00+08:00',
+        request_type: 'chat',
+        model_name: 'deepseek-v4-flash',
+        input_tokens: 129_000_000,
+        output_tokens: 993_778,
+        cached_tokens: 0,
+        cost: '12.34',
+        key_type: 'session',
+      }],
+    })
+
+    render(<AccountBillingPanel />)
+
+    expect(await screen.findAllByText('129.99 百万 Tokens')).not.toHaveLength(0)
+    expect(screen.queryByText('settings.billing.cols.type')).not.toBeInTheDocument()
+    expect(screen.queryByText('chat')).not.toBeInTheDocument()
   })
 
   it('uses neutral copy instead of raw disabled-account errors', async () => {

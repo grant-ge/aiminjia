@@ -7,6 +7,7 @@ import type { BillingRangePreset } from '@/stores/billingStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { formatTokenCount } from '@/lib/format'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -57,8 +58,13 @@ export function AccountBillingPanel() {
   const setRangePreset = useBillingStore((s) => s.setRangePreset)
   const setCustomRange = useBillingStore((s) => s.setCustomRange)
   const setRecordFilters = useBillingStore((s) => s.setRecordFilters)
-  const [requestTypeDraft, setRequestTypeDraft] = useState(filters.requestType ?? '')
   const [modelNameDraft, setModelNameDraft] = useState(filters.modelName ?? '')
+
+  useEffect(() => {
+    if (filters.requestType) {
+      setRecordFilters({ requestType: null })
+    }
+  }, [filters.requestType, setRecordFilters])
 
   useEffect(() => {
     if (isPersonalTenant) {
@@ -69,9 +75,8 @@ export function AccountBillingPanel() {
   }, [fetchRecords, isPersonalTenant, refresh, usageScope])
 
   useEffect(() => {
-    setRequestTypeDraft(filters.requestType ?? '')
     setModelNameDraft(filters.modelName ?? '')
-  }, [filters.requestType, filters.modelName])
+  }, [filters.modelName])
 
   const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.size))
   const balanceNum = summary ? parseFloat(summary.balance) : 0
@@ -98,14 +103,13 @@ export function AccountBillingPanel() {
 
   const handleSearch = () => {
     setRecordFilters({
-      requestType: requestTypeDraft.trim() || null,
+      requestType: null,
       modelName: modelNameDraft.trim() || null,
     })
     void fetchRecords(1, usageScope)
   }
 
   const handleClearSearch = () => {
-    setRequestTypeDraft('')
     setModelNameDraft('')
     setRecordFilters({ requestType: null, modelName: null })
     void fetchRecords(1, usageScope)
@@ -174,7 +178,7 @@ export function AccountBillingPanel() {
             {t('settings.billing.rangeTokens')}
           </div>
           <div className="mt-1 text-2xl font-semibold text-foreground">
-            {formatCount(totalTokens)}
+            <span title={formatCount(totalTokens)}>{formatTokenCount(totalTokens)}</span>
           </div>
         </div>
         <div className="rounded-md border border-border bg-card p-4">
@@ -245,16 +249,6 @@ export function AccountBillingPanel() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Input
-              value={requestTypeDraft}
-              onChange={(event) => setRequestTypeDraft(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') handleSearch()
-              }}
-              aria-label={t('settings.billing.search.type')}
-              placeholder={t('settings.billing.search.typePlaceholder')}
-              className="h-8 w-[150px] text-xs"
-            />
-            <Input
               value={modelNameDraft}
               onChange={(event) => setModelNameDraft(event.currentTarget.value)}
               onKeyDown={(event) => {
@@ -280,7 +274,7 @@ export function AccountBillingPanel() {
               variant="ghost"
               icon={<X />}
               onClick={handleClearSearch}
-              disabled={loadingRecords || (!requestTypeDraft && !modelNameDraft)}
+              disabled={loadingRecords || !modelNameDraft}
             >
               {t('settings.billing.search.clear')}
             </Button>
@@ -300,14 +294,11 @@ export function AccountBillingPanel() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-normal">
                     {t('settings.billing.cols.time')}
-                  </th>
-                  <th className="py-2 pr-3 font-normal">
-                    {t('settings.billing.cols.type')}
                   </th>
                   <th className="py-2 pr-3 font-normal">
                     {t('settings.billing.cols.model')}
@@ -337,23 +328,20 @@ export function AccountBillingPanel() {
                       <td className="py-2 pr-3 text-foreground">
                         {formatDate(r.created_at)}
                       </td>
-                      <td className="py-2 pr-3 text-muted-foreground">
-                        {r.request_type}
-                      </td>
                       <td className="max-w-[180px] truncate py-2 pr-3 text-muted-foreground" title={r.model_name}>
                         {r.model_name || '-'}
                       </td>
-                      <td className="py-2 pr-3 text-right text-muted-foreground">
-                        {formatCount(r.input_tokens)}
+                      <td className="py-2 pr-3 text-right text-muted-foreground" title={formatCount(r.input_tokens)}>
+                        {formatTokenCount(r.input_tokens)}
                       </td>
-                      <td className="py-2 pr-3 text-right text-muted-foreground">
-                        {formatCount(r.output_tokens)}
+                      <td className="py-2 pr-3 text-right text-muted-foreground" title={formatCount(r.output_tokens)}>
+                        {formatTokenCount(r.output_tokens)}
                       </td>
-                      <td className="py-2 pr-3 text-right text-muted-foreground">
-                        {formatCount(r.cached_tokens)}
+                      <td className="py-2 pr-3 text-right text-muted-foreground" title={formatCount(r.cached_tokens)}>
+                        {formatTokenCount(r.cached_tokens)}
                       </td>
-                      <td className="py-2 pr-3 text-right text-muted-foreground">
-                        {formatCount(recordTokens)}
+                      <td className="py-2 pr-3 text-right text-muted-foreground" title={formatCount(recordTokens)}>
+                        {formatTokenCount(recordTokens)}
                       </td>
                       <td className="py-2 text-right text-foreground">
                         {formatCurrency(r.cost)}
