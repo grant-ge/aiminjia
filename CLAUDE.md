@@ -56,6 +56,7 @@
 ```bash
 pnpm install                 # 首次或依赖变更
 pnpm tauri:dev               # 启动 Tauri 开发模式（前端 + 后端热重载）
+CARGO_INCREMENTAL=0 pnpm tauri:dev  # 启动但关闭 Cargo 增量编译，适合 target 目录过大时临时使用
 pnpm dev                     # 仅启动前端 Vite 开发服务器
 ```
 
