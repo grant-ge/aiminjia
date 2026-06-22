@@ -189,7 +189,9 @@ fn parse_message(msg: &TgMessage, update_id: i64, bot_id: &str) -> ParsedInbound
         sender_nick: from.first_name.clone(),
         text: body,
         robot_code: bot_id.to_string(),
-        reply_group_id: String::new(),
+        // Reuse connector-neutral carrier metadata so manager/reply paths can
+        // target the original Telegram message for reply/reaction operations.
+        reply_group_id: msg.message_id.to_string(),
         attachments,
         session_webhook: None,
         created_at_ms: msg.date.map(|s| s * 1000),
@@ -272,6 +274,7 @@ mod tests {
                 assert_eq!(message.text, "hello");
                 assert_eq!(message.attachments.len(), 0);
                 assert_eq!(message.msg_id, "tg-BOT-100");
+                assert_eq!(message.reply_group_id, "1");
                 assert_eq!(message.created_at_ms, Some(1_700_000_000 * 1000));
             }
             other => panic!("expected Message, got {:?}", other),

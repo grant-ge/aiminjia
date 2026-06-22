@@ -220,6 +220,20 @@ struct SendMessageBody<'a> {
     reply_to_message_id: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+struct ReactionEmoji<'a> {
+    #[serde(rename = "type")]
+    reaction_type: &'static str,
+    emoji: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct SetMessageReactionBody<'a> {
+    chat_id: i64,
+    message_id: i64,
+    reaction: Vec<ReactionEmoji<'a>>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(bound(deserialize = "T: Deserialize<'de>"))]
 struct Envelope<T> {
@@ -418,6 +432,43 @@ impl TelegramApi {
             .await
             .map_err(classify_reqwest_error)?;
         parse_envelope::<TgMessage>(resp).await
+    }
+
+    /// 给指定入站消息设置或清空 reaction。失败由上层按 best-effort 处理。
+    pub async fn set_message_reaction(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        emoji: Option<&str>,
+    ) -> Result<(), TelegramApiError> {
+        let emoji = emoji.and_then(|e| {
+            let trimmed = e.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let body = SetMessageReactionBody {
+            chat_id,
+            message_id,
+            reaction: emoji
+                .map(|emoji| {
+                    vec![ReactionEmoji {
+                        reaction_type: "emoji",
+                        emoji,
+                    }]
+                })
+                .unwrap_or_default(),
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("setMessageReaction"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        parse_envelope::<bool>(resp).await.map(|_| ())
     }
 
     /// 上传本地文件到 Telegram（sendDocument multipart）。
@@ -660,6 +711,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn set_message_reaction_posts_single_emoji() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/botT/setMessageReaction"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "result": true
+            })))
+            .mount(&server)
+            .await;
+        let api = TelegramApi::new_with_api_base_for_tests("T".into(), server.uri()).unwrap();
+
+        api.set_message_reaction(42, 777, Some("👀")).await.unwrap();
+
+        let calls = server.received_requests().await.unwrap();
+        assert_eq!(calls.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&calls[0].body).unwrap();
+        assert_eq!(body["chat_id"], 42);
+        assert_eq!(body["message_id"], 777);
+        assert_eq!(
+            body["reaction"],
+            serde_json::json!([{ "type": "emoji", "emoji": "👀" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn set_message_reaction_can_clear_reaction() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/botT/setMessageReaction"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "result": true
+            })))
+            .mount(&server)
+            .await;
+        let api = TelegramApi::new_with_api_base_for_tests("T".into(), server.uri()).unwrap();
+
+        api.set_message_reaction(42, 777, None).await.unwrap();
+
+        let calls = server.received_requests().await.unwrap();
+        assert_eq!(calls.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&calls[0].body).unwrap();
+        assert_eq!(body["chat_id"], 42);
+        assert_eq!(body["message_id"], 777);
+        assert_eq!(body["reaction"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
     async fn rebuild_client_does_not_break_subsequent_calls() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -689,7 +787,6 @@ mod tests {
 
     #[tokio::test]
     async fn send_document_uploads_multipart_successfully() {
-        use wiremock::matchers::body_string_contains;
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/botT/sendDocument"))

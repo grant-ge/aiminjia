@@ -13,10 +13,14 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::connector::TelegramConnector;
+use super::{api::TelegramApiError, connector::TelegramConnector};
 use crate::connector::im::trait_def::{IMConnector, ReplyContent, ReplyTarget};
 use crate::runtime::event_bus::RuntimeEventSubscriber;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+
+const TELEGRAM_STARTED_REACTION_CANDIDATES: &[&str] = &["👀"];
+const TELEGRAM_DONE_REACTION_CANDIDATES: &[&str] = &["✅", "👍", "🎉", "💯"];
+const TELEGRAM_ERROR_REACTION_CANDIDATES: &[&str] = &["❌", "😱", "😨", "🤯"];
 
 pub struct TelegramReplyForwarder {
     connector: Arc<TelegramConnector>,
@@ -25,6 +29,70 @@ pub struct TelegramReplyForwarder {
 impl TelegramReplyForwarder {
     pub fn new(connector: Arc<TelegramConnector>) -> Self {
         Self { connector }
+    }
+
+    fn should_try_next_reaction_candidate(error: &anyhow::Error) -> bool {
+        matches!(
+            error.downcast_ref::<TelegramApiError>(),
+            Some(TelegramApiError::BadRequest(_))
+        )
+    }
+
+    async fn set_status_reaction(&self, session_id: &str, candidates: &[&str], label: &str) {
+        if candidates.is_empty() {
+            return;
+        }
+
+        for (idx, emoji) in candidates.iter().enumerate() {
+            match self
+                .connector
+                .react_to_latest_inbound(session_id, Some(emoji))
+                .await
+            {
+                Ok(()) => {
+                    if idx > 0 {
+                        log::warn!(
+                            "[telegram-reply-forwarder] status reaction {} fallback succeeded (session={} requested={} fallback={})",
+                            label,
+                            session_id,
+                            candidates[0],
+                            emoji
+                        );
+                    }
+                    return;
+                }
+                Err(e) => {
+                    let will_try_next =
+                        idx + 1 < candidates.len() && Self::should_try_next_reaction_candidate(&e);
+                    log::warn!(
+                        "[telegram-reply-forwarder] status reaction {} failed (session={} emoji={} will_try_next={}): {:#}",
+                        label,
+                        session_id,
+                        emoji,
+                        will_try_next,
+                        e
+                    );
+                    if !will_try_next {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn clear_status_reaction(&self, session_id: &str, label: &str) {
+        if let Err(e) = self
+            .connector
+            .react_to_latest_inbound(session_id, None)
+            .await
+        {
+            log::warn!(
+                "[telegram-reply-forwarder] status reaction {} failed (session={}): {:#}",
+                label,
+                session_id,
+                e
+            );
+        }
     }
 
     /// 从 `MessagePersisted.content` 里取 markdown 正文 —— assistant 回复的
@@ -51,33 +119,121 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
             return Ok(());
         }
 
-        if let RuntimeEventKind::MessagePersisted { role, content, .. } = &event.kind {
-            if role != "assistant" {
-                return Ok(());
+        match &event.kind {
+            RuntimeEventKind::RunStarted => {
+                self.set_status_reaction(
+                    &session_id,
+                    TELEGRAM_STARTED_REACTION_CANDIDATES,
+                    "started",
+                )
+                .await;
             }
-            let Some(text) = Self::extract_markdown(content) else {
+            RuntimeEventKind::StreamError { error, .. } => {
                 log::debug!(
-                    "[telegram-reply-forwarder] empty assistant content for session={}, skip",
-                    session_id
-                );
-                return Ok(());
-            };
-            let target = ReplyTarget {
-                session_id: session_id.clone(),
-                external_conversation_key: String::new(),
-            };
-            if let Err(e) = self
-                .connector
-                .send(target, ReplyContent::Markdown(text))
-                .await
-            {
-                log::warn!(
-                    "[telegram-reply-forwarder] send Markdown failed (session={}): {:?}",
+                    "[telegram-reply-forwarder] StreamError session={} error={}",
                     session_id,
-                    e
+                    error
                 );
+                self.set_status_reaction(
+                    &session_id,
+                    TELEGRAM_ERROR_REACTION_CANDIDATES,
+                    "stream-error",
+                )
+                .await;
             }
+            RuntimeEventKind::TurnCompleted { outcome, .. } if outcome.is_success() => {
+                self.set_status_reaction(&session_id, TELEGRAM_DONE_REACTION_CANDIDATES, "done")
+                    .await;
+            }
+            RuntimeEventKind::TurnCompleted { outcome, .. } if outcome.is_error() => {
+                self.set_status_reaction(
+                    &session_id,
+                    TELEGRAM_ERROR_REACTION_CANDIDATES,
+                    "turn-error",
+                )
+                .await;
+            }
+            RuntimeEventKind::RunCancelled => {
+                self.clear_status_reaction(&session_id, "cancelled").await;
+            }
+            RuntimeEventKind::MessagePersisted { role, content, .. } => {
+                if role != "assistant" {
+                    return Ok(());
+                }
+                let Some(text) = Self::extract_markdown(content) else {
+                    log::debug!(
+                        "[telegram-reply-forwarder] empty assistant content for session={}, skip",
+                        session_id
+                    );
+                    return Ok(());
+                };
+                let target = ReplyTarget {
+                    session_id: session_id.clone(),
+                    external_conversation_key: String::new(),
+                };
+                if let Err(e) = self
+                    .connector
+                    .send(target, ReplyContent::Markdown(text))
+                    .await
+                {
+                    log::warn!(
+                        "[telegram-reply-forwarder] send Markdown failed (session={}): {:?}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+            _ => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_markdown_ignores_empty_text() {
+        assert!(
+            TelegramReplyForwarder::extract_markdown(&serde_json::json!({ "text": "  " }))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn extract_markdown_returns_trimmed_text() {
+        assert_eq!(
+            TelegramReplyForwarder::extract_markdown(&serde_json::json!({ "text": " hello " }))
+                .as_deref(),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn status_reaction_candidates_keep_requested_emoji_first() {
+        assert_eq!(TELEGRAM_STARTED_REACTION_CANDIDATES, ["👀"]);
+        assert_eq!(TELEGRAM_DONE_REACTION_CANDIDATES, ["✅", "👍", "🎉", "💯"]);
+        assert_eq!(TELEGRAM_ERROR_REACTION_CANDIDATES, ["❌", "😱", "😨", "🤯"]);
+    }
+
+    #[test]
+    fn bad_request_can_try_next_reaction_candidate() {
+        let error = anyhow::Error::new(TelegramApiError::BadRequest(
+            "Bad Request: reaction is unavailable".into(),
+        ));
+        assert!(TelegramReplyForwarder::should_try_next_reaction_candidate(
+            &error
+        ));
+    }
+
+    #[test]
+    fn transport_error_does_not_try_next_reaction_candidate() {
+        let error = anyhow::Error::new(TelegramApiError::TransportConnected(
+            "connection reset".into(),
+        ));
+        assert!(!TelegramReplyForwarder::should_try_next_reaction_candidate(
+            &error
+        ));
     }
 }
