@@ -693,6 +693,7 @@ function UserQuestionPanel({
         aria-label={t("pendingAction.interaction.skip")}
         disabled={submitting}
         onClick={() => void cancelInteraction()}
+        data-aijia-pending-action-action="cancel"
       >
         {t("pendingAction.interaction.skip")}
         <kbd className="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -704,6 +705,7 @@ function UserQuestionPanel({
         size="sm"
         disabled={submitting}
         onClick={() => void submitInteractionChoice()}
+        data-aijia-pending-action-action="confirm"
       >
         {t("pendingAction.interaction.continue")}
         <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary-foreground/15">
@@ -730,6 +732,10 @@ function UserQuestionPanel({
         aria-label={t("pendingAction.interaction.custom")}
         checked={activeCustomSelected}
         onChange={() => selectCustomAnswer(activeQuestion)}
+        data-aijia-pending-action-action="option"
+        data-aijia-pending-action-question-index={activeIndex}
+        data-aijia-pending-action-option-index={visibleOptions.length}
+        data-aijia-pending-action-option-label="__other__"
       />
       {activeCustomSelected ? (
         <textarea
@@ -754,10 +760,23 @@ function UserQuestionPanel({
   );
 
   return (
-    <section className="rounded-lg border border-border bg-card p-3 shadow-[var(--shadow-md)]">
+    <section
+      className="rounded-lg border border-border bg-card p-3 shadow-[var(--shadow-md)]"
+      data-aijia-pending-action="user-question"
+      data-aijia-pending-action-tool={action.interaction.toolName}
+      data-aijia-pending-action-interaction-id={
+        action.interaction.interactionId
+      }
+      data-aijia-pending-action-tool-call-id={action.interaction.toolCallId}
+      data-aijia-pending-action-run-id={action.interaction.runId}
+      data-aijia-pending-action-question-index={activeIndex}
+    >
       <fieldset className="space-y-3">
         <div className="flex items-center justify-between gap-3 px-1">
-          <legend className="text-sm font-semibold leading-6 text-foreground">
+          <legend
+            className="text-sm font-semibold leading-6 text-foreground"
+            data-aijia-pending-action-title
+          >
             {activeQuestion.question}
           </legend>
           {questions.length > 1 ? (
@@ -819,6 +838,10 @@ function UserQuestionPanel({
                     name={`interaction-${action.interaction.interactionId}-${activeIndex}-${activeKey}`}
                     aria-label={option.label}
                     checked={selected}
+                    data-aijia-pending-action-action="option"
+                    data-aijia-pending-action-question-index={activeIndex}
+                    data-aijia-pending-action-option-index={optionIndex}
+                    data-aijia-pending-action-option-label={option.label}
                     onChange={(event) => {
                       if (!activeQuestion.multiSelect) {
                         setCustomSelected((current) => ({

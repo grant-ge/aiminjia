@@ -41,7 +41,7 @@ pub fn format_skill_catalog_with_budget(
     }
 
     let header = "The following skills are available for use with the Skill tool:\n\n";
-    let footer = "\nUse Skill({ skill_id: \"<id>\" }) to load detailed instructions when a skill matches the user request.";
+    let footer = "\nUse Skill({ skill_id: \"<id>\" }) to load detailed instructions when a skill matches the user request.\nSpecial routing rule: for substantive specialized work not clearly covered by enabled local skills, including enterprise/business systems, enterprise tool integrations, professional analysis, specialized file workflows, business data exports, event/log analysis, or domain automation, load `find-skills` and search the market before falling back to generic tools.\nDo not use `find-skills` for pure chat, simple fact questions, ordinary public webpage browsing/scraping, or tasks already covered by enabled skills.\n重要：只要用户任务属于专业分析、业务明细处理、系统导出数据、事件/日志分析或领域自动化，即使文件还没提供，也先调用 Skill({ skill_id: \"find-skills\" }) 判断是否有专门技能，再询问文件位置或格式。";
     let mut content = format!("{}{}{}", header, lines.join("\n"), footer);
     if content.len() > budget {
         content = format!(
@@ -126,5 +126,28 @@ mod tests {
     #[test]
     fn empty_skills_returns_empty_string() {
         assert_eq!(format_skill_catalog_with_budget(&[], 200_000), "");
+    }
+
+    #[test]
+    fn catalog_explains_find_skills_priority_over_generic_browser() {
+        let skills = vec![
+            mk_skill("find-skills", "从企业技能市场查找、确认并安装专用技能"),
+            mk_skill(
+                "browser",
+                "浏览器自动化能力，用于打开网页、点击、填表、抓取数据",
+            ),
+        ];
+
+        let out = format_skill_catalog_with_budget(&skills, 200_000);
+
+        assert!(out.contains("substantive specialized work"));
+        assert!(out.contains("ordinary public webpage"));
+        assert!(out.contains("tasks already covered by enabled skills"));
+        assert!(out.contains("事件/日志分析"));
+        assert!(out.contains("判断是否有专门技能"));
+        assert!(out.contains("find-skills"));
+        assert!(out.contains("browser"));
+        assert!(!out.contains("named enterprise products"));
+        assert!(!out.contains("generic fallback skills such as `browser`"));
     }
 }

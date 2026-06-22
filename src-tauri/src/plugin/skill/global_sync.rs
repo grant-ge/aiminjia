@@ -714,7 +714,11 @@ pub async fn sync_skill_packages_from_server(
         &config.global_skills_dir,
     )?);
     let mut new_installed: HashMap<String, String> = local_state.installed.clone();
-    let remote_ids: HashSet<String> = list.data.iter().map(|item| item.plugin_id.clone()).collect();
+    let remote_ids: HashSet<String> = list
+        .data
+        .iter()
+        .map(|item| item.plugin_id.clone())
+        .collect();
     let packages_to_sync = dedupe_skill_packages(&list.data);
     if packages_to_sync.len() != list.data.len() {
         log::info!(
@@ -1108,10 +1112,7 @@ mod tests {
         write_global_skills_state(
             &config.state_path,
             &GlobalSkillsState {
-                installed: HashMap::from([(
-                    "dingtalk-workspace".to_string(),
-                    "1.2.0".to_string(),
-                )]),
+                installed: HashMap::from([("dingtalk-workspace".to_string(), "1.2.0".to_string())]),
                 updated_at_unix_seconds: 1,
             },
         )
