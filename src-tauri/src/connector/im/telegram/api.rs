@@ -4,6 +4,7 @@
 //! - GET  /bot<token>/getMe                          → bot info（save 时验证 token）
 //! - GET  /bot<token>/getUpdates?offset=N&timeout=25 → 长轮询入站
 //! - POST /bot<token>/sendMessage                    → 出站
+//! - POST /bot<token>/editMessageText                → 流式预览更新
 //!
 //! Bot API 不接受 token query string，token 在 URL path 里。MarkdownV2 解析失败
 //! 在 sender 层做 plain text fallback。429 / 401 / 400 错误码映射给调用者。
@@ -220,6 +221,15 @@ struct SendMessageBody<'a> {
     reply_to_message_id: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+struct EditMessageTextBody<'a> {
+    chat_id: i64,
+    message_id: i64,
+    text: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parse_mode: Option<&'a str>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(bound(deserialize = "T: Deserialize<'de>"))]
 struct Envelope<T> {
@@ -418,6 +428,30 @@ impl TelegramApi {
             .await
             .map_err(classify_reqwest_error)?;
         parse_envelope::<TgMessage>(resp).await
+    }
+
+    /// 编辑 bot 自己已发送的文本消息，用于 Telegram 流式预览。
+    pub async fn edit_message_text(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+        parse_mode: Option<&str>,
+    ) -> Result<(), TelegramApiError> {
+        let body = EditMessageTextBody {
+            chat_id,
+            message_id,
+            text,
+            parse_mode,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("editMessageText"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        parse_envelope::<serde_json::Value>(resp).await.map(|_| ())
     }
 
     /// 上传本地文件到 Telegram（sendDocument multipart）。

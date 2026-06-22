@@ -23,6 +23,7 @@
 pub mod api;
 pub mod connector;
 pub mod download;
+pub mod draft_stream;
 pub mod long_poll;
 pub mod pairing;
 pub mod parser;
