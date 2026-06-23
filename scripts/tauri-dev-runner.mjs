@@ -37,6 +37,8 @@ if (sourceExecutable !== devExecutable) {
   replaceDevExecutable(sourceExecutable, devExecutable)
 }
 
+stopExistingDevAppInstances(devExecutable)
+
 if (process.env.AIJIA_TAURI_RUNNER_DEBUG === '1') {
   console.error(
     JSON.stringify(
@@ -123,6 +125,55 @@ function stopWindowsProcessByPath(target) {
     },
     stdio: 'ignore',
   })
+}
+
+function stopExistingDevAppInstances(target) {
+  if (process.platform === 'win32') {
+    stopWindowsProcessByPath(target)
+    return
+  }
+
+  const result = spawnSync('ps', ['-axo', 'pid=,command='], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+
+  if (result.error || result.status !== 0) {
+    return
+  }
+
+  const pids = result.stdout
+    .split('\n')
+    .map((line) => line.trimStart().match(/^(\d+)\s+(.+)$/))
+    .filter(Boolean)
+    .map((match) => ({ pid: Number(match[1]), command: match[2] }))
+    .filter(({ pid, command }) => pid !== process.pid && (command === target || command.startsWith(`${target} `)))
+    .map(({ pid }) => pid)
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      // Process already exited.
+    }
+  }
+
+  if (pids.length === 0) {
+    return
+  }
+
+  sleep(300)
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 0)
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Process already exited.
+    }
+  }
+
+  console.error(`[tauri-dev-runner] 已停止同端口旧 dev app: ${pids.join(', ')}`)
 }
 
 function sleep(ms) {

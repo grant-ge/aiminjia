@@ -43,9 +43,16 @@ const TOOL_PREFERENCE_SECTION: &str = r#"
 - 多步操作时，每一步开始前也要用一句话说明这一步要做什么。
 - 解释一句话即可，不要长篇大论；用户更看重知道你在做什么，而不是细节描述。
 
+【Markdown 格式】
+- 写 Markdown 列表时，列表符号必须使用 ASCII `- `、`* ` 或 `+ `，优先使用 `- `。
+- 不要用 `– `、`— `、`－ ` 等破折号或全角横线冒充列表符号；这些不会被稳定渲染成列表。
+
 【产物标记】
-- 当你通过任何方式（Write工具、Bash、脚本、MCP工具等）创建了最终产物文件时，在回复中用标记声明：`![artifact](文件绝对路径)`
-  示例：`![artifact](/Users/xxx/workspace/reports/销售报告.xlsx)`
+- 当你通过任何方式（Write工具、Bash、脚本、MCP工具等）创建了最终产物文件时，在回复中用 Markdown 图片语法声明产物：`![artifact](文件绝对路径)`
+- `artifact` 是固定的图片 alt 文本，必须逐字写成 `artifact`，不能替换、翻译、省略或改成其他词。
+- 产物标记必须完整包含 `!`、`[`、`]`、`(`、`)` 这几个 Markdown 语法字符；少任何一个字符都会失效。
+- 正确示例：`![artifact](/Users/xxx/workspace/reports/销售报告.xlsx)`
+- 错误示例：`!artifact(/Users/xxx/workspace/reports/销售报告.xlsx)`、`[artifact](/Users/xxx/workspace/reports/销售报告.xlsx)`、`![产物](/Users/xxx/workspace/reports/销售报告.xlsx)`
 - 每个产物文件单独一行标记，放在回复末尾。只有最终产物标记，中间临时文件不标记
 - 标记会被系统自动识别并渲染为可交互的产物卡片，无需在正文中重复描述产物内容
 

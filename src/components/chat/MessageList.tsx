@@ -39,8 +39,6 @@ import {
   type RenderTurnBlock,
 } from "@/hooks/useTurnRenderModel";
 import {
-  isGeneratedFileAvailable,
-  isLocalFileAvailable,
   openGeneratedFile,
   openLocalFile,
   revealFileInFolder,
@@ -53,35 +51,8 @@ type FileActionKind = "preview" | "open" | "download" | "reveal";
 type GeneratedFileCardProps = Parameters<typeof GeneratedFileCard>[0];
 
 function AvailableGeneratedFileCard({
-  file,
   ...cardProps
 }: GeneratedFileCardProps & { file: RenderGeneratedFile }) {
-  const [isAvailable, setIsAvailable] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setIsAvailable(false);
-    const availability = file.id.startsWith("artifact-")
-      ? (file.filePath ? isLocalFileAvailable(file.filePath) : Promise.resolve(false))
-      : (
-          file.conversationId
-            ? isGeneratedFileAvailable(file.id, file.conversationId)
-            : Promise.resolve(false)
-        );
-
-    void availability
-      .then((available) => {
-        if (!cancelled) setIsAvailable(available);
-      })
-      .catch(() => {
-        if (!cancelled) setIsAvailable(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [file.id, file.conversationId, file.filePath]);
-
-  if (!isAvailable) return null;
   return <GeneratedFileCard {...cardProps} />;
 }
 

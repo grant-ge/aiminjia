@@ -230,12 +230,22 @@ interface ParsedArtifactFile {
   fileType: GeneratedFile["fileType"];
 }
 
-function parseArtifactMarks(text: string): {
-  cleanedText: string;
-  files: ParsedArtifactFile[];
-} {
-  const files: ParsedArtifactFile[] = [];
+type ParsedArtifactPart =
+  | { kind: "text"; text: string }
+  | { kind: "artifact"; file: ParsedArtifactFile };
+
+function parseArtifactParts(text: string): ParsedArtifactPart[] {
+  const parts: ParsedArtifactPart[] = [];
+  const protectedRanges = collectMarkdownCodeRanges(text);
+  let cursor = 0;
   for (const m of text.matchAll(ARTIFACT_RE)) {
+    const index = m.index ?? 0;
+    if (isIndexInRanges(index, protectedRanges)) {
+      continue;
+    }
+    if (index > cursor) {
+      parts.push({ kind: "text", text: text.slice(cursor, index) });
+    }
     const filePath = m[1].trim();
     const fileName = filePath.split(/[\\/]/).pop() || filePath;
     const ext = fileName.includes(".")
@@ -243,10 +253,105 @@ function parseArtifactMarks(text: string): {
       : undefined;
     const fileType: GeneratedFile["fileType"] =
       (ext ? ARTIFACT_EXT_TO_TYPE[ext] : undefined) ?? "file";
-    files.push({ filePath, fileName, fileType });
+    parts.push({ kind: "artifact", file: { filePath, fileName, fileType } });
+    cursor = index + m[0].length;
   }
-  const cleanedText = text.replace(ARTIFACT_RE, "");
-  return { cleanedText, files };
+  if (cursor < text.length) {
+    parts.push({ kind: "text", text: text.slice(cursor) });
+  }
+  return parts.length ? parts : [{ kind: "text", text }];
+}
+
+function collectMarkdownCodeRanges(text: string): Array<[number, number]> {
+  return mergeRanges([
+    ...collectFencedCodeRanges(text),
+    ...collectInlineCodeRanges(text),
+  ]);
+}
+
+function collectFencedCodeRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const lineRe = /^(?:[ \t]*)(`{3,}|~{3,}).*$/gm;
+  let open:
+    | { start: number; marker: "`" | "~"; length: number }
+    | null = null;
+
+  for (const match of text.matchAll(lineRe)) {
+    const fence = match[1];
+    const marker = fence[0] as "`" | "~";
+    const length = fence.length;
+    const start = match.index ?? 0;
+    if (!open) {
+      open = { start, marker, length };
+      continue;
+    }
+    if (marker === open.marker && length >= open.length) {
+      ranges.push([open.start, start + match[0].length]);
+      open = null;
+    }
+  }
+
+  if (open) {
+    ranges.push([open.start, text.length]);
+  }
+  return ranges;
+}
+
+function collectInlineCodeRanges(text: string): Array<[number, number]> {
+  const fencedRanges = collectFencedCodeRanges(text);
+  const ranges: Array<[number, number]> = [];
+  let index = 0;
+
+  while (index < text.length) {
+    if (isIndexInRanges(index, fencedRanges)) {
+      index += 1;
+      continue;
+    }
+    if (text[index] !== "`") {
+      index += 1;
+      continue;
+    }
+
+    let length = 1;
+    while (text[index + length] === "`") {
+      length += 1;
+    }
+    if (length >= 3) {
+      index += length;
+      continue;
+    }
+
+    const marker = "`".repeat(length);
+    const close = text.indexOf(marker, index + length);
+    if (close === -1) {
+      index += length;
+      continue;
+    }
+    ranges.push([index, close + length]);
+    index = close + length;
+  }
+
+  return ranges;
+}
+
+function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
+  const sorted = ranges
+    .filter(([start, end]) => end > start)
+    .sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous && range[0] <= previous[1]) {
+      previous[1] = Math.max(previous[1], range[1]);
+    } else {
+      merged.push([...range]);
+    }
+  }
+  return merged;
+}
+
+function isIndexInRanges(index: number, ranges: Array<[number, number]>): boolean {
+  return ranges.some(([start, end]) => index >= start && index < end);
 }
 
 // ── File size & metadata formatting ──────────────────────────────────────
@@ -346,6 +451,16 @@ function normalizeGeneratedFile(
     canReveal,
     primaryAction: canPreview ? "preview" : "open",
   };
+}
+
+function findMatchingGeneratedFileIndex(
+  files: RenderGeneratedFile[],
+  artifact: ParsedArtifactFile,
+): number {
+  return files.findIndex(
+    (file) =>
+      file.filePath === artifact.filePath || file.fileName === artifact.fileName,
+  );
 }
 
 function ensureToolGroup(
@@ -732,42 +847,61 @@ export function buildTurnsFromMessages(
       if (!hasToolCalls) {
         current.isComplete = true;
       }
+      const remainingStructuredFiles = (m.content.generatedFiles ?? []).map((file) =>
+        normalizeGeneratedFile(file, m.conversationId),
+      );
       if (m.content.text) {
-        const { cleanedText, files } = parseArtifactMarks(m.content.text);
-        const artifactFiles = m.content.generatedFiles?.length ? [] : files;
-        const displayText = cleanedText.trim();
-        if (displayText) {
-          const segment: RenderAiSegment = {
-            id: m.id,
-            text: displayText,
-            message:
-              displayText === m.content.text
-                ? m
-                : { ...m, content: { ...m.content, text: displayText } },
-          };
-          current.aiSegments.push(segment);
-          current.blocks.push({ kind: "assistantText", id: m.id, segment });
-        }
-        for (const f of artifactFiles) {
-          const file = normalizeGeneratedFile(
-            {
-              id: `artifact-${m.id}-${f.fileName}`,
-              fileName: f.fileName,
-              filePath: f.filePath,
-              fileType: f.fileType,
-              fileSize: 0,
-              category: "report",
-              version: 1,
-              isLatest: true,
-              createdAt: m.createdAt || new Date().toISOString(),
-              description: "",
-              actions: [],
-            },
-            m.conversationId,
+        const parts = parseArtifactParts(m.content.text);
+        let textPartIndex = 0;
+        parts.forEach((part, partIndex) => {
+          if (part.kind === "text") {
+            const displayText = part.text.trim();
+            if (!displayText) return;
+            const segmentId =
+              parts.length === 1 ? m.id : `${m.id}-text-${textPartIndex++}`;
+            const segment: RenderAiSegment = {
+              id: segmentId,
+              text: displayText,
+              message:
+                displayText === m.content.text
+                  ? m
+                  : { ...m, content: { ...m.content, text: displayText } },
+            };
+            current.aiSegments.push(segment);
+            current.blocks.push({
+              kind: "assistantText",
+              id: segmentId,
+              segment,
+            });
+            return;
+          }
+
+          const structuredIndex = findMatchingGeneratedFileIndex(
+            remainingStructuredFiles,
+            part.file,
           );
+          const file =
+            structuredIndex >= 0
+              ? remainingStructuredFiles.splice(structuredIndex, 1)[0]
+              : normalizeGeneratedFile(
+                  {
+                    id: `artifact-${m.id}-${partIndex}-${part.file.fileName}`,
+                    fileName: part.file.fileName,
+                    filePath: part.file.filePath,
+                    fileType: part.file.fileType,
+                    fileSize: 0,
+                    category: "report",
+                    version: 1,
+                    isLatest: true,
+                    createdAt: m.createdAt || new Date().toISOString(),
+                    description: "",
+                    actions: [],
+                  },
+                  m.conversationId,
+                );
           current.generatedFiles.push(file);
           current.blocks.push({ kind: "generatedFile", id: file.id, file });
-        }
+        });
       }
       if (m.toolCalls?.length) {
         for (const tc of m.toolCalls) {
@@ -860,9 +994,8 @@ export function buildTurnsFromMessages(
           }
         }
       }
-      if (m.content.generatedFiles?.length) {
-        for (const f of m.content.generatedFiles) {
-          const file = normalizeGeneratedFile(f, m.conversationId);
+      if (remainingStructuredFiles.length) {
+        for (const file of remainingStructuredFiles) {
           current.generatedFiles.push(file);
           current.blocks.push({ kind: "generatedFile", id: file.id, file });
         }

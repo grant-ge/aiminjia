@@ -365,17 +365,17 @@ describe('MessageList generated file actions', () => {
     expect(openGeneratedFileMock).not.toHaveBeenCalled()
   })
 
-  it('does not render a generated file card when its indexed file is unavailable', async () => {
+  it('renders a generated file card even when its indexed file is unavailable', async () => {
     isGeneratedFileAvailableMock.mockResolvedValueOnce(false)
 
     renderWithFile(generatedFile())
 
-    await waitFor(() => expect(isGeneratedFileAvailableMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
-    expect(screen.queryByTestId('generated-file-card')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '预览 Summary' })).not.toBeInTheDocument()
+    expect(await screen.findByTestId('generated-file-card')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '预览 Summary' })).toBeInTheDocument()
+    expect(isGeneratedFileAvailableMock).not.toHaveBeenCalled()
   })
 
-  it('does not render an artifact marker card when its explicit local path is unavailable', async () => {
+  it('renders an artifact marker card when its explicit local path is unavailable', async () => {
     isLocalFileAvailableMock.mockResolvedValueOnce(false)
     resetStores('conv-1')
     useChatStore.setState({
@@ -399,9 +399,9 @@ describe('MessageList generated file actions', () => {
 
     render(<MessageList />)
 
-    await waitFor(() => expect(isLocalFileAvailableMock).toHaveBeenCalledWith('/tmp/missing.png'))
-    expect(screen.queryByTestId('generated-file-card')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '预览 missing.png' })).not.toBeInTheDocument()
+    expect(await screen.findByTestId('generated-file-card')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '预览 missing.png' })).toBeInTheDocument()
+    expect(isLocalFileAvailableMock).not.toHaveBeenCalled()
   })
 
   it('opens non-previewable excel file externally from primary action', async () => {

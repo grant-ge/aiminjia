@@ -865,6 +865,52 @@ describe("buildTurnsFromMessages", () => {
     expect(turn.blocks.filter((block) => block.kind === "generatedFile")).toHaveLength(1);
   });
 
+  it("keeps artifact cards in the marker's original message position", () => {
+    const turn = buildTurnsFromMessages(
+      [
+        userMsg("u1", "make a report"),
+        aiMsg(
+          "a1",
+          "前面这段解释。\n\n![artifact](/tmp/report.md)\n\n后面继续解释。",
+        ),
+      ],
+      [],
+    )[0];
+
+    expect(turn.blocks.map((block) => block.kind)).toEqual([
+      "assistantText",
+      "generatedFile",
+      "assistantText",
+    ]);
+    expect(
+      turn.blocks[0].kind === "assistantText" ? turn.blocks[0].segment.text : "",
+    ).toBe("前面这段解释。");
+    expect(
+      turn.blocks[1].kind === "generatedFile" ? turn.blocks[1].file.filePath : "",
+    ).toBe("/tmp/report.md");
+    expect(
+      turn.blocks[2].kind === "assistantText" ? turn.blocks[2].segment.text : "",
+    ).toBe("后面继续解释。");
+  });
+
+  it("does not render artifact cards for markers inside code spans or code blocks", () => {
+    const text = [
+      "行内代码 `![artifact](/tmp/inline.md)` 不应该渲染。",
+      "",
+      "```",
+      "![artifact](/tmp/block.md)",
+      "```",
+    ].join("\n");
+    const turn = buildTurnsFromMessages(
+      [userMsg("u1", "explain marker"), aiMsg("a1", text)],
+      [],
+    )[0];
+
+    expect(turn.generatedFiles).toHaveLength(0);
+    expect(turn.blocks.map((block) => block.kind)).toEqual(["assistantText"]);
+    expect(turn.aiSegments[0].text).toBe(text);
+  });
+
   it("uses type-based preview for legacy HTML actions that omit preview", () => {
     const msg: Message = {
       ...aiMsg("a1", "done"),
