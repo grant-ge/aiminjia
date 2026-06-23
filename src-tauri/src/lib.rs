@@ -740,7 +740,15 @@ pub fn run() {
                     // there shows up as a nameless entry. Seed it with the product
                     // name; brandingStore refines it to the tenant productName once
                     // the webview loads.
-                    let _ = win.set_title("AIjia");
+                    let native_title = app
+                        .config()
+                        .product_name
+                        .clone()
+                        .filter(|value| !value.trim().is_empty())
+                        .or_else(|| std::env::var("AIJIA_DEV_APP_NAME").ok())
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| "AIjia".to_string());
+                    let _ = win.set_title(&native_title);
 
                     // macOS: `titleBarStyle: Overlay` floats the traffic lights over
                     // content but does NOT hide the native title text — it would
