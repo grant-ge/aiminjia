@@ -56,7 +56,7 @@
 
 - [ ] 为大体积或重复结果增加 `collapse` 表示层，而不是直接进入 LLM summary compact。
 - [ ] `collapse` 要和 compact boundary 共存，不能破坏现有历史恢复语义。
-- [ ] 如果 `Plan-AI` 仍未执行，先冻结 `analysis mode` 分叉；U3 不再接受新双轨分支进入 pipeline。
+- [ ] 如果 `Plan-AI` 仍未执行，先冻结旧分叉；U3 不再接受新双轨分支进入 pipeline。
 
 ### U3-4：统一恢复路径
 

@@ -31,7 +31,7 @@ OpenAI renderer 产出 OpenAI system message；gateway 在 regular messages mask
 ## 代码边界
 
 - 生产组装源是 `runtime/chat/prompt/sections.rs::PromptAssembler`。
-- `src-tauri/src/llm/prompts.rs` 只是 raw prompt store + compatibility shim，负责加载 base、daily、browser_agent 等原始 prompt 片段，并保留旧调用点可用的 `get_system_prompt()` / `build_system_prompt_parts()`。
+- `src-tauri/src/llm/prompts.rs` 只是 raw prompt store + compatibility shim，负责加载 base、daily 原始 prompt 片段，并保留旧调用点可用的 `get_system_prompt()` / `build_system_prompt_parts()`。
 - 新代码如需 system prompt assembly，应直接使用 `PromptAssembler`，而不是自行拼接 raw prompt fragments。
 - 旧 shim 可以继续服务 tests、legacy fallback 或尚未迁移的插件接口，但不应扩展为新的 provider 行为入口。
 

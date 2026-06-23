@@ -337,7 +337,7 @@ RuntimeChatTurnDriver::build_turn_config
 
 ### 8.1 关键事实
 
-**prompt 文件零硬编码**：`base.md` / `daily.md` / `browser_agent.md` 中**没有任何工具名字符串字面量**。LLM 看到的工具名通过 schema 自动注入（`provider API tools`）。这意味着改名不需要改 prompt 主体内容。
+**prompt 文件零硬编码**：`base.md` / `daily.md` 中**没有任何工具名字符串字面量**。LLM 看到的工具名通过 schema 自动注入（`provider API tools`）。这意味着改名不需要改 prompt 主体内容。
 
 **catalog description JSON 内有交叉引用**：`catalog.rs` 中有以下工具间互相提及（改名时必须同步改 description 文字）：
 

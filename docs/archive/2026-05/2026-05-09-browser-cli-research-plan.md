@@ -111,7 +111,7 @@
 
 预期优势：
 
-- 完整 browser agent 生态。
+- 完整 browser automation 生态。
 - 可能更适合真实 profile 和持久 daemon。
 
 预期风险：

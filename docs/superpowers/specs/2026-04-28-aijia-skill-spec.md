@@ -17,7 +17,7 @@
 1. **磁盘唯一**：runtime 只从磁盘加载 skill；不再注册任何 builtin Rust skill 实现。
 2. **无状态加载**：`load_skill` 是一个工具调用，返回 SKILL.md body 给 LLM；不改 system prompt、不限制工具、不持久化任何 active skill state。
 3. **完全对齐 Claude Code**：frontmatter 字段、变量替换、catalog 注入策略、token 预算、`inline` / `fork` 两种执行模式都照搬 CC，仅替换变量前缀为 `${AIJIA_*}`。
-4. **不需要兼容**：`plugin.toml` / `workflow.toml` / `is_analysis` / `switch_skill` / `SkillSessionStore` / `SkillRuntimePatch` / 全部前端 stateful 入口一次性删除。
+4. **不需要兼容**：`plugin.toml` / `workflow.toml` / 旧分支字段 / `switch_skill` / `SkillSessionStore` / `SkillRuntimePatch` / 全部前端 stateful 入口一次性删除。
 
 ---
 
@@ -417,7 +417,7 @@ let user_skills = paths.skills_dir(); // ~/.renlijia/users/{scope}/skills/
 
 预计 5 个 Phase：
 
-- **Phase A**：删除 stateful workflow 链路（switch_skill / SkillRuntimePatch / SkillSessionStore / precompute / is_analysis）。
+- **Phase A**：删除 stateful workflow 链路（switch_skill / SkillRuntimePatch / SkillSessionStore / precompute / 旧分支字段）。
 - **Phase B**：删除旧 skill 格式相关代码（manifest.rs / declarative_skill.rs / builtin/skills/ / scan_external_plugins）。
 - **Phase C**：实现 §2–§4：SKILL.md 解析 + 双根扫描 + 变量替换 + shell 执行。
 - **Phase D**：实现 §5–§6：load_skill inline + fork + catalog 增量注入。

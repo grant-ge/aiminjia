@@ -492,7 +492,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls
                 .into_iter()
                 .filter_map(|tool_call| {
-                    let purpose = Some(format!("[Browser Agent] {}", tool_call.name));
+                    let purpose = Some(format!("[Browser Automation] {}", tool_call.name));
                     match RuntimeToolCallRequest::from_tool_call(tool_call, purpose) {
                         Ok(call) => Some(call),
                         Err(err) => {

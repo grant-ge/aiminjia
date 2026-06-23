@@ -48,7 +48,7 @@
 
 - `Plan-U4` 建议在 `Plan-U3` 之后执行，因为记忆注入要挂在新的上下文预处理链上。
 - `Plan-U5` 依赖 `Plan-U2` + `Plan-U6`；否则 worker 的权限、工具池和桥接边界仍会分叉。
-- 若 `Plan-AI` 仍未执行，先冻结 `analysis mode` 的分叉逻辑，再推进 `Plan-U3/U6`，避免形成双轨预处理与双轨 tool surface。
+- 若 `Plan-AI` 仍未执行，先冻结旧分叉逻辑，再推进 `Plan-U3/U6`，避免形成双轨预处理与双轨 tool surface。
 
 ## 子计划清单
 

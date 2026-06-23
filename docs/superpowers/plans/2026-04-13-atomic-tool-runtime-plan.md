@@ -58,7 +58,7 @@ fn execute_python_kind_is_power() {
 
 #[test]
 fn browse_data_kind_is_composite() {
-    let def = ToolDefinition::new("browse_data", "Multi-step browser agent")
+    let def = ToolDefinition::new("browse_data", "Multi-step browser automation")
         .with_kind(ToolKind::Composite);
     assert!(matches!(def.kind, ToolKind::Composite));
 }
@@ -642,8 +642,8 @@ git commit -m "feat(atomic-tool): add ToolCatalog as single schema source with T
 ```rust
 // ⚠️ COMPATIBILITY LAYER — not the source of truth for tool schemas.
 // Use `runtime::tools::catalog::ToolCatalog` for authoritative tool definitions.
-// This file is kept only for the `get_tool_definitions_for_step()` step-filter API
-// used by legacy analysis orchestration. New code must NOT add tool definitions here.
+// This file is kept only for the legacy step-filter API.
+// New code must NOT add tool definitions here.
 ```
 
 将 `build_tool_definitions()` 内容替换为从 catalog 委托（只保留当前 `ALL_TOOLS` 的 10 个工具名对应的 schema）：

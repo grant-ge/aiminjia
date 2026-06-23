@@ -294,9 +294,6 @@ pub fn browse_data_agent_definition() -> AgentDefinition {
         ],
         max_iterations: 30,
         model: AgentModel::Inherit,
-        system_prompt: AgentPrompt::File(
-            PathBuf::from("prompts/browser_agent.md")
-        ),
         source: AgentSource::Builtin,
     }
 }

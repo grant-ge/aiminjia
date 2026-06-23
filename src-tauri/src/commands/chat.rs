@@ -37,10 +37,9 @@ pub async fn is_agent_busy(
 
 /// Send a user message and trigger the LLM agent loop.
 ///
-/// The function detects whether the conversation is in analysis mode
-/// (structured 6-step workflow) or daily consultation mode, and
-/// dispatches accordingly with the appropriate system prompt, tool
-/// filter, and iteration limit.
+/// The function forwards the request into the unified runtime chat loop,
+/// including attachments, permission mode, optional skill command, and
+/// reasoning-mode hint.
 #[tauri::command]
 pub async fn send_message(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,

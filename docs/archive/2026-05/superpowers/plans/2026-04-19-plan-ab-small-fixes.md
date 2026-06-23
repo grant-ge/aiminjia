@@ -459,7 +459,7 @@ for (tc, dispatch_result) in permitted_tool_calls.iter().zip(dispatch_results) {
                 "conversationId": config.conversation_id,
                 "toolName": tc.name,
                 "toolId": tc.id,
-                "purpose": format!("[Browser Agent] {}", tc.name),
+                "purpose": format!("[Browser Automation] {}", tc.name),
             }),
         );
     }

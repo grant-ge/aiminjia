@@ -175,11 +175,11 @@ use crate::runtime::ids::RunId;
 
 /// Python 执行能力接口。
 ///
-/// - `execute_in_session`：analysis mode，持久 session，按 scope_key（run_id 或 conv_id）路由。
+/// - `execute_in_session`：旧持久 session 分支，按 scope_key（run_id 或 conv_id）路由。
 /// - `execute_oneshot`：daily mode，one-shot 执行，每次 spawn 新进程，无持久状态。
 #[async_trait]
 pub trait PythonExecution: Send + Sync {
-    /// Analysis mode：在持久 Python REPL session 中执行代码。
+    /// 旧持久分支：在持久 Python REPL session 中执行代码。
     ///
     /// `scope_key` 通常由调用方从 `RunId` 生成（`session_key_for_run`）
     /// 或降级使用 `conversation_id`（无 RunId 时）。
@@ -693,28 +693,28 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
         }
 
         // Determine execution mode by checking ctx.capability for step_state.
-        // When CapabilityContext.storage is present and step_state exists → analysis mode.
-        // Otherwise → daily mode (one-shot).
+        // When CapabilityContext.storage is present and step_state exists → legacy persistent branch.
+        // Otherwise → one-shot branch.
         let scope_key = self
             .loaded_scope_id()
             .unwrap_or_else(|| ctx.session_id.as_str().to_string());
 
-        // Determine if analysis mode by checking for step_state in storage via capability.
+        // Determine if the legacy persistent branch applies by checking for step_state in storage via capability.
         // When storage is unavailable (tests/stub paths), always use oneshot.
-        let is_analysis = ctx
+        let legacy_persistent_branch = ctx
             .capability
             .as_ref()
             .and_then(|cap| cap.storage.as_ref())
-            .is_none();  // simplified: no storage cap → daily mode; real analysis detection deferred to E2 follow-up
+            .is_none();  // simplified: no storage cap → one-shot branch; real persistent-branch detection deferred to E2 follow-up
 
-        let exec_result = if is_analysis {
-            // Daily mode: one-shot
+        let exec_result = if legacy_persistent_branch {
+            // One-shot branch
             python
                 .execute_oneshot(workspace, code, &sandbox)
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
         } else {
-            // Analysis mode: persistent session
+            // Legacy persistent session branch
             let timeout = Duration::from_secs(sandbox.timeout_seconds as u64);
             python
                 .execute_in_session(&scope_key, code, timeout, &sandbox)
@@ -746,7 +746,7 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
 }
 ```
 
-**注意：** 上面的 `is_analysis` 逻辑是简化版。完整的 analysis mode 检测（`get_step_state`）需要 `AppStorage`，将在 E2-Follow-up 中通过 `CapabilityContext` 扩展引入。当前 Plan-E 的目标是脱离 `PluginContext`，analysis preamble 注入可通过后续 task 补齐。
+**注意：** 上面的旧持久分支判断逻辑是简化版。完整的旧分支检测（`get_step_state`）需要 `AppStorage`，将在 E2-Follow-up 中通过 `CapabilityContext` 扩展引入。当前 Plan-E 的目标是脱离 `PluginContext`，相关 preamble 注入可通过后续 task 补齐。
 
 **修改 registry：**
 
@@ -2132,15 +2132,15 @@ Plan-E 完成当且仅当：
 
 `build_chart_python` 是当前 `llm/tool_executor/chart.rs` 中的私有函数。实现 `DefaultChartCapability` 时需将其改为 `pub(crate)`。
 
-### analysis mode 与 `get_step_state`
+### 旧持久分支与 `get_step_state`
 
 这不是 follow-up，而是 Plan-E / E2 的正式验收项。`execute_python` 切到 runtime path 后，必须继续保有当前生产路径中的：
 
 - uploaded file auto-load；
 - loaded preamble 注入；
 - authorized workspace preamble；
-- analysis snapshot / user vars / step_state 恢复与保存；
-- analysis mode 缺失 `run_id` 时的失败语义。
+- legacy snapshot / user vars / step_state 恢复与保存；
+- 旧持久分支缺失 `run_id` 时的失败语义。
 
 若某一项暂时无法通过 `CapabilityContext` 表达，应先扩展 shared core / capability boundary，再切换 runtime path；不要以“路径已迁完、语义后补”为 Plan-E 完成标准。
 

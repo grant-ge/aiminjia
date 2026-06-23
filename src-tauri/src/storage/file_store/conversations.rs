@@ -609,7 +609,7 @@ pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResul
     Ok(())
 }
 
-/// Get conversation mode, defaulting to "daily" on error (for index reads).
+/// Get conversation metadata.
 pub fn get_conversation(base_dir: &Path, id: &str) -> StorageResult<ConversationMeta> {
     Ok(read_json_safe(&conv_meta_path(base_dir, id))?)
 }

@@ -1,6 +1,7 @@
-use app_lib::llm::prompts::{self, PromptMode};
+use app_lib::llm::prompts;
 use app_lib::runtime::chat::context_builder::build_iteration_context;
 use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, ReminderBuilder};
+use app_lib::runtime::tools::catalog::ToolCatalog;
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -114,12 +115,10 @@ fn prompt_assembler_places_base_before_dynamic_daily_prompt() {
     std::fs::create_dir_all(&user).unwrap();
     std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
     std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
-    std::fs::write(bundled.join("prompts/browser_agent.md"), "browser prompt").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let assembler = PromptAssembler::default();
     let assembly = assembler.build_system_prompt(PromptBuildContext {
-        mode: PromptMode::Daily,
         persona: None,
         product_name: None,
     });
@@ -149,7 +148,6 @@ fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exis
         "daily intro\n记忆管理（白名单制）\n- old memory hint\n- another old hint\n\n后续章节\nkeep this section",
     )
     .unwrap();
-    std::fs::write(bundled.join("prompts/browser_agent.md"), "browser prompt").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let persona = app_lib::storage::file_store::persona::Persona {
@@ -169,7 +167,7 @@ fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exis
         updated_at: "2026-01-01".to_string(),
     };
 
-    let parts = prompts::build_system_prompt_parts(PromptMode::Daily, Some(&persona), None);
+    let parts = prompts::build_system_prompt_parts(Some(&persona), None);
 
     assert!(parts.dynamic_section.contains("daily intro"));
     assert!(parts.dynamic_section.contains("new memory hint"));
@@ -188,16 +186,14 @@ fn prompt_assembler_matches_legacy_daily_prompt_parts() {
     std::fs::create_dir_all(&user).unwrap();
     std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
     std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
-    std::fs::write(bundled.join("prompts/browser_agent.md"), "browser prompt").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let assembler = PromptAssembler::default();
     let assembly = assembler.build_system_prompt(PromptBuildContext {
-        mode: PromptMode::Daily,
         persona: None,
         product_name: Some("Lotus"),
     });
-    let parts = prompts::build_system_prompt_parts(PromptMode::Daily, None, Some("Lotus"));
+    let parts = prompts::build_system_prompt_parts(None, Some("Lotus"));
     let legacy_prompt = if parts.dynamic_section.is_empty() {
         parts.static_section
     } else {
@@ -298,4 +294,42 @@ fn default_system_prompt_uses_base_prompt() {
         !base.contains("switch_skill"),
         "base prompt must not reference switch_skill"
     );
+}
+
+#[test]
+fn prompt_boundary_copy_does_not_expose_internal_mode_switching() {
+    let parts = prompts::build_system_prompt_parts(None, None);
+    let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
+    let forbidden = [
+        "当前模式",
+        "隐藏模式",
+        "模式切换",
+        "进入模式",
+        "退出模式",
+        "切换模式",
+        "需启动对应技能",
+    ];
+
+    for marker in forbidden {
+        assert!(
+            !prompt.contains(marker),
+            "system prompt should not expose internal mode/switching wording: {marker}"
+        );
+    }
+}
+
+#[test]
+fn skill_tool_description_keeps_skill_selection_internal() {
+    let catalog = ToolCatalog::default_catalog();
+    let skill = catalog.get("Skill").expect("Skill must exist in catalog");
+
+    assert!(skill.description.contains("内部参考"));
+    assert!(skill.description.contains("业务语言承接"));
+
+    for marker in ["不改变系统提示", "模式", "切换"] {
+        assert!(
+            !skill.description.contains(marker),
+            "Skill description should not invite user-visible routing wording: {marker}"
+        );
+    }
 }
