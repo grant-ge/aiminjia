@@ -3,10 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/tauri', () => ({
   billingSummary: vi.fn(),
   billingUsageRecords: vi.fn(),
-  enterpriseUsageRecords: vi.fn(),
 }))
 
-import { billingSummary, billingUsageRecords, enterpriseUsageRecords } from '@/lib/tauri'
+import { billingSummary, billingUsageRecords } from '@/lib/tauri'
 import { useBillingStore } from './billingStore'
 
 const defaultFilters = {
@@ -98,43 +97,6 @@ describe('useBillingStore', () => {
     })
   })
 
-  it('uses enterprise usage endpoint when scope is enterprise', async () => {
-    ;(enterpriseUsageRecords as any).mockResolvedValue({
-      page: 1,
-      size: 20,
-      total: 1,
-      summary: {
-        request_count: 1,
-        input_tokens: 12,
-        output_tokens: 8,
-        cached_tokens: 0,
-        cost: '0.020',
-      },
-      records: [{
-        id: 9,
-        created_at: '2026-05-19T14:00:00+08:00',
-        request_type: 'chat',
-        model_name: 'qwen-max',
-        input_tokens: 12,
-        output_tokens: 8,
-        cached_tokens: 0,
-        cost: '0.020',
-        key_type: 'session',
-      }],
-    })
-
-    await useBillingStore.getState().fetchRecords(1, 'enterprise')
-
-    expect(enterpriseUsageRecords).toHaveBeenCalledWith(1, 20, {
-      startAt: localStartIso(2026, 5, 1),
-      endAt: localEndIso(2026, 5, 31),
-      requestType: null,
-      modelName: null,
-    })
-    expect(billingUsageRecords).not.toHaveBeenCalled()
-    expect(useBillingStore.getState().rangeSummary.request_count).toBe(1)
-  })
-
   it('records error message on fetchSummary failure', async () => {
     ;(billingSummary as any).mockRejectedValue(new Error('network down'))
     await useBillingStore.getState().fetchSummary()
@@ -170,16 +132,6 @@ describe('useBillingStore', () => {
       requestType: null,
       modelName: null,
     })
-  })
-
-  it('refresh for enterprise only fetches enterprise usage records', async () => {
-    ;(enterpriseUsageRecords as any).mockResolvedValue({ page: 1, size: 20, total: 0, records: [] })
-
-    await useBillingStore.getState().refresh('enterprise')
-
-    expect(enterpriseUsageRecords).toHaveBeenCalledTimes(1)
-    expect(billingSummary).not.toHaveBeenCalled()
-    expect(billingUsageRecords).not.toHaveBeenCalled()
   })
 
   it('stores custom date range and uses it on record fetch', async () => {

@@ -36,16 +36,18 @@ export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
 interface SettingsMenuProps {
   activeKey: SettingsModalKey
   onSelect: (key: SettingsModalKey) => void
+  hiddenKeys?: readonly SettingsModalKey[]
 }
 
-export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
+export function SettingsMenu({ activeKey, onSelect, hiddenKeys = [] }: SettingsMenuProps) {
   const { t } = useTranslation()
+  const hidden = new Set(hiddenKeys)
   return (
     <aside className="flex min-h-0 flex-col rounded-l-md bg-secondary px-4 py-6">
       <div className="mb-2 shrink-0 text-lg font-bold text-foreground">{t('settings.tabs.title')}</div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         {SETTINGS_MENU_ITEMS
-          .filter((it) => !it.disabled)
+          .filter((it) => !it.disabled && !hidden.has(it.key))
           .map((it) => {
           const active = it.key === activeKey
           const label = t(it.labelKey)

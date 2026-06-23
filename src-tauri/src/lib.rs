@@ -1501,7 +1501,6 @@ pub fn run() {
             // Billing/account usage commands
             crate::transport::tauri_commands::billing::billing_summary,
             crate::transport::tauri_commands::billing::billing_usage_records,
-            crate::transport::tauri_commands::billing::enterprise_usage_records,
             commands::auth::save_last_brand,
             // Skill management commands
             commands::skill_management::list_custom_skills,

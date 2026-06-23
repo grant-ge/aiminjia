@@ -3546,21 +3546,6 @@ export function billingUsageRecords(
   });
 }
 
-export function enterpriseUsageRecords(
-  page: number,
-  size: number,
-  filters?: UsageRecordFilters,
-): Promise<UsageRecordsPage> {
-  return invoke<UsageRecordsPage>("enterprise_usage_records", {
-    page,
-    size,
-    startAt: filters?.startAt ?? null,
-    endAt: filters?.endAt ?? null,
-    requestType: filters?.requestType ?? null,
-    modelName: filters?.modelName ?? null,
-  });
-}
-
 // ─────────────────────────────────────────────────────────────
 // Updater Commands
 // ─────────────────────────────────────────────────────────────
