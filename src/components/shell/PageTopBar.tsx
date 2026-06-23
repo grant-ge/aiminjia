@@ -1,24 +1,25 @@
 /**
  * @designSource design.pen#BixkY/aAO2u/tCYsE/WgoHO
- * @sizing height 56, padding [0,24], bottom border 1
+ * @sizing height 48, padding [0,24], bottom border 1
  */
-import type { ReactNode } from 'react'
-import { ChevronRight } from 'lucide-react'
+import type { ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
+import { Button } from '@/components/ui/button'
 
-export type PageTopBarVariant = 'default' | 'title' | 'breadcrumb' | 'compact'
+export type PageTopBarVariant = "default" | "title" | "breadcrumb" | "compact";
 
 export interface BreadcrumbCrumb {
-  label: string
-  onClick?: () => void
-  current?: boolean
+  label: string;
+  onClick?: () => void;
+  current?: boolean;
 }
 
 interface PageTopBarProps {
-  variant: PageTopBarVariant
-  title?: ReactNode
-  breadcrumbs?: BreadcrumbCrumb[]
-  leading?: ReactNode
-  trailing?: ReactNode
+  variant: PageTopBarVariant;
+  title?: ReactNode;
+  breadcrumbs?: BreadcrumbCrumb[];
+  leading?: ReactNode;
+  trailing?: ReactNode;
 }
 
 export function PageTopBar({
@@ -29,23 +30,28 @@ export function PageTopBar({
   trailing,
 }: PageTopBarProps) {
   return (
-    <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
-      {variant === 'compact' ? (
-        <div className="flex min-w-0 items-center gap-3 text-sm font-semibold text-foreground">
+    <header
+      data-tauri-drag-region
+      className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-8"
+    >
+      {variant === "compact" ? (
+        <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-foreground">
           {leading}
           <span className="truncate">{title}</span>
         </div>
-      ) : variant === 'title' ? (
-        <div className="flex min-w-0 items-center gap-3">
+      ) : variant === "title" ? (
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {leading}
-          {typeof title === 'string' ? (
-            <span className="truncate text-base font-semibold text-foreground">{title}</span>
+          {typeof title === "string" ? (
+            <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">
+              {title}
+            </span>
           ) : (
             title
           )}
         </div>
-      ) : variant === 'breadcrumb' ? (
-        <div className="flex min-w-0 items-center gap-3">
+      ) : variant === "breadcrumb" ? (
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {leading}
           {breadcrumbs ? (
             <ol className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
@@ -53,15 +59,19 @@ export function PageTopBar({
                 <li key={i} className="flex items-center gap-2">
                   {i > 0 ? <ChevronRight className="h-3.5 w-3.5" /> : null}
                   {c.onClick ? (
-                    <button
+                    <Button unstyled
                       type="button"
-                      className={c.current ? 'text-foreground' : 'hover:text-foreground'}
+                      className={
+                        c.current ? "text-foreground" : "hover:text-foreground"
+                      }
                       onClick={c.onClick}
                     >
                       {c.label}
-                    </button>
+                    </Button>
                   ) : (
-                    <span className={c.current ? 'text-foreground' : ''}>{c.label}</span>
+                    <span className={c.current ? "text-foreground" : ""}>
+                      {c.label}
+                    </span>
                   )}
                 </li>
               ))}
@@ -70,13 +80,13 @@ export function PageTopBar({
         </div>
       ) : (
         /* default variant: empty bar */
-        <div className="flex min-w-0 items-center gap-3">
-          {leading}
-        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-3">{leading}</div>
       )}
-      <div className="flex items-center gap-2">
-        {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
-      </div>
+      {trailing ? (
+        <div className="ml-auto flex min-w-0 max-w-[70%] items-center justify-end gap-2 overflow-x-auto overflow-y-hidden">
+          {trailing}
+        </div>
+      ) : null}
     </header>
-  )
+  );
 }

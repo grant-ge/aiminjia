@@ -1,6 +1,8 @@
 import { cn } from '@/lib/utils'
-import { getExpertAvatarUrlForAgent } from '@/features/expert-teams/expertAvatar'
-import { getAgentIdentity } from './agentIdentity'
+import { ExpertAvatarView } from '@/features/expert-teams/ExpertAvatarView'
+import { getExpertAvatarVisualForAgent } from '@/features/expert-teams/expertAvatar'
+import { getExpertDisplayName } from '@/features/expert-teams/teams'
+import { formatLeadDisplayName, getAgentIdentity, isLeadName } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
 
 interface AgentAvatarProps {
@@ -15,26 +17,34 @@ const SIZE_CLASS = {
   lg: 'h-10 w-10 text-sm',
 } as const
 
+const LEAD_AVATAR_VISUAL = { kind: 'image', url: '/expert-avatars/lead.svg' } as const
+
 export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) {
-  const id = getAgentIdentity(name)
   const team = useTeamVisualContext()
-  const expertAvatarUrl = getExpertAvatarUrlForAgent(team, name)
+  const isLead = isLeadName(name)
+  const displayName = isLead ? formatLeadDisplayName(name) : getExpertDisplayName(team, name)
+  const id = getAgentIdentity(displayName)
+  const expertAvatarVisual = isLead ? LEAD_AVATAR_VISUAL : getExpertAvatarVisualForAgent(team, name)
+  const hasImageAvatar =
+    expertAvatarVisual?.kind === 'image' || expertAvatarVisual?.kind === 'atlas'
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full font-semibold tracking-tight',
+        'inline-flex shrink-0 items-center justify-center font-semibold',
         SIZE_CLASS[size],
-        id.avatarClass,
+        hasImageAvatar
+          ? 'overflow-hidden rounded-full border border-card bg-muted text-foreground'
+          : cn('rounded-md', id.avatarClass),
         className,
       )}
-      aria-label={name}
-      title={name}
+      aria-label={displayName}
+      title={displayName}
     >
-      {expertAvatarUrl ? (
-        <img src={expertAvatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
-      ) : (
-        id.initials
-      )}
+      <ExpertAvatarView
+        visual={expertAvatarVisual}
+        fallback={id.initials}
+        className={hasImageAvatar ? 'rounded-full' : undefined}
+      />
     </span>
   )
 }

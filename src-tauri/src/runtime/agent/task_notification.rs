@@ -18,7 +18,7 @@
 //! </task-notification>
 //! ```
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::runtime::ids::{RunId, SessionId};
 
@@ -77,9 +77,21 @@ fn xml_escape(s: &str) -> String {
 ///
 /// 队列是进程级共享实例；每条 notification 携带父 session/run，drain 时只
 /// 消费匹配当前 session 的条目，避免并发会话之间串话。
-#[derive(Clone, Default)]
+pub type TaskNotificationWakeFn = Arc<dyn Fn(SessionId) + Send + Sync + 'static>;
+
+#[derive(Clone)]
 pub struct TaskNotificationQueue {
     inner: Arc<Mutex<Vec<QueuedNotification>>>,
+    wake_fn: Arc<OnceLock<TaskNotificationWakeFn>>,
+}
+
+impl Default for TaskNotificationQueue {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Vec::new())),
+            wake_fn: Arc::new(OnceLock::new()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,13 +114,17 @@ impl TaskNotificationQueue {
         parent_session_id: SessionId,
         parent_run_id: Option<RunId>,
     ) {
-        let mut guard = self.inner.lock().expect("notification queue poisoned");
-        guard.push(QueuedNotification {
-            agent_id: agent_id.into(),
-            xml: xml.into(),
-            parent_session_id,
-            parent_run_id,
-        });
+        let wake_session_id = parent_session_id.clone();
+        {
+            let mut guard = self.inner.lock().expect("notification queue poisoned");
+            guard.push(QueuedNotification {
+                agent_id: agent_id.into(),
+                xml: xml.into(),
+                parent_session_id,
+                parent_run_id,
+            });
+        }
+        self.request_wake_for_session(wake_session_id);
     }
 
     /// Drain notifications belonging to `session_id`. Other sessions' items remain queued.
@@ -140,6 +156,25 @@ impl TaskNotificationQueue {
             .lock()
             .expect("notification queue poisoned")
             .len()
+    }
+
+    pub fn pending_count_for_session(&self, session_id: &SessionId) -> usize {
+        self.inner
+            .lock()
+            .expect("notification queue poisoned")
+            .iter()
+            .filter(|notification| &notification.parent_session_id == session_id)
+            .count()
+    }
+
+    pub fn set_wake_fn(&self, wake_fn: TaskNotificationWakeFn) -> bool {
+        self.wake_fn.set(wake_fn).is_ok()
+    }
+
+    pub fn request_wake_for_session(&self, session_id: SessionId) {
+        if let Some(wake) = self.wake_fn.get() {
+            wake(session_id);
+        }
     }
 
     /// TEST-ONLY: drain everything regardless of session.
@@ -246,6 +281,27 @@ mod tests {
         assert_eq!(drained.len(), 1);
         // q1 也已被 drain
         assert_eq!(q1.pending_count(), 0);
+    }
+
+    #[test]
+    fn enqueue_invokes_wake_fn_with_parent_session() {
+        let q = TaskNotificationQueue::new();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_for_wake = seen.clone();
+        assert!(q.set_wake_fn(Arc::new(move |session_id| {
+            seen_for_wake
+                .lock()
+                .expect("seen poisoned")
+                .push(session_id);
+        })));
+
+        let session_id = test_session("session-wake");
+        q.enqueue("agent-wake", "xml-wake", session_id.clone(), None);
+
+        assert_eq!(
+            seen.lock().expect("seen poisoned").as_slice(),
+            &[session_id]
+        );
     }
 
     #[test]

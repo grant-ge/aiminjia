@@ -1,4 +1,4 @@
-//! HTTP client for the Lotus API Gateway.
+//! HTTP client for the tenant gateway.
 //!
 //! Base URL: `https://ai-tenant.renlijia.com`
 //!
@@ -8,7 +8,7 @@
 //! - PUT  /auth/password        — change password (JWT required)
 //! - POST /auth/logout          — logout (JWT required)
 //! - POST /auth/session-keys    — access_token → session key (sk-sess***)
-//! - GET  /v1/models            — list available models
+//! - GET  /aijia/v2/ai/models   — list available logical models
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -18,7 +18,12 @@ use serde_json::json;
 
 use super::state::{CloudModelInfo, TenantInfo, UserInfo};
 
-pub const BASE_URL: &str = "https://ai-tenant.renlijia.com";
+/// Gateway origin for all auth/billing endpoints. Resolves to the production
+/// host in release builds; in debug builds it honors the dev environment
+/// override. See [`crate::environment`].
+pub fn base_url() -> String {
+    crate::environment::tenant_host()
+}
 
 /// Raw login/refresh response from the API (snake_case fields).
 #[derive(Debug, Deserialize)]
@@ -122,25 +127,26 @@ impl SessionKeyResponse {
     }
 }
 
-/// HTTP client for Lotus tenant portal.
+/// HTTP client for the tenant portal.
 pub struct AuthClient {
-    client: Client,
+    client: reqwest_middleware::ClientWithMiddleware,
 }
 
 impl AuthClient {
     pub fn new() -> Self {
+        let inner = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| Client::new());
         Self {
-            client: Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(15))
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .unwrap_or_else(|_| Client::new()),
+            client: crate::tracing_setup::traced_client(inner),
         }
     }
 
     /// Login with username and password.
     pub async fn login(&self, username: &str, password: &str) -> Result<AuthResponse> {
-        let url = format!("{}/auth/login", BASE_URL);
+        let url = format!("{}/auth/login", base_url());
         let resp = self
             .client
             .post(&url)
@@ -161,7 +167,7 @@ impl AuthClient {
 
     /// Refresh access token using refresh token.
     pub async fn refresh_token(&self, refresh_token: &str) -> Result<AuthResponse> {
-        let url = format!("{}/auth/refresh", BASE_URL);
+        let url = format!("{}/auth/refresh", base_url());
         let resp = self
             .client
             .post(&url)
@@ -189,7 +195,7 @@ impl AuthClient {
         access_token: &str,
         device_id: Option<&str>,
     ) -> Result<SessionKeyResponse> {
-        let url = format!("{}/auth/session-keys", BASE_URL);
+        let url = format!("{}/auth/session-keys", base_url());
         let mut req = self
             .client
             .post(&url)
@@ -210,25 +216,9 @@ impl AuthClient {
             .map_err(|e| anyhow!("服务器响应格式异常: {}", e))
     }
 
-    /// List available models from the server.
-    ///
-    /// Phase C: hits `/anthropic/v1/models` (NOT the OpenAI-shape
-    /// `/v1/models`) so the returned set is exactly the models reachable
-    /// over the anthropic ingress that `LotusProvider` now uses. Returning
-    /// the OpenAI list would let the desktop UI pick a model that has no
-    /// anthropic-protocol route, then fail with `5001 no_route` on first
-    /// real request.
-    ///
-    /// The anthropic response shape is
-    ///   `{ data: [{ type: "model", id, display_name, created_at }], has_more, ... }`
-    /// — different from OpenAI's `{ data: [{ id, type: "chat" | "reasoner", ... }] }`.
-    /// We map it back into our own `CloudModelInfo`. The `model_type`
-    /// distinction (chat / reasoner) used to pick a gateway endpoint
-    /// in the OpenAI-ingress era; under anthropic ingress everything
-    /// goes to a single endpoint, so all entries get `model_type =
-    /// "chat"` as a future-proof default.
+    /// List available logical models from AIjia Gateway V2.
     pub async fn list_models(&self, session_key: &str) -> Result<Vec<CloudModelInfo>> {
-        let url = format!("{}/anthropic/v1/models", BASE_URL);
+        let url = format!("{}/aijia/v2/ai/models", base_url());
         log::info!(
             "[list_models] GET {} session_key_len={}",
             url,
@@ -237,8 +227,7 @@ impl AuthClient {
         let resp = self
             .client
             .get(&url)
-            .header("x-api-key", session_key)
-            .header("anthropic-version", "2023-06-01")
+            .bearer_auth(session_key)
             .send()
             .await?;
 
@@ -265,8 +254,8 @@ impl AuthClient {
             return Err(parse_api_error(status.as_u16(), &body));
         }
 
-        // Anthropic `/v1/models` shape:
-        //   { "data": [{"type":"model","id":"claude-...","display_name":"...","created_at":"..."}], "has_more": false, ... }
+        // AIjia v2 logical model shape:
+        //   { "object": "list", "data": [{"id":"default-chat","intent":"chat",...}] }
         let body: serde_json::Value = resp.json().await?;
         let models = body["data"]
             .as_array()
@@ -274,18 +263,26 @@ impl AuthClient {
                 arr.iter()
                     .map(|m| {
                         let id = m["id"].as_str().unwrap_or("").to_string();
-                        let display = m["display_name"].as_str().unwrap_or("").to_string();
-                        let name = if display.is_empty() {
-                            id.clone()
+                        let intent = m["intent"].as_str().unwrap_or("chat").to_string();
+                        let name = match id.as_str() {
+                            "default-chat" => "默认对话".to_string(),
+                            "default-reasoner" => "默认推理".to_string(),
+                            "default-vision" => "默认视觉".to_string(),
+                            "default-image" => "默认图像".to_string(),
+                            _ => id.clone(),
+                        };
+                        let model_type = if intent == "reasoning" {
+                            "reasoner".to_string()
                         } else {
-                            display
+                            intent
                         };
                         CloudModelInfo {
                             id,
                             name,
-                            model_type: "chat".to_string(),
+                            model_type,
                         }
                     })
+                    .filter(|m| !m.id.is_empty())
                     .collect()
             })
             .unwrap_or_default();
@@ -300,7 +297,7 @@ impl AuthClient {
         old_password: &str,
         new_password: &str,
     ) -> Result<()> {
-        let url = format!("{}/auth/password", BASE_URL);
+        let url = format!("{}/auth/password", base_url());
         let resp = self
             .client
             .put(&url)
@@ -320,7 +317,7 @@ impl AuthClient {
 
     /// Logout from the server (revoke all refresh tokens).
     pub async fn logout(&self, access_token: &str) -> Result<()> {
-        let url = format!("{}/auth/logout", BASE_URL);
+        let url = format!("{}/auth/logout", base_url());
         let resp = self
             .client
             .post(&url)
@@ -340,7 +337,7 @@ impl AuthClient {
     /// Request a verification code via SMS for registration.
     /// Hits tenant-portal `/api/auth/send-code`.
     pub async fn send_sms_code(&self, phone: &str) -> Result<()> {
-        let url = format!("{}/api/auth/send-code", BASE_URL);
+        let url = format!("{}/api/auth/send-code", base_url());
         let resp = self
             .client
             .post(&url)
@@ -358,7 +355,7 @@ impl AuthClient {
     /// Request a verification code via email for registration.
     /// Hits tenant-portal `/api/auth/send-email-code`.
     pub async fn send_email_code(&self, email: &str) -> Result<()> {
-        let url = format!("{}/api/auth/send-email-code", BASE_URL);
+        let url = format!("{}/api/auth/send-email-code", base_url());
         let resp = self
             .client
             .post(&url)
@@ -388,7 +385,7 @@ impl AuthClient {
         password: &str,
         name: &str,
     ) -> Result<()> {
-        let url = format!("{}/api/auth/register", BASE_URL);
+        let url = format!("{}/api/auth/register", base_url());
         let resp = self
             .client
             .post(&url)
@@ -420,7 +417,7 @@ impl AuthClient {
         code: &str,
         password: &str,
     ) -> Result<()> {
-        let url = format!("{}/api/auth/reset-password", BASE_URL);
+        let url = format!("{}/api/auth/reset-password", base_url());
         let resp = self
             .client
             .post(&url)
@@ -444,7 +441,7 @@ impl AuthClient {
     /// Get current user + tenant profile (including latest branding).
     /// Uses session_key auth (Bearer), no token rotation.
     pub async fn get_profile(&self, session_key: &str) -> Result<(AuthUserInfo, AuthTenantInfo)> {
-        let url = format!("{}/v1/profile", BASE_URL);
+        let url = format!("{}/v1/profile", base_url());
         let resp = self
             .client
             .get(&url)
@@ -471,7 +468,7 @@ impl AuthClient {
         &self,
         session_key: &str,
     ) -> Result<crate::transport::tauri_commands::billing::BillingSummary> {
-        let url = format!("{}/v1/billing/summary", BASE_URL);
+        let url = format!("{}/v1/billing/summary", base_url());
         let resp = self
             .client
             .get(&url)
@@ -486,34 +483,79 @@ impl AuthClient {
         Ok(resp.json().await?)
     }
 
-    /// Fetch a page of usage records (`/v1/billing/usage-records?page=&size=`).
+    async fn get_usage_records_at(
+        &self,
+        session_key: &str,
+        path: &str,
+        page: u32,
+        size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        let mut url = url::Url::parse(&format!("{}{}", base_url(), path))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("page", &page.to_string());
+            pairs.append_pair("size", &size.to_string());
+            if let Some(start_at) = query.start_at.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("start_at", start_at);
+            }
+            if let Some(end_at) = query.end_at.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("end_at", end_at);
+            }
+            if let Some(request_type) = query.request_type.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("request_type", request_type);
+            }
+            if let Some(model_name) = query.model_name.as_deref().filter(|v| !v.is_empty()) {
+                pairs.append_pair("model_name", model_name);
+            }
+        }
+        let resp = self
+            .client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", session_key))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(resp.json().await?)
+    }
+
+    /// Fetch a page of personal-tenant usage records (`/v1/billing/usage-records?page=&size=`).
     pub async fn get_billing_usage_records(
         &self,
         session_key: &str,
         page: u32,
         size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
     ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
-        let url = format!(
-            "{}/v1/billing/usage-records?page={}&size={}",
-            BASE_URL, page, size
-        );
-        let resp = self
-            .client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", session_key))
-            .send()
-            .await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(parse_api_error(status.as_u16(), &body));
-        }
-        Ok(resp.json().await?)
+        self.get_usage_records_at(session_key, "/v1/billing/usage-records", page, size, query)
+            .await
+    }
+
+    /// Fetch a page of enterprise current-user usage records (`/v1/enterprise/usage-records?page=&size=`).
+    pub async fn get_enterprise_usage_records(
+        &self,
+        session_key: &str,
+        page: u32,
+        size: u32,
+        query: crate::transport::tauri_commands::billing::BillingUsageQuery,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        self.get_usage_records_at(
+            session_key,
+            "/v1/enterprise/usage-records",
+            page,
+            size,
+            query,
+        )
+        .await
     }
 }
 
 /// Typed wrapper for API errors so downstream code can branch on the HTTP
-/// status code without parsing message substrings. Lotus gateway returns 401
+/// status code without parsing message substrings. The tenant gateway returns 401
 /// from `/auth/refresh` only on hard token rejection (JWT bad / Redis miss /
 /// user/tenant gone) — those are the cases where AuthManager must clear local
 /// state and force re-login. 5xx / network / 4xx-other are transient: state

@@ -1,15 +1,39 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import i18n from '@/i18n'
+import type {
+  EmployeeRecord,
+  EmployeeTemplateSnapshot,
+  WorkplaceDirectoryResponse,
+} from '@/lib/tauri'
 
 const mocks = vi.hoisted(() => ({
   refreshEmployees: vi.fn(async () => undefined),
   refreshInbox: vi.fn(async () => undefined),
   markRead: vi.fn(async () => undefined),
+  employeeTemplateCatalog: vi.fn<() => Promise<EmployeeTemplateSnapshot[]>>(async () => []),
   employeeTemplateRefresh: vi.fn(async () => 0),
+  workplaceDirectoryCatalog: vi.fn<(
+    lang?: string,
+    options?: { forceRefresh?: boolean },
+  ) => Promise<WorkplaceDirectoryResponse>>(
+    async () => ({ schemaVersion: 1, categories: [], items: [] }),
+  ),
+  employeeCreate: vi.fn(),
+  employeeTrigger: vi.fn(async () => 'conv-created'),
   pushNotification: vi.fn(),
   setRoute: vi.fn(),
   setSidebarTab: vi.fn(),
+  setConversations: vi.fn(),
+  setMessages: vi.fn(),
+  chatConversations: [] as unknown[],
+  activeRuns: {} as Record<string, {
+    employeeId: string
+    conversationId: string
+    startedAt: string
+    triggerKind: 'on_demand' | 'cron'
+  }>,
   entries: [] as Array<{
     id: string
     employeeId: string
@@ -22,20 +46,13 @@ const mocks = vi.hoisted(() => ({
     catchupInfo: string | null
     createdAt: string
   }>,
-  employees: [] as Array<{
-    id: string
-    name: string
-    avatar: string
-    role: string
-    description: string
-    lifecycle: string
-  }>,
+  employees: [] as EmployeeRecord[],
 }))
 
 vi.mock('@/features/employees/useEmployees', () => ({
   useEmployees: () => ({
     employees: mocks.employees,
-    activeRuns: {},
+    activeRuns: mocks.activeRuns,
     loading: false,
     refresh: mocks.refreshEmployees,
   }),
@@ -49,16 +66,12 @@ vi.mock('@/features/employees/useInbox', () => ({
   }),
 }))
 
-vi.mock('@/features/employees/EmployeeDrawer', () => ({
-  EmployeeDrawer: () => null,
-}))
-
-vi.mock('@/features/employees/HireWizard', () => ({
-  HireWizard: () => null,
-}))
-
 vi.mock('@/lib/tauri', () => ({
+  employeeTemplateCatalog: mocks.employeeTemplateCatalog,
   employeeTemplateRefresh: mocks.employeeTemplateRefresh,
+  workplaceDirectoryCatalog: mocks.workplaceDirectoryCatalog,
+  employeeCreate: mocks.employeeCreate,
+  employeeTrigger: mocks.employeeTrigger,
 }))
 
 vi.mock('@/stores/uiStore', () => ({
@@ -76,55 +89,449 @@ vi.mock('@/stores/notificationStore', () => ({
   useNotificationStore: (selector: (state: unknown) => unknown) => selector({ push: mocks.pushNotification }),
 }))
 
+vi.mock('@/stores/chatStore', () => ({
+  useChatStore: {
+    getState: () => ({
+      conversations: mocks.chatConversations,
+      setConversations: mocks.setConversations,
+      setMessages: mocks.setMessages,
+    }),
+  },
+}))
+
 import { EmployeesPage } from './EmployeesPage'
 
+function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): EmployeeTemplateSnapshot {
+  return {
+    templateId: 'builtin:xiaoyuan',
+    version: '1.0.0',
+    name: '林知远',
+    avatar: '🔍',
+    role: '行业情报分析师',
+    description: '每周汇总竞品动态。',
+    badge: '开箱即用',
+    systemPromptExtra: '你是行业情报分析师。',
+    toolWhitelist: ['WebSearch'],
+    cron: '',
+    defaultSkillId: '',
+    requiresDingtalk: false,
+    requiresAttachment: null,
+    resourceConfigSchema: null,
+    resourceConfigUI: null,
+    ...overrides,
+  }
+}
+
+function makeDirectory(): WorkplaceDirectoryResponse {
+  return {
+    schemaVersion: 1,
+    categories: [{
+      categoryId: 'delivery',
+      display: { name: '研发交付', description: '把流程和交付事项同步下来。' },
+      icon: '🔍',
+      color: '#2563eb',
+      sortOrder: 10,
+      resourceCount: 1,
+    }],
+    items: [{
+      resourceType: 'employee_template',
+      resourceId: 'builtin:xiaoyuan',
+      version: '1.0.0',
+      workplaceCategoryId: 'delivery',
+      sortOrder: 10,
+      display: { name: '小研', description: '每周汇总竞品动态。' },
+      icon: '🔍',
+      requiredSkills: [{
+        skillId: 'market-research',
+        source: 'platform',
+        scope: 'public',
+        display: { name: '流程设计' },
+        versionRange: '',
+      }],
+    }],
+  }
+}
+
+function makeEmployee(overrides: Partial<EmployeeRecord> = {}): EmployeeRecord {
+  const now = '2026-06-05T12:00:00Z'
+  return {
+    id: 'emp-created',
+    name: '林知远',
+    role: '行业情报分析师',
+    description: '每周汇总竞品动态。',
+    avatar: '🔍',
+    templateId: 'builtin:xiaoyuan',
+    toolWhitelist: ['WebSearch'],
+    cron: null,
+    timezone: 'Asia/Shanghai',
+    lifecycle: 'active',
+    cronEnabled: false,
+    resourceConfig: {},
+    systemPromptExtra: '你是行业情报分析师。',
+    defaultSkillId: null,
+    templateRef: null,
+    createdAt: now,
+    updatedAt: now,
+    lastRunAt: null,
+    nextRunAt: null,
+    ...overrides,
+  }
+}
+
 describe('EmployeesPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh-CN')
     mocks.refreshEmployees.mockClear()
     mocks.refreshInbox.mockClear()
     mocks.markRead.mockClear()
-    mocks.employeeTemplateRefresh.mockClear()
+    mocks.employeeTemplateCatalog.mockReset()
+    mocks.employeeTemplateCatalog.mockResolvedValue([makeSnapshot()])
+    mocks.employeeTemplateRefresh.mockReset()
+    mocks.employeeTemplateRefresh.mockResolvedValue(0)
+    mocks.workplaceDirectoryCatalog.mockReset()
+    mocks.workplaceDirectoryCatalog.mockResolvedValue(makeDirectory())
+    mocks.employeeCreate.mockReset()
+    mocks.employeeCreate.mockResolvedValue(makeEmployee())
+    mocks.employeeTrigger.mockReset()
+    mocks.employeeTrigger.mockResolvedValue('conv-created')
     mocks.pushNotification.mockClear()
     mocks.setRoute.mockClear()
     mocks.setSidebarTab.mockClear()
+    mocks.setConversations.mockReset()
+    mocks.setConversations.mockImplementation((next: unknown[]) => {
+      mocks.chatConversations = next
+    })
+    mocks.setMessages.mockClear()
+    mocks.chatConversations = []
+    mocks.activeRuns = {}
     mocks.entries = []
     mocks.employees = []
   })
 
-  it('automatically syncs employee templates once when the page opens', async () => {
+  it('automatically syncs the workplace employee directory when the page opens', async () => {
     render(<EmployeesPage />)
 
     await waitFor(() => {
-      expect(mocks.employeeTemplateRefresh).toHaveBeenCalledTimes(1)
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalled()
     })
+    expect(mocks.workplaceDirectoryCatalog).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ forceRefresh: true }),
+    )
+    expect(mocks.employeeTemplateCatalog).toHaveBeenCalled()
+    expect(mocks.employeeTemplateRefresh).not.toHaveBeenCalled()
     expect(mocks.refreshEmployees).toHaveBeenCalled()
   })
 
-  it('opens the employee market from the employees page without exposing page-level sync', async () => {
+  it('forces a server refresh when users click update content', async () => {
     render(<EmployeesPage />)
-    await waitFor(() => {
-      expect(mocks.employeeTemplateRefresh).toHaveBeenCalledTimes(1)
-    })
 
-    expect(screen.queryByRole('button', { name: '同步服务端' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '员工市场' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalled()
+    })
+    mocks.workplaceDirectoryCatalog.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: '更新内容' }))
+
+    await waitFor(() => {
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledWith(
+        expect.any(String),
+        { forceRefresh: true },
+      )
+    })
   })
 
-  it('switches to the employee sidebar tab before opening a today feed conversation', () => {
-    mocks.employees = [{
-      id: 'emp-1',
-      name: '小程',
-      avatar: '🛠️',
-      role: '流程设计师',
-      description: '流程设计师',
-      lifecycle: 'active',
-    }]
+  it('renders server-side employee categories directly on the page', async () => {
+    render(<EmployeesPage />)
+
+    expect(await screen.findByText('研发交付')).toBeInTheDocument()
+    expect(screen.getByText('林知远')).toBeInTheDocument()
+    expect(screen.getByText('流程设计')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '员工市场' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '更新内容' })).toBeInTheDocument()
+  })
+
+  it('filters employee templates with horizontal category tabs', async () => {
+    mocks.workplaceDirectoryCatalog.mockResolvedValueOnce({
+      schemaVersion: 1,
+      categories: [
+        {
+          categoryId: 'delivery',
+          display: { name: '研发交付', description: '把流程和交付事项同步下来。' },
+          icon: '🔍',
+          color: '#2563eb',
+          sortOrder: 10,
+          resourceCount: 1,
+        },
+        {
+          categoryId: 'legal',
+          display: { name: '法务合规', description: '合同和合规事项。' },
+          icon: '⚖️',
+          color: '#7c3aed',
+          sortOrder: 20,
+          resourceCount: 1,
+        },
+      ],
+      items: [
+        {
+          resourceType: 'employee_template',
+          resourceId: 'builtin:xiaoyuan',
+          version: '1.0.0',
+          workplaceCategoryId: 'delivery',
+          sortOrder: 10,
+          display: { name: '小研', description: '每周汇总竞品动态。' },
+          icon: '🔍',
+          requiredSkills: [],
+        },
+        {
+          resourceType: 'employee_template',
+          resourceId: 'builtin:xiaofa',
+          version: '1.0.0',
+          workplaceCategoryId: 'legal',
+          sortOrder: 10,
+          display: { name: '小法', description: '审阅合同风险。' },
+          icon: '⚖️',
+          requiredSkills: [],
+        },
+      ],
+    })
+    mocks.employeeTemplateCatalog.mockResolvedValueOnce([
+      makeSnapshot(),
+      makeSnapshot({
+        templateId: 'builtin:xiaofa',
+        name: '陈景律',
+        avatar: '⚖️',
+        role: '合同与合规顾问',
+        description: '审阅合同风险。',
+      }),
+    ])
+
+    render(<EmployeesPage />)
+
+    expect(await screen.findByRole('button', { name: '全部' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '研发交付' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '法务合规' })).toBeInTheDocument()
+    expect(screen.getByText('林知远')).toBeInTheDocument()
+    expect(screen.getByText('陈景律')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '法务合规' }))
+
+    expect(screen.queryByText('林知远')).not.toBeInTheDocument()
+    expect(screen.getByText('陈景律')).toBeInTheDocument()
+    expect(screen.getByText('合同和合规事项。')).toBeInTheDocument()
+  })
+
+  it('omits placeholder labels for uncategorized employee templates', async () => {
+    mocks.workplaceDirectoryCatalog.mockResolvedValueOnce({ schemaVersion: 1, categories: [], items: [] })
+
+    render(<EmployeesPage />)
+
+    expect(await screen.findByText('林知远')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '数字员工' })).not.toBeInTheDocument()
+    expect(screen.queryByText('其他员工')).not.toBeInTheDocument()
+  })
+
+  it('does not render the employee template detail action chip on cards', async () => {
+    render(<EmployeesPage />)
+
+    expect(await screen.findByRole('button', { name: '查看 林知远 详情' })).toBeInTheDocument()
+    expect(screen.queryByText('查看详情')).not.toBeInTheDocument()
+  })
+
+  it('renders employee template cards in a four-column desktop grid', async () => {
+    render(<EmployeesPage />)
+
+    const card = await screen.findByRole('button', { name: '查看 林知远 详情' })
+    expect(card).toHaveClass('w-full')
+    expect(card).toHaveClass('h-[154px]')
+    expect(card).toHaveClass('border-border/50')
+    expect(card).toHaveClass('shadow-[0_1px_3px_rgba(0,0,0,0.035)]')
+    expect(card).toHaveClass('hover:border-border/70')
+    expect(card).toHaveClass('hover:bg-muted/20')
+    expect(card).not.toHaveClass('border-border')
+    expect(card).not.toHaveClass('shadow-[var(--shadow-card)]')
+    expect(card).not.toHaveClass('hover:border-primary/50')
+    expect(card).not.toHaveClass('hover:shadow-[var(--shadow-card-hover)]')
+    expect(card.closest('.grid')).toHaveClass('xl:grid-cols-4')
+    expect(card.querySelector('.h-9.w-9')).toBeInTheDocument()
+    expect(card.querySelector('.line-clamp-2')).toHaveClass('mt-1')
+  })
+
+  it('uses tokenized employee template card typography sizes', async () => {
+    render(<EmployeesPage />)
+
+    const card = await screen.findByRole('button', { name: '查看 林知远 详情' })
+    const title = within(card).getByText('行业情报分析师')
+    const name = within(card).getByText('林知远')
+    const description = within(card).getByText('每周汇总竞品动态。')
+
+    expect(title).toHaveClass('text-sm')
+    expect(title).not.toHaveClass('text-[15px]')
+    expect(name).toHaveClass('text-xs')
+    expect(description).toHaveClass('text-xs')
+    expect(description).not.toHaveClass('text-[13px]')
+  })
+
+  it('strips emoji from employee template chips', async () => {
+    const directory = makeDirectory()
+    directory.items[0] = {
+      ...directory.items[0],
+      requiredSkills: [{
+        skillId: 'market-research',
+        source: 'platform',
+        scope: 'public',
+        display: { name: '⚙️ 自动巡检' },
+        versionRange: '',
+      }],
+    }
+    mocks.workplaceDirectoryCatalog.mockResolvedValueOnce(directory)
+    mocks.employeeTemplateCatalog.mockResolvedValueOnce([
+      makeSnapshot({ badge: '🟢 开箱即用' }),
+    ])
+
+    render(<EmployeesPage />)
+
+    expect(await screen.findByText('开箱即用')).toBeInTheDocument()
+    expect(screen.getByText('自动巡检')).toBeInTheDocument()
+    expect(screen.queryByText('🟢 开箱即用')).not.toBeInTheDocument()
+    expect(screen.queryByText('⚙️ 自动巡检')).not.toBeInTheDocument()
+  })
+
+  it('renders employee template chips with a unified muted style', async () => {
+    render(<EmployeesPage />)
+
+    const chips = [
+      await screen.findByText('开箱即用'),
+      screen.getByText('v1.0.0'),
+      screen.getByText('流程设计'),
+    ]
+
+    for (const chip of chips) {
+      expect(chip).toHaveClass('rounded-[2px]')
+      expect(chip).not.toHaveClass('rounded-md')
+      expect(chip).toHaveClass('bg-muted')
+      expect(chip).toHaveClass('text-2xs')
+      expect(chip).toHaveClass('text-muted-foreground')
+      expect(chip).not.toHaveClass('text-xs')
+      expect(chip).not.toHaveClass('bg-accent')
+      expect(chip).not.toHaveClass('bg-secondary')
+      expect(chip).not.toHaveClass('text-accent-foreground')
+    }
+  })
+
+  it('opens employee details first, then creates and dispatches from the detail action', async () => {
+    render(<EmployeesPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
+    expect(screen.getByText('适合交给 TA 的任务')).toBeInTheDocument()
+    expect(mocks.employeeCreate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '召唤' }))
+
+    await waitFor(() => {
+      expect(mocks.employeeCreate).toHaveBeenCalledWith(expect.objectContaining({
+        templateId: 'builtin:xiaoyuan',
+        name: '林知远',
+        cronEnabled: false,
+        resourceConfig: {},
+      }))
+    })
+    expect(mocks.employeeTrigger).toHaveBeenCalledWith('emp-created', undefined, [])
+    expect(mocks.setConversations).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'conv-created',
+        title: '派活: 林知远',
+        kind: 'employee',
+        sourceLabel: '林知远',
+      }),
+    ])
+    expect(mocks.setMessages).toHaveBeenCalledWith([])
+    expect(mocks.setSidebarTab).toHaveBeenCalledWith('employee')
+    expect(mocks.setRoute).toHaveBeenCalledWith({ kind: 'chat', conversationId: 'conv-created' })
+  })
+
+  it('renders employee detail as a refined profile modal', async () => {
+    render(<EmployeesPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
+
+    const dialog = document.querySelector('[data-aijia-employee-detail]')
+    expect(dialog).toHaveClass('max-w-[680px]')
+    expect(dialog).toHaveClass('rounded-md')
+    expect(dialog).toHaveClass('gap-0')
+
+    const chrome = document.querySelector('[data-aijia-employee-detail-chrome]')
+    expect(chrome).toHaveClass('px-5')
+    expect(chrome).toHaveClass('py-5')
+    expect(chrome).toHaveClass('border-b')
+
+    const avatar = document.querySelector('[data-aijia-employee-detail-avatar]')
+    expect(avatar).toHaveClass('h-14')
+    expect(avatar).toHaveClass('w-14')
+    expect(avatar).toHaveClass('rounded-md')
+
+    expect(screen.getByText('基础信息')).toBeInTheDocument()
+    expect(screen.getByText('分组')).toBeInTheDocument()
+    expect(screen.getByText('模板版本')).toBeInTheDocument()
+    expect(screen.getByText('触发方式')).toBeInTheDocument()
+    expect(screen.getByText('平台技能')).toBeInTheDocument()
+    expect(screen.getByText('能力介绍')).toBeInTheDocument()
+    expect(screen.getByText('能力侧重')).toBeInTheDocument()
+    expect(screen.getByText('适合交给 TA 的任务')).toBeInTheDocument()
+    expect(document.querySelector('.lucide-sparkles')).not.toBeInTheDocument()
+    expect(document.querySelectorAll('[data-aijia-employee-strength-row]')[0]).toHaveClass('items-center')
+    expect(document.querySelectorAll('[data-aijia-employee-strength-index]')).toHaveLength(3)
+    expect(document.querySelectorAll('[data-aijia-employee-strength-index]')[0]).not.toHaveClass('mt-0.5')
+
+    const cta = screen.getByRole('button', { name: '召唤' })
+    expect(cta).toHaveClass('h-8')
+    expect(cta).not.toHaveClass('min-w-[128px]')
+    expect(cta).not.toHaveClass('w-full')
+  })
+
+  it('reuses an existing employee instead of creating a duplicate', async () => {
+    mocks.employees = [makeEmployee({ id: 'emp-existing' })]
+    render(<EmployeesPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
+    fireEvent.click(screen.getByRole('button', { name: '派活' }))
+
+    await waitFor(() => {
+      expect(mocks.employeeTrigger).toHaveBeenCalledWith('emp-existing', undefined, [])
+    })
+    expect(mocks.employeeCreate).not.toHaveBeenCalled()
+  })
+
+  it('opens the active run conversation instead of dispatching again', async () => {
+    mocks.employees = [makeEmployee({ id: 'emp-existing' })]
+    mocks.activeRuns = {
+      'emp-existing': {
+        employeeId: 'emp-existing',
+        conversationId: 'conv-running',
+        startedAt: '2026-06-05T12:00:00Z',
+        triggerKind: 'on_demand',
+      },
+    }
+    render(<EmployeesPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看 林知远 详情' }))
+    fireEvent.click(screen.getByRole('button', { name: '进入会话' }))
+
+    await waitFor(() => {
+      expect(mocks.setRoute).toHaveBeenCalledWith({ kind: 'chat', conversationId: 'conv-running' })
+    })
+    expect(mocks.employeeCreate).not.toHaveBeenCalled()
+    expect(mocks.employeeTrigger).not.toHaveBeenCalled()
+  })
+
+  it('switches to the employee sidebar tab before opening a today feed conversation', async () => {
+    mocks.employees = [makeEmployee({ id: 'emp-1' })]
     mocks.entries = [{
       id: 'entry-1',
       employeeId: 'emp-1',
       kind: 'report',
-      title: '小程 已完成任务',
-      summary: '我是小程，流程设计师。',
+      title: '小研 已完成任务',
+      summary: '我是小研，行业情报分析师。',
       reportPath: null,
       conversationId: 'conv-1',
       read: false,
@@ -134,7 +541,8 @@ describe('EmployeesPage', () => {
 
     render(<EmployeesPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /小程 已完成任务/ }))
+    await screen.findByText('研发交付')
+    fireEvent.click(screen.getByRole('button', { name: /小研 已完成任务/ }))
 
     expect(mocks.markRead).toHaveBeenCalledWith('emp-1', 'entry-1')
     expect(mocks.setSidebarTab).toHaveBeenCalledWith('employee')

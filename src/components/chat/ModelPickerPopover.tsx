@@ -1,6 +1,7 @@
 import { Check, Sparkles, X } from 'lucide-react'
 
 import { LLM_PROVIDER_LABELS, PROVIDER_CAPABILITIES, type LlmProvider } from '@/types/settings'
+import { Button } from '@/components/ui/button'
 
 const MODEL_OPTIONS: Array<{
   value: LlmProvider
@@ -53,16 +54,6 @@ const MODEL_OPTIONS: Array<{
     },
   },
   {
-    value: 'claude',
-    badge: '长文本',
-    tone: {
-      bg: 'linear-gradient(180deg, rgba(252,247,241,0.98), rgba(247,238,228,0.98))',
-      border: 'rgba(177, 125, 84, 0.26)',
-      text: '#6D4325',
-      muted: '#8D6245',
-    },
-  },
-  {
     value: 'custom',
     badge: '自定义',
     tone: {
@@ -87,7 +78,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
   return (
     <div
       // spec §5 — popover-level shadow token; was hardcoded slate-color dropshadow.
-      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-full border border-border bg-card shadow-[var(--shadow-popover)]"
+      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-popover)]"
       onMouseDown={(event) => {
         event.preventDefault()
       }}
@@ -102,14 +93,14 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
             固定弹层宽高，列表在卡片内部滚动，避免页面和弹层一起跳动。
           </p>
         </div>
-        <button
+        <Button unstyled
           type="button"
           aria-label="关闭模型弹窗"
           onClick={onClose}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 px-4 py-4">
@@ -120,14 +111,14 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
           {MODEL_OPTIONS.map((option) => {
             const selected = option.value === value
             return (
-              <button
+              <Button unstyled
                 key={option.value}
                 type="button"
                 onClick={() => {
                   onChange(option.value)
                   onClose()
                 }}
-                className="relative flex h-[132px] flex-col rounded-xl border p-4 text-left transition-colors border-border"
+                className="relative flex h-[132px] flex-col rounded-md border p-4 text-left transition-colors border-border"
                 style={{
                   background: option.tone.bg,
                   borderColor: selected ? 'var(--color-accent)' : option.tone.border,
@@ -139,12 +130,12 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                     <div className="text-md font-semibold" style={{ color: option.tone.text }}>
                       {LLM_PROVIDER_LABELS[option.value]}
                     </div>
-                    <div className="mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
+                    <div className="mt-1 inline-flex rounded-md px-2 py-0.5 text-xs font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
                       {option.badge}
                     </div>
                   </div>
                   <span
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border"
                     style={{
                       borderColor: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.72)',
                       background: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.62)',
@@ -160,7 +151,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                 <div className="mt-auto text-xs font-medium" style={{ color: option.tone.text }}>
                   {PROVIDER_CAPABILITIES[option.value].hasReasoning ? '支持推理模型' : '标准模型入口'}
                 </div>
-              </button>
+              </Button>
             )
           })}
         </div>

@@ -251,6 +251,7 @@ async fn ask_request_is_recorded_without_completed_error_event() {
                 message: "Denied by user".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("deny pending request");
@@ -318,6 +319,8 @@ async fn approve_replays_original_tool_call_with_updated_input() {
                 updated_input: Some(json!({ "value": "patched" })),
                 remember: true,
                 destination: Some(PermissionDestination::Workspace),
+                message: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("approve pending request");

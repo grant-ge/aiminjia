@@ -16,7 +16,6 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     data-slot="dialog-overlay"
-    // spec §7.3 — modal overlay = --color-overlay (rgba(0,0,0,0.5))
     className={cn('fixed inset-0 z-50 bg-[var(--color-overlay)]', className)}
     {...props}
   />
@@ -34,9 +33,8 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
-      // spec §7.3 — modal: rounded-lg, --shadow-modal, bg-card
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border/60 bg-card p-6 shadow-[var(--shadow-modal)] duration-200',
+        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-0 overflow-hidden rounded-md border border-border bg-card p-0 shadow-[var(--shadow-modal)] duration-200',
         className,
       )}
       {...props}
@@ -45,7 +43,7 @@ const DialogContent = React.forwardRef<
       {hideClose ? null : (
         <DialogPrimitive.Close
           aria-label="Close"
-          className="absolute right-4 top-4 rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none"
+          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none"
         >
           <X className="h-4 w-4" />
         </DialogPrimitive.Close>
@@ -56,12 +54,22 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)} {...props} />
+  <div className={cn('flex flex-col space-y-1.5 px-6 pt-6 text-left only:pb-6', className)} {...props} />
 )
 DialogHeader.displayName = 'DialogHeader'
 
+const DialogBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn('px-6 pb-0 pt-4 last:pb-6', className)} {...props} />
+)
+DialogBody.displayName = 'DialogBody'
+
+const DialogBodyViewport = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn('min-h-0 overflow-auto', className)} {...props} />
+)
+DialogBodyViewport.displayName = 'DialogBodyViewport'
+
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)} {...props} />
+  <div className={cn('flex flex-col-reverse gap-2 px-6 pb-6 pt-4 sm:flex-row sm:justify-end', className)} {...props} />
 )
 DialogFooter.displayName = 'DialogFooter'
 
@@ -69,7 +77,11 @@ const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold leading-none', className)} {...props} />
+  <DialogPrimitive.Title
+    ref={ref}
+    className={cn('text-lg font-semibold leading-6 tracking-normal', className)}
+    {...props}
+  />
 ))
 DialogTitle.displayName = DialogPrimitive.Title.displayName
 
@@ -77,7 +89,11 @@ const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />
+  <DialogPrimitive.Description
+    ref={ref}
+    className={cn('text-sm leading-6 text-muted-foreground', className)}
+    {...props}
+  />
 ))
 DialogDescription.displayName = DialogPrimitive.Description.displayName
 
@@ -89,6 +105,8 @@ export {
   DialogClose,
   DialogContent,
   DialogHeader,
+  DialogBody,
+  DialogBodyViewport,
   DialogFooter,
   DialogTitle,
   DialogDescription,

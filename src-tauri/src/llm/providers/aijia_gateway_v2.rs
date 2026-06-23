@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use futures::{stream, StreamExt};
-use reqwest::Client;
 use serde_json::Value;
 use std::collections::VecDeque;
 
@@ -14,10 +13,13 @@ use crate::llm::streaming::{
     StreamBox, StreamEvent, ThinkingConfig, TokenUsage, ToolCall,
 };
 
-const AIJIA_GATEWAY_V2_RESPONSES_URL: &str = "https://ai-tenant.renlijia.com/aijia/v2/ai/responses";
+/// Path of the v2 responses route. The origin is resolved per-request via
+/// [`crate::environment::tenant_host`] so the dev environment switch takes effect
+/// (production host in release builds).
+const AIJIA_GATEWAY_V2_RESPONSES_PATH: &str = "/aijia/v2/ai/responses";
 
 pub struct AijiaGatewayV2Provider {
-    client: Client,
+    client: reqwest_middleware::ClientWithMiddleware,
     session_key: String,
     model_type: String,
     use_tools: bool,
@@ -30,7 +32,7 @@ impl AijiaGatewayV2Provider {
 
     pub fn with_route(session_key: String, model_type: String, use_tools: bool) -> Self {
         Self {
-            client: super::build_http_client(),
+            client: crate::tracing_setup::traced_client(super::build_http_client()),
             session_key,
             model_type,
             use_tools,
@@ -58,20 +60,27 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
             self.use_tools,
             false,
         );
-        let gate_log_id = crate::llm::gate_log::next_request_id();
-        crate::llm::gate_log::record_request(
-            &gate_log_id,
-            self.name(),
-            AIJIA_GATEWAY_V2_RESPONSES_URL,
-            &body,
+        let url = format!(
+            "{}{}",
+            crate::environment::tenant_host(),
+            AIJIA_GATEWAY_V2_RESPONSES_PATH
         );
+        let gate_log_id = crate::llm::gate_log::next_request_id();
+        crate::llm::gate_log::record_request(&gate_log_id, self.name(), &url, &body);
         let response = self
             .client
-            .post(AIJIA_GATEWAY_V2_RESPONSES_URL)
+            .post(&url)
             .bearer_auth(&self.session_key)
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|err| {
+                crate::llm::gate_log::record_request_error(
+                    &gate_log_id,
+                    &error_chain_diagnostics(&err),
+                );
+                err
+            })?;
 
         let status = response.status();
         let gateway_request_id = response
@@ -113,21 +122,28 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
     }
 
     async fn stream(&self, request: LlmRequest) -> Result<StreamBox> {
+        let url = format!(
+            "{}{}",
+            crate::environment::tenant_host(),
+            AIJIA_GATEWAY_V2_RESPONSES_PATH
+        );
         let body = build_aijia_request_for_route(request, &self.model_type, self.use_tools);
         let gate_log_id = crate::llm::gate_log::next_request_id();
-        crate::llm::gate_log::record_request(
-            &gate_log_id,
-            self.name(),
-            AIJIA_GATEWAY_V2_RESPONSES_URL,
-            &body,
-        );
+        crate::llm::gate_log::record_request(&gate_log_id, self.name(), &url, &body);
         let response = self
             .client
-            .post(AIJIA_GATEWAY_V2_RESPONSES_URL)
+            .post(&url)
             .bearer_auth(&self.session_key)
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|err| {
+                crate::llm::gate_log::record_request_error(
+                    &gate_log_id,
+                    &error_chain_diagnostics(&err),
+                );
+                err
+            })?;
 
         let status = response.status();
         let gateway_request_id = response
@@ -159,6 +175,45 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
     }
 }
 
+fn error_chain_diagnostics(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut parts = vec![error.to_string()];
+    append_reqwest_flags(error, &mut parts);
+
+    let mut idx = 1;
+    let mut source = error.source();
+    while let Some(cause) = source {
+        parts.push(format!("caused_by[{idx}]: {cause}"));
+        append_reqwest_flags(cause, &mut parts);
+        source = cause.source();
+        idx += 1;
+    }
+
+    parts.join("; ")
+}
+
+fn append_reqwest_flags(error: &(dyn std::error::Error + 'static), parts: &mut Vec<String>) {
+    if let Some(reqwest_err) = error.downcast_ref::<reqwest::Error>() {
+        let status = reqwest_err
+            .status()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let url = reqwest_err
+            .url()
+            .map(|u| u.as_str().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        parts.push(format!(
+            "reqwest: timeout={} connect={} request={} body={} decode={} status={} url={}",
+            reqwest_err.is_timeout(),
+            reqwest_err.is_connect(),
+            reqwest_err.is_request(),
+            reqwest_err.is_body(),
+            reqwest_err.is_decode(),
+            status,
+            url
+        ));
+    }
+}
+
 async fn collect_stream_response(mut stream: StreamBox) -> Result<LlmResponse> {
     let mut content = String::new();
     let mut stop_reason = StopReason::EndTurn;
@@ -180,7 +235,9 @@ async fn collect_stream_response(mut stream: StreamBox) -> Result<LlmResponse> {
                 break;
             }
             StreamEvent::Error { error } => return Err(anyhow!(error)),
-            StreamEvent::ThinkingDelta { .. } | StreamEvent::Keepalive => {}
+            StreamEvent::ThinkingDelta { .. }
+            | StreamEvent::Keepalive
+            | StreamEvent::Notice { .. } => {}
         }
     }
 
@@ -440,6 +497,7 @@ fn build_aijia_request_for_route_with_stream(
     stream: bool,
 ) -> AijiaResponseRequest {
     let plan = resolve_v2_model_plan(&request, model_type, use_tools);
+    let visible_reply_language = infer_visible_reply_language(&request.messages);
 
     let mut system: Vec<SystemSegment> = request
         .system_segments
@@ -470,6 +528,9 @@ fn build_aijia_request_for_route_with_stream(
         if let Some(message) = to_canonical_message(message) {
             messages.push(message);
         }
+    }
+    if let Some(segment) = visible_reply_language_system_segment(visible_reply_language) {
+        system.push(segment);
     }
 
     let tools = if plan.use_tools {
@@ -514,6 +575,97 @@ fn build_aijia_request_for_route_with_stream(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VisibleReplyLanguage {
+    Chinese,
+    English,
+}
+
+fn infer_visible_reply_language(messages: &[ChatMessage]) -> Option<VisibleReplyLanguage> {
+    messages
+        .iter()
+        .rev()
+        .filter(|message| message.role == "user")
+        .filter_map(|message| infer_visible_reply_language_from_text(&message.content))
+        .next()
+}
+
+fn infer_visible_reply_language_from_text(text: &str) -> Option<VisibleReplyLanguage> {
+    let trimmed = text.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with("[动态上下文")
+        || trimmed.starts_with("<system-reminder>")
+        || trimmed.starts_with("# agentsMd")
+        || is_link_or_code_only(trimmed)
+    {
+        return None;
+    }
+
+    let cjk_count = trimmed.chars().filter(|ch| is_cjk(*ch)).count();
+    if cjk_count > 0 {
+        return Some(VisibleReplyLanguage::Chinese);
+    }
+
+    let ascii_alpha_count = trimmed
+        .chars()
+        .filter(|ch| ch.is_ascii_alphabetic())
+        .count();
+    if ascii_alpha_count >= 3 {
+        return Some(VisibleReplyLanguage::English);
+    }
+
+    None
+}
+
+fn is_cjk(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x3400..=0x4dbf
+            | 0x4e00..=0x9fff
+            | 0xf900..=0xfaff
+            | 0x20000..=0x2a6df
+            | 0x2a700..=0x2b73f
+            | 0x2b740..=0x2b81f
+            | 0x2b820..=0x2ceaf
+    )
+}
+
+fn is_link_or_code_only(text: &str) -> bool {
+    text.starts_with("```")
+        || text.starts_with("`")
+        || text.starts_with("http://")
+        || text.starts_with("https://")
+}
+
+fn visible_reply_language_system_segment(
+    language: Option<VisibleReplyLanguage>,
+) -> Option<SystemSegment> {
+    let text = match language? {
+        VisibleReplyLanguage::Chinese => concat!(
+            "<system-reminder>\n",
+            "Visible Reply Language: Chinese (zh-CN, 中文).\n",
+            "The latest natural-language user request in this turn is Chinese. ",
+            "All user-visible assistant prose must stay in Chinese, including brief status/narration before tool calls. ",
+            "Keep code, file paths, commands, API fields, proper nouns, and requested foreign-language content unchanged.\n",
+            "</system-reminder>"
+        ),
+        VisibleReplyLanguage::English => concat!(
+            "<system-reminder>\n",
+            "Visible Reply Language: English.\n",
+            "The latest natural-language user request in this turn is English. ",
+            "All user-visible assistant prose must stay in English, including brief status/narration before tool calls. ",
+            "Keep code, file paths, commands, API fields, proper nouns, and requested foreign-language content unchanged.\n",
+            "</system-reminder>"
+        ),
+    };
+
+    Some(SystemSegment {
+        kind: "text".to_string(),
+        text: text.to_string(),
+        cache: None,
+    })
+}
+
 fn client_platform() -> String {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
@@ -549,7 +701,7 @@ fn resolve_v2_model_plan(request: &LlmRequest, model_type: &str, use_tools: bool
     };
     let requires_opaque_replay = request_requires_opaque_replay(request);
     let has_image_input = request_has_image_input(request);
-    let tools_enabled = use_tools && !is_reasoner && !request.tools.is_empty();
+    let tools_enabled = use_tools && !request.tools.is_empty();
     let reasoning = v2_reasoning_level(
         request.thinking_config.as_ref(),
         is_reasoner,
@@ -817,7 +969,40 @@ fn thinking_block_to_content(block: Value) -> ContentBlock {
         arguments: None,
         signature,
         opaque: Some(true),
-        source: Some(block),
+        source: extract_provider_source(&block),
+    }
+}
+
+fn extract_provider_source(block: &Value) -> Option<Value> {
+    if let Some(source) = block.get("source") {
+        if source.is_object() {
+            if let Some(nested_source) = source.get("source") {
+                if nested_source.is_object() {
+                    if let Some(meta) = provider_meta_from_object(nested_source) {
+                        return Some(meta);
+                    }
+                }
+            }
+            if let Some(meta) = provider_meta_from_object(source) {
+                return Some(meta);
+            }
+        }
+    }
+
+    provider_meta_from_object(block)
+}
+
+fn provider_meta_from_object(value: &Value) -> Option<Value> {
+    let mut provider_source = serde_json::Map::new();
+    for key in ["api", "provider", "model", "response_id", "response_model"] {
+        if let Some(field_value) = value.get(key) {
+            provider_source.insert(key.to_string(), field_value.clone());
+        }
+    }
+    if provider_source.is_empty() {
+        None
+    } else {
+        Some(Value::Object(provider_source))
     }
 }
 
@@ -1061,9 +1246,13 @@ fn chunk_to_stream_event(frame: &str) -> StreamEvent {
                 error: format!("malformed tool_call.completed: {err}"),
             },
         }
+    } else if frame_has_event(frame, "response.notice") {
+        StreamEvent::Notice {
+            notice: extract_sse_json(frame).unwrap_or(Value::Null),
+        }
     } else if frame_has_event(frame, "response.completed") {
         StreamEvent::Done {
-            stop_reason: StopReason::EndTurn,
+            stop_reason: extract_stop_reason(frame).unwrap_or(StopReason::EndTurn),
             usage: extract_token_usage(frame).unwrap_or_default(),
         }
     } else if frame_has_event(frame, "response.error") {
@@ -1114,6 +1303,21 @@ fn response_completed_stop_reason(chunk: &str) -> Option<String> {
         .or_else(|| data.get("stopReason"))
         .and_then(Value::as_str)
         .map(str::to_string)
+}
+
+fn extract_stop_reason(chunk: &str) -> Option<StopReason> {
+    let data = extract_sse_json(chunk)?;
+    let reason = data
+        .get("stop_reason")
+        .or_else(|| data.get("stopReason"))?
+        .as_str()?;
+    Some(match reason {
+        "toolUse" | "tool_use" => StopReason::ToolUse,
+        "max_tokens" => StopReason::MaxTokens,
+        "stop_sequence" => StopReason::StopSequence,
+        "aborted" => StopReason::Aborted,
+        _ => StopReason::EndTurn,
+    })
 }
 
 fn extract_token_usage(chunk: &str) -> Option<TokenUsage> {
@@ -1178,8 +1382,11 @@ mod tests {
 
         let canonical = build_aijia_request(req);
 
-        assert_eq!(canonical.context.system.len(), 1);
+        assert_eq!(canonical.context.system.len(), 2);
         assert_eq!(canonical.context.system[0].text, "system prompt");
+        assert!(canonical.context.system[1]
+            .text
+            .contains("Visible Reply Language"));
         assert_eq!(canonical.context.messages.len(), 1);
         assert_eq!(canonical.context.messages[0].role, "user");
     }
@@ -1224,14 +1431,90 @@ mod tests {
 
         let canonical = build_aijia_request(req);
 
-        assert_eq!(canonical.context.system.len(), 1);
+        assert_eq!(canonical.context.system.len(), 2);
         assert_eq!(canonical.context.system[0].text, "segmented system");
         assert_eq!(
             canonical.context.system[0].cache.as_deref(),
             Some("ephemeral")
         );
+        assert_eq!(canonical.context.system[1].cache, None);
+        assert!(canonical.context.system[1]
+            .text
+            .contains("Visible Reply Language"));
         assert_eq!(canonical.context.messages.len(), 1);
         assert_eq!(canonical.context.messages[0].role, "user");
+    }
+
+    #[test]
+    fn build_request_anchors_visible_reply_language_from_latest_user_message() {
+        let tool_call = ToolCall {
+            id: "call_1".to_string(),
+            name: "Bash".to_string(),
+            arguments: json!({"command":"ls templates"}),
+        };
+        let req = LlmRequest {
+            messages: vec![
+                ChatMessage::text("user", "请用 html-ppt 生成一份产品发布会 PPT。"),
+                ChatMessage::assistant_with_tool_calls(
+                    "".to_string(),
+                    vec![tool_call],
+                    Some("Let me inspect the templates.".to_string()),
+                    None,
+                ),
+                ChatMessage::tool_result(
+                    "call_1",
+                    "Bash",
+                    "product-launch\nsingle-page layouts".to_string(),
+                ),
+            ],
+            system_segments: Some(vec![SystemPromptSegment {
+                text: "base system".to_string(),
+                cache: true,
+            }]),
+            ..Default::default()
+        };
+
+        let canonical = build_aijia_request(req);
+
+        let language_segment = canonical
+            .context
+            .system
+            .iter()
+            .find(|segment| segment.text.contains("Visible Reply Language"))
+            .expect("visible reply language segment");
+        assert_eq!(language_segment.cache, None);
+        assert!(language_segment.text.contains("Chinese"));
+        assert!(language_segment.text.contains("中文"));
+    }
+
+    #[test]
+    fn visible_reply_language_uses_latest_real_user_language() {
+        let messages = vec![
+            ChatMessage::text("user", "先用中文聊一下。"),
+            ChatMessage::text("assistant", "好的。"),
+            ChatMessage::text("user", "Please summarize this file."),
+        ];
+
+        assert_eq!(
+            infer_visible_reply_language(&messages),
+            Some(VisibleReplyLanguage::English)
+        );
+    }
+
+    #[test]
+    fn visible_reply_language_ignores_user_system_reminders() {
+        let messages = vec![
+            ChatMessage::text("user", "帮我看一下这个文件。"),
+            ChatMessage::text(
+                "user",
+                "<system-reminder>\nCurrent time is 2026-06-15.\n</system-reminder>",
+            ),
+        ];
+
+        assert_eq!(
+            infer_visible_reply_language(&messages),
+            Some(VisibleReplyLanguage::Chinese)
+        );
     }
 
     #[test]
@@ -1305,7 +1588,7 @@ mod tests {
     }
 
     #[test]
-    fn build_request_uses_reasoner_route_without_tools() {
+    fn build_request_uses_reasoner_route_with_tools_when_available() {
         let req = LlmRequest {
             messages: vec![ChatMessage::text("user", "think")],
             tools: vec![crate::llm::streaming::ToolDefinition {
@@ -1322,10 +1605,11 @@ mod tests {
         assert_eq!(canonical.model_policy.logical_model, "default-reasoner");
         assert_eq!(
             canonical.model_policy.allowed_capabilities,
-            vec!["text", "reasoning"]
+            vec!["text", "tool_calling", "reasoning"]
         );
         assert_eq!(canonical.model_policy.reasoning.as_deref(), Some("high"));
-        assert!(canonical.tools.is_empty());
+        assert_eq!(canonical.tools.len(), 1);
+        assert_eq!(canonical.tools[0].name, "lookup");
     }
 
     #[test]
@@ -1437,6 +1721,66 @@ mod tests {
     }
 
     #[test]
+    fn thinking_block_content_keeps_only_provider_source_metadata() {
+        let content = thinking_block_to_content(json!({
+            "type": "thinking",
+            "thinking": "hidden",
+            "signature": "sig-1",
+            "opaque": true,
+            "source": {
+                "api": "anthropic-messages",
+                "provider": "anthropic",
+                "model": "claude-3-7-sonnet",
+                "response_id": "resp_123"
+            }
+        }));
+
+        assert_eq!(content.kind, "thinking");
+        assert_eq!(content.signature.as_deref(), Some("sig-1"));
+        assert_eq!(content.opaque, Some(true));
+        assert_eq!(
+            content.source,
+            Some(json!({
+                "api": "anthropic-messages",
+                "provider": "anthropic",
+                "model": "claude-3-7-sonnet",
+                "response_id": "resp_123"
+            }))
+        );
+    }
+
+    #[test]
+    fn thinking_block_content_filters_legacy_noisy_source() {
+        let content = thinking_block_to_content(json!({
+            "type": "thinking",
+            "thinking": "hidden",
+            "signature": "sig-1",
+            "opaque": true,
+            "source": {
+                "type": "thinking",
+                "thinking": "must-not-leak",
+                "signature": "sig-old",
+                "source": {
+                    "api": "anthropic-messages",
+                    "provider": "anthropic",
+                    "model": "claude-3-7-sonnet",
+                    "response_id": "resp_123"
+                }
+            }
+        }));
+
+        assert_eq!(
+            content.source,
+            Some(json!({
+                "api": "anthropic-messages",
+                "provider": "anthropic",
+                "model": "claude-3-7-sonnet",
+                "response_id": "resp_123"
+            }))
+        );
+    }
+
+    #[test]
     fn maps_response_error_chunks_to_stream_errors() {
         let event = chunk_to_stream_event(
             "event: response.error\ndata: {\"code\":\"provider_stream_error\",\"message\":\"bad\"}\n\n",
@@ -1447,6 +1791,55 @@ mod tests {
                 assert!(error.contains("provider_stream_error"));
             }
             other => panic!("expected error event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_response_notice_chunks_to_notice_events() {
+        let event = chunk_to_stream_event(
+            "event: response.notice\ndata: {\"level\":\"info\",\"code\":\"auto_failed_over\",\"message\":\"switched to backup\",\"from_route\":{\"provider\":\"anthropic\"},\"to_route\":{\"provider\":\"openai\"}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Notice { notice } => {
+                assert_eq!(notice["code"], "auto_failed_over");
+                assert_eq!(notice["message"], "switched to backup");
+                assert_eq!(notice["from_route"]["provider"], "anthropic");
+                assert_eq!(notice["to_route"]["provider"], "openai");
+            }
+            other => panic!("expected notice event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_response_completed_stop_reason_from_gateway() {
+        let event = chunk_to_stream_event(
+            "event: response.completed\ndata: {\"stop_reason\":\"aborted\",\"usage\":{\"input\":1,\"output\":2,\"cache_read\":0,\"cache_write\":0}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Done { stop_reason, usage } => {
+                assert_eq!(stop_reason, StopReason::Aborted);
+                assert_eq!(usage.input_tokens, 1);
+                assert_eq!(usage.output_tokens, 2);
+            }
+            other => panic!("expected done event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_response_completed_tool_use_stop_reason_from_gateway() {
+        let event = chunk_to_stream_event(
+            "event: response.completed\ndata: {\"stop_reason\":\"toolUse\",\"usage\":{\"input\":3,\"output\":5,\"cache_read\":0,\"cache_write\":0}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Done { stop_reason, usage } => {
+                assert_eq!(stop_reason, StopReason::ToolUse);
+                assert_eq!(usage.input_tokens, 3);
+                assert_eq!(usage.output_tokens, 5);
+            }
+            other => panic!("expected done event, got {other:?}"),
         }
     }
 

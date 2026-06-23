@@ -12,7 +12,6 @@ use crate::transport::runtime_host::RuntimeHost;
 
 // ── constants ──────────────────────────────────────────────────────────────
 
-const PROBE_URL: &str = "https://ai-tenant.renlijia.com";
 const ONLINE_INTERVAL_SECS: u64 = 30;
 const OFFLINE_INTERVAL_SECS: u64 = 10;
 const RECOVERY_SUCCESS_THRESHOLD: u32 = 3;
@@ -171,7 +170,10 @@ impl NetworkProbe {
     }
 
     async fn probe_once_and_emit(&self) {
-        let url = self.probe_url_override.as_deref().unwrap_or(PROBE_URL);
+        // Default target follows the active environment so dev env switches probe
+        // the right host; tests pin an explicit override.
+        let default_host = crate::environment::tenant_host();
+        let url = self.probe_url_override.as_deref().unwrap_or(&default_host);
         let started = Instant::now();
         let result = self.client.head(url).send().await;
         let elapsed_ms = started.elapsed().as_millis() as u32;

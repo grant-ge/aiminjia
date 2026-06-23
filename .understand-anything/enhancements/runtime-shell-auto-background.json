@@ -1,0 +1,315 @@
+{
+  "module": "runtime-shell-auto-background",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/bash.rs",
+      "summary": "Bash 前台执行路径带有 10 秒自动后台化预算：当命令 timeout 更长、后台依赖和 conv_dir 都存在时，foreground select 会在阻塞预算到达后把现有 child、stream reader 和已捕获输出快照交给 shell_task，而不是重启命令。",
+      "tags": ["runtime", "tools", "bash", "auto-background"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/powershell.rs",
+      "summary": "PowerShell 复用 Bash 的自动后台化语义和 10 秒预算：前台命令在满足条件时触发 ForegroundControl::AutoBackground，并调用 shell_task 的自动后台化入口；模块内测试覆盖阈值 override，行为级覆盖弱于 Bash。",
+      "tags": ["runtime", "tools", "powershell", "auto-background"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+      "summary": "后台 shell 任务的生命周期中心。显式 run_in_background 与前台自动后台化都在这里注册 AsyncAgentTaskStore handle、写 transcript、保留取消 token、收尾状态并投递 task-notification；自动路径返回 assistant_auto_backgrounded=true。",
+      "tags": ["runtime", "tools", "background-task", "transcript"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/shell_common.rs",
+      "summary": "Shell stdout/stderr 读取与可选 transcript 桥接层。前台阶段先只捕获输出；自动后台化后启用 OptionalTranscriptPath，并用 pre_background_flushed_bytes 避免前台输出丢失或重复写入。",
+      "tags": ["runtime", "tools", "streaming", "transcript"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/async_task_store.rs",
+      "summary": "后台任务句柄索引。shell_task 把本地 shell 后台任务登记为 AsyncTaskType::LocalBash，并保存 cancellation token、状态、task_id/name 等信息，供 TaskStop 和状态查询使用。",
+      "tags": ["runtime", "agent", "async-task-store", "cancel"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "summary": "后台任务输出读取工具。对 LocalBash 类型会读取 conv_dir/tasks/{task_id}.jsonl 等 transcript 候选路径，并按 offset 增量返回，形成自动后台化后的用户可见输出通道。",
+      "tags": ["runtime", "tools", "task-output", "transcript"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "summary": "后台任务停止工具。它通过 AsyncAgentTaskStore 找到 task_id 对应句柄，拒绝未知或终态任务，并以 CancellationReason::BackgroundStop 取消运行中的后台 shell 或 agent 任务。",
+      "tags": ["runtime", "tools", "task-stop", "cancel"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/task_notification.rs",
+      "summary": "后台任务完成通知队列。shell_task 收尾后把完成、失败或被杀结果包装为 <task-notification>，后续 chat turn 再 drain 注入，避免后台完成只停留在内部状态。",
+      "tags": ["runtime", "agent", "task-notification", "continuation"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "summary": "Agent/Subagent 现在也具备默认前台超预算自动后台化，但走 LocalAgent 生命周期：false 或缺省进入 launch_foreground_auto_background，true 仍直接 launch_async。它用于和 Shell 的 LocalBash handoff 对照，不能把 OS child/reader 迁移细节套到 Agent 上。",
+      "tags": ["runtime", "tools", "subagent", "agent-auto-background-boundary"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/bash_tool_test.rs",
+      "summary": "Bash 工具集成测试覆盖前台取消和 timeout 边界，确保非自动后台化的前台终止路径不会误展示后台任务语义。",
+      "tags": ["tests", "bash", "foreground", "contracts"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/powershell_tool_test.rs",
+      "summary": "PowerShell 工具测试覆盖前台取消等 Windows shell 边界；与模块内阈值单测一起约束 PowerShell 路径，但自动后台化行为级验证仍可继续增强。",
+      "tags": ["tests", "powershell", "foreground", "contracts"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/task_stop_tool_test.rs",
+      "summary": "TaskStop 工具合同测试覆盖缺参、未知 id、终态拒绝、成功取消后的返回字段和状态变更，是后台任务停止语义的基础回归点。",
+      "tags": ["tests", "task-stop", "async-task-store", "contracts"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/e2e_task_stop_real_cancel_test.rs",
+      "summary": "真实取消端到端测试验证 TaskStop 能取消正在运行的后台任务、不误伤其他任务，并把取消原因标记为 BackgroundStop。",
+      "tags": ["tests", "task-stop", "cancel", "e2e"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/task_notification_injection_test.rs",
+      "summary": "任务通知注入测试覆盖后台任务完成通知的排序、会话隔离和失败回灌，约束 task-notification 从队列进入后续 chat turn 的可见性。",
+      "tags": ["tests", "task-notification", "continuation", "contracts"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/spawn_subagent_async_test.rs",
+      "summary": "SpawnSubagent 路由测试锁定 run_in_background=true 仍直接 launch_async，false 或缺省进入 launch_foreground_auto_background，并允许前台自动后台化返回 async_launched/local_agent。",
+      "tags": ["tests", "subagent", "background", "boundary"],
+      "complexity": "low"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/bash.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+      "type": "calls",
+      "reason": "Bash 前台 select 命中自动后台化预算后，直接调用 launch_auto_backgrounded_shell_task，把仍在运行的 child、reader、输出快照和剩余 timeout 交给后台任务链路。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/powershell.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+      "type": "calls",
+      "reason": "PowerShell 的 ForegroundControl::AutoBackground 分支复用同一个 shell_task 自动后台化入口，形成 Windows shell 与 Bash 对称的后台收尾路径。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/shell_common.rs",
+      "type": "depends_on",
+      "reason": "自动后台化前的输出快照和后台阶段的 transcript 写入都依赖 OptionalTranscriptPath、captured bytes 和 flush 逻辑来保证输出连续性。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/async_task_store.rs",
+      "type": "calls",
+      "reason": "后台 shell 任务启动后会注册 AsyncTaskHandle，保存 task id、agent id、取消 token 和 LocalBash 类型，后续停止与状态读取都以此为索引。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/task_notification.rs",
+      "type": "calls",
+      "reason": "后台 shell 任务完成、失败或被 BackgroundStop 取消后，finish_shell_task 会构造并入队 <task-notification>，交给后续会话轮次消费。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+      "type": "depends_on",
+      "reason": "TaskOutput 对 LocalBash 任务读取的核心产物是 shell_task 写入的 conv_dir/tasks/{task_id}.jsonl transcript。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/async_task_store.rs",
+      "type": "depends_on",
+      "reason": "TaskStop 必须先从 AsyncAgentTaskStore 取到后台任务句柄，才能判断终态、设置 Killed 并触发 cancellation token。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/bash_tool_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/bash.rs",
+      "type": "tested_by",
+      "reason": "Bash 集成测试约束前台取消与 timeout 的用户可见行为，防止非后台化路径误报后台任务。",
+      "weight": 0.76
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/powershell_tool_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/powershell.rs",
+      "type": "tested_by",
+      "reason": "PowerShell 工具测试覆盖前台取消等 Windows shell 行为边界，辅助验证自动后台化旁路不会污染取消语义。",
+      "weight": 0.72
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/task_stop_tool_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "type": "tested_by",
+      "reason": "TaskStop 单元/工具合同测试覆盖后台任务停止的成功和失败分支。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/e2e_task_stop_real_cancel_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "type": "tested_by",
+      "reason": "真实取消 E2E 测试验证 TaskStop 对运行中后台任务的取消效果与 BackgroundStop 原因传播。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/task_notification_injection_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/task_notification.rs",
+      "type": "tested_by",
+      "reason": "任务通知注入测试验证后台任务通知从队列进入下一轮 chat turn 的排序、隔离与回灌语义。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/spawn_subagent_async_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "type": "tested_by",
+      "reason": "该测试把 Agent 工具的显式 run_in_background=true 与默认 foreground auto path 区分开，作为 Shell LocalBash handoff 与 Agent LocalAgent promotion 不混淆的边界证据。",
+      "weight": 0.95
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "Shell 自动后台化是同一前台进程的生命周期迁移，不是重新执行命令",
+      "description": "Bash/PowerShell 前台 select 命中自动后台化预算后，把现有 child、reader、剩余 timeout 和已捕获输出快照交给 shell_task 继续收尾。后台任务沿用同一 OS 进程和输出流，因此需要 transcript flush 机制保证前台阶段输出不丢不重。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/bash.rs",
+        "src-tauri/src/runtime/tools/builtin/powershell.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_common.rs"
+      ]
+    },
+    {
+      "title": "自动后台化有明确前置条件，不能当成所有前台命令的默认行为",
+      "description": "自动后台化只在 timeout 长于自动后台预算、后台依赖存在且当前工具上下文有 conv_dir 时启用。缺少这些条件时，前台命令仍按完成、timeout 或取消路径返回，不会注册 LocalBash 后台任务。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/bash.rs",
+        "src-tauri/src/runtime/tools/builtin/powershell.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+        "src-tauri/tests/bash_tool_test.rs",
+        "src-tauri/tests/powershell_tool_test.rs"
+      ]
+    },
+    {
+      "title": "显式后台与自动后台共享 LocalBash 任务形态，但返回合同可区分",
+      "description": "显式 run_in_background=true 会直接启动后台 shell task；自动后台化则从前台路径 handoff 进入同一 shell_task 生命周期，并在返回数据中带 assistant_auto_backgrounded=true。两者后续都依赖 AsyncAgentTaskStore、transcript、TaskOutput、TaskStop 和 task-notification。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+        "src-tauri/src/runtime/tools/builtin/task_output.rs",
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/src/runtime/agent/task_notification.rs"
+      ]
+    },
+    {
+      "title": "后台结果可见性分成读取输出和完成通知两条链",
+      "description": "TaskOutput 读取 transcript 并按 offset 返回增量输出；TaskNotificationQueue 则在后台任务终态时把 XML 通知注入后续 chat turn。前者是用户主动读产物，后者是运行时把完成状态带回模型上下文，职责不能互换。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/task_output.rs",
+        "src-tauri/src/runtime/agent/task_notification.rs",
+        "src-tauri/tests/task_notification_injection_test.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_task.rs"
+      ]
+    },
+    {
+      "title": "TaskStop 通过 AsyncTaskStore 取消后台任务，不改变前台是否后台化的决策",
+      "description": "TaskStop 是后台任务生命周期的控制面：按 task_id 找 handle、检查终态、触发 BackgroundStop 并更新状态。它不参与 Bash/PowerShell 的自动后台预算判断，也不会把同步 subagent 自动转成后台。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/src/runtime/agent/async_task_store.rs",
+        "src-tauri/tests/task_stop_tool_test.rs",
+        "src-tauri/tests/e2e_task_stop_real_cancel_test.rs"
+      ]
+    },
+    {
+      "title": "Agent/Subagent 也已具备前台超预算自动后台化，但任务类型与 Shell 分离",
+      "description": "spawn_subagent.rs 与 llm/tool_executor/spawn_subagent.rs 当前保留 run_in_background=true 的显式 async，同时让 false 或缺省进入 launch_foreground_auto_background。Agent promotion 登记 LocalAgent；Shell 自动后台化登记 LocalBash。Claude code best 仍只作为历史对标参考，当前事实以本仓库源码和测试为准。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/tests/spawn_subagent_async_test.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
+      ]
+    },
+    {
+      "title": "PowerShell 实现复用主链路，但行为级回归覆盖比 Bash 薄",
+      "description": "PowerShell 代码已接入同一个自动后台化入口和阈值解析，模块内也有 override 单测；但当前取证范围内没有像 Bash 模块那样完整验证 foreground -> background、assistant_auto_backgrounded 和 transcript 去重的行为测试，后续可补 Windows 专项回归。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/powershell.rs",
+        "src-tauri/tests/powershell_tool_test.rs",
+        "src-tauri/src/runtime/tools/builtin/bash.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先从 Bash 前台 select 看触发条件",
+      "description": "阅读 AUTO_BACKGROUND_AFTER_SECS、resolve_auto_background_after_secs 和 foreground select 分支，确认自动后台化只在 timeout、更长预算、后台依赖与 conv_dir 都满足时触发。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/bash.rs"
+      ]
+    },
+    {
+      "title": "再看 shell_task 如何接住已有进程",
+      "description": "重点看 launch_auto_backgrounded_shell_task 如何写初始 transcript、flush 前台输出、注册 AsyncTaskHandle、spawn 后台收尾任务并返回 assistant_auto_backgrounded=true。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_common.rs",
+        "src-tauri/src/runtime/agent/async_task_store.rs"
+      ]
+    },
+    {
+      "title": "顺着输出和停止控制看后台任务可操作面",
+      "description": "TaskOutput 从 transcript 按 offset 读取后台输出，TaskStop 则按 task_id 找 AsyncTaskStore handle 并用 BackgroundStop 取消；两者共同构成后台化后的用户控制面。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/task_output.rs",
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/tests/task_stop_tool_test.rs",
+        "src-tauri/tests/e2e_task_stop_real_cancel_test.rs"
+      ]
+    },
+    {
+      "title": "补看完成通知如何回到后续对话",
+      "description": "shell_task 终态会入队 <task-notification>，后续 chat turn 再 drain 注入；这条链路不同于 TaskOutput 的主动读取。",
+      "filePaths": [
+        "src-tauri/src/runtime/agent/task_notification.rs",
+        "src-tauri/tests/task_notification_injection_test.rs"
+      ]
+    },
+    {
+      "title": "对照 PowerShell 的 Windows 对称实现",
+      "description": "PowerShell 使用同一自动后台预算和 shell_task 入口；检查时要同时注意当前测试覆盖更偏阈值与取消边界，行为级回归可继续补强。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/powershell.rs",
+        "src-tauri/tests/powershell_tool_test.rs"
+      ]
+    },
+    {
+      "title": "最后对照 SpawnSubagent 的 LocalAgent 自动后台化",
+      "description": "spawn_subagent 默认前台路径也能超预算自动后台化，但它返回 task_type=local_agent；这一步用于区分 Agent promotion 与 Shell LocalBash handoff 的不同生命周期对象。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/tests/spawn_subagent_async_test.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
+      ]
+    }
+  ]
+}

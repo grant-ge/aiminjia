@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// Upload signed Windows installer + Tauri updater .sig to Aliyun OSS.
+// Upload signed Windows MSI installer + Tauri updater .sig to Aliyun OSS.
 //
 // Pure Node — no Python dependency. Uses the official `ali-oss` SDK.
 //
 // Usage:
-//   node scripts/ci-upload-windows.mjs <version> <release|beta> <exe-path>
+//   node scripts/ci-upload-windows.mjs <version> <release|beta> <msi-path>
 //
 // Required env vars:
 //   OSS_ACCESS_KEY_ID
 //   OSS_ACCESS_KEY_SECRET
 //
-// The .sig file is expected at <exe-path>.sig and uploaded alongside.
+// The .sig file is expected at <msi-path>.sig and uploaded alongside.
 // For release type, also copies to aijia/latest/windows-x64.
 
 import { readFileSync, statSync, existsSync } from 'node:fs'
@@ -21,23 +21,23 @@ const BUCKET = 'lotus-releases'
 const REGION = 'oss-cn-beijing'
 const PREFIX = 'aijia'
 
-const [, , version, releaseType, exePath] = process.argv
-if (!version || !releaseType || !exePath) {
-  console.error('Usage: node scripts/ci-upload-windows.mjs <version> <beta|release> <exe-path>')
+const [, , version, releaseType, msiPath] = process.argv
+if (!version || !releaseType || !msiPath) {
+  console.error('Usage: node scripts/ci-upload-windows.mjs <version> <beta|release> <msi-path>')
   process.exit(1)
 }
 if (releaseType !== 'beta' && releaseType !== 'release') {
   console.error(`ERROR: release type must be 'beta' or 'release', got: ${releaseType}`)
   process.exit(1)
 }
-if (!existsSync(exePath)) {
-  console.error(`ERROR: exe not found: ${exePath}`)
+if (!existsSync(msiPath)) {
+  console.error(`ERROR: MSI not found: ${msiPath}`)
   process.exit(1)
 }
-const sigPath = `${exePath}.sig`
+const sigPath = `${msiPath}.sig`
 if (!existsSync(sigPath)) {
   console.error(`ERROR: .sig not found: ${sigPath}`)
-  console.error('  Generate it with: tauri signer sign -k ~/.tauri/aijia.key <exe>')
+  console.error('  Generate it with: tauri signer sign -k ~/.tauri/aijia.key <msi>')
   process.exit(1)
 }
 
@@ -79,8 +79,8 @@ const client = new OSS({
 const ossPrefix = releaseType === 'beta'
   ? `${PREFIX}/beta/v${version}`
   : `${PREFIX}/v${version}`
-const exeKey = `${ossPrefix}/AIjia_${version}_x64-setup.exe`
-const sigKey = `${exeKey}.sig`
+const msiKey = `${ossPrefix}/AIjia_${version}_x64-setup.msi`
+const sigKey = `${msiKey}.sig`
 
 async function uploadOne(localPath, remoteKey) {
   const size = statSync(localPath).size
@@ -101,23 +101,23 @@ async function uploadOne(localPath, remoteKey) {
 }
 
 try {
-  await uploadOne(exePath, exeKey)
+  await uploadOne(msiPath, msiKey)
   await uploadOne(sigPath, sigKey)
 
   if (releaseType === 'release') {
     const latestKey = `${PREFIX}/latest/windows-x64`
-    console.log(`[copy ] ${exeKey} -> ${latestKey}`)
-    await client.copy(latestKey, exeKey, {
+    console.log(`[copy ] ${msiKey} -> ${latestKey}`)
+    await client.copy(latestKey, msiKey, {
       headers: {
         'x-oss-metadata-directive': 'REPLACE',
         'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="AIjia_${version}_x64-setup.exe"`,
+        'Content-Disposition': `attachment; filename="AIjia_${version}_x64-setup.msi"`,
       },
     })
   }
 
   console.log(`\n[ok] Windows v${version} (${releaseType}) uploaded to OSS`)
-  console.log(`     https://lotus.renlijia.com/${exeKey}`)
+  console.log(`     https://lotus.renlijia.com/${msiKey}`)
 } catch (err) {
   console.error(`\nERROR: upload failed: ${err.message}`)
   if (err.code) console.error(`  OSS error code: ${err.code}`)

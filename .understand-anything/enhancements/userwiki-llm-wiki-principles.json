@@ -1,0 +1,162 @@
+{
+  "module": "userwiki-llm-wiki-principles",
+  "source_basis": "repo-local-skills-and-maintenance-scripts",
+  "key_nodes": [
+    {
+      "filePath": ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      "summary": "UserWiki 的 LLM Wiki 心智模型，定义 raw source、compiled wiki、query、writeback、lint/QA 和子 agent compiler pass 的仓库映射。",
+      "tags": ["userwiki", "llm-wiki", "knowledge-compiler", "writeback"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/SKILL.md",
+      "summary": "UserWiki 用户入口 skill，现在显式要求把 UserWiki 理解为 LLM 维护的知识中间层，先复用 compiled wiki，必要时回 raw source 校验。",
+      "tags": ["userwiki", "skill", "llm-wiki", "qa"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/qa-playbook.md",
+      "summary": "UserWiki 问答手册，新增 LLM Wiki 口径：raw source、compiled wiki、query、writeback、lint/QA，并把缺口路由到 wiki-maintainer。",
+      "tags": ["userwiki", "qa-playbook", "llm-wiki", "impact-analysis"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/qa-smoke-cases.json",
+      "summary": "UserWiki CLI smoke fixture，新增方法论类用例，验证回答能解释 UserWiki 的知识中间层、writeback 和 lint/QA 口径。",
+      "tags": ["userwiki", "qa-fixture", "smoke-test", "llm-wiki"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": ".agents/skills/wiki-maintainer/SKILL.md",
+      "summary": "Wiki 维护 skill，承担 LLM Wiki writeback 层：补 enhancement、更新 RepoWiki、派子 agent 和跑校验。",
+      "tags": ["wiki-maintainer", "writeback", "graph-maintenance"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "scripts/check-repowiki.mjs",
+      "summary": "RepoWiki/UserWiki 确定性校验脚本，现在把 llm-wiki-principles reference 纳入 .agents/.claude 镜像和必备文件检查。",
+      "tags": ["repo-wiki", "userwiki", "validation", "lint"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "scripts/run-userwiki-qa-smoke.mjs",
+      "summary": "UserWiki 问答效果 smoke 脚本，用 fixture 检查 LLM Wiki 方法论问答是否命中知识中间层、回写和校验口径。",
+      "tags": ["userwiki", "qa-smoke", "validation", "script"],
+      "complexity": "moderate"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": ".agents/skills/userwiki/SKILL.md",
+      "targetFilePath": ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      "type": "documents",
+      "reason": "SKILL.md 把理解 UserWiki / LLM Wiki 的工作心智路由到 llm-wiki-principles reference。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/references/qa-playbook.md",
+      "targetFilePath": ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      "type": "documents",
+      "reason": "qa-playbook 的 UserWiki LLM Wiki 口径要求详细心智见 llm-wiki-principles。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      "targetFilePath": ".agents/skills/wiki-maintainer/SKILL.md",
+      "type": "routes",
+      "reason": "llm-wiki-principles 明确缺节点、缺边、过期结论、QA smoke 或模块级知识编译要转 wiki-maintainer。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      "targetFilePath": "scripts/check-repowiki.mjs",
+      "type": "validates",
+      "reason": "LLM Wiki 原则把 check-repowiki 作为 lint/QA 层的一部分，用于防止 wiki 腐烂。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      "targetFilePath": "scripts/run-userwiki-qa-smoke.mjs",
+      "type": "validates",
+      "reason": "LLM Wiki 原则把真实问答 smoke 作为 query 层质量验证的一部分。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": "scripts/check-repowiki.mjs",
+      "targetFilePath": ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      "type": "validates",
+      "reason": "check-repowiki 已将 llm-wiki-principles.md 加入 required files 和 skill mirror consistency 检查。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "scripts/run-userwiki-qa-smoke.mjs",
+      "targetFilePath": ".agents/skills/userwiki/references/qa-smoke-cases.json",
+      "type": "reads_from",
+      "reason": "run-userwiki-qa-smoke 读取新增方法论 QA fixture，验证 UserWiki 是否能按 LLM Wiki 口径回答。",
+      "weight": 0.86
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "UserWiki 的完整性按问答能力而不是文件节点数量衡量",
+      "description": "llm-wiki-principles 明确完整性口径是能否回答高频工程问题，例如影响面、链路、证据、缺图谱边和新发现写回位置，而不是每个文件都有节点。",
+      "evidence": [
+        ".agents/skills/userwiki/references/llm-wiki-principles.md"
+      ]
+    },
+    {
+      "title": "UserWiki 查询优先复用 compiled wiki，再回 raw source 校验",
+      "description": "SKILL.md 和 qa-playbook 都要求先使用 RepoWiki、knowledge graph、enhancement、guided tour；架构事实不清楚时才回到当前源码和测试。",
+      "evidence": [
+        ".agents/skills/userwiki/SKILL.md",
+        ".agents/skills/userwiki/references/qa-playbook.md",
+        ".agents/skills/userwiki/references/llm-wiki-principles.md"
+      ]
+    },
+    {
+      "title": "writeback 是 UserWiki 复利的关键",
+      "description": "新原则要求问答暴露出的缺节点、缺边、过期结论、新决策或 QA 缺口转入 wiki-maintainer，形成 enhancement、RepoWiki 更新或 QA smoke。",
+      "evidence": [
+        ".agents/skills/userwiki/references/llm-wiki-principles.md",
+        ".agents/skills/userwiki/references/qa-playbook.md",
+        ".agents/skills/wiki-maintainer/SKILL.md"
+      ]
+    },
+    {
+      "title": "子 agent 分工被定义为 knowledge compiler pass",
+      "description": "llm-wiki-principles 明确小范围探索、中等写入和最终整合应按模型能力分层，主线程负责拆范围、审稿、合并和校验。",
+      "evidence": [
+        ".agents/skills/userwiki/references/llm-wiki-principles.md"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先理解 UserWiki 的知识编译心智",
+      "description": "把 UserWiki 看作 raw source 到 compiled wiki 的中间层，而不是一次性 RAG；回答先复用 RepoWiki、graph、enhancement 和 tour。",
+      "filePaths": [
+        ".agents/skills/userwiki/SKILL.md",
+        ".agents/skills/userwiki/references/llm-wiki-principles.md",
+        ".agents/skills/userwiki/references/qa-playbook.md"
+      ]
+    },
+    {
+      "title": "把缺口写回维护流",
+      "description": "当问答暴露出缺节点、缺边、过期结论或新决策，切到 wiki-maintainer，用 enhancement、RepoWiki 或 QA smoke 沉淀。",
+      "filePaths": [
+        ".agents/skills/userwiki/references/llm-wiki-principles.md",
+        ".agents/skills/userwiki/references/maintenance-routing.md",
+        ".agents/skills/wiki-maintainer/SKILL.md"
+      ]
+    },
+    {
+      "title": "用 lint 和 QA 防止 wiki 腐烂",
+      "description": "通过 check-repowiki 和 run-userwiki-qa-smoke 校验 skill 镜像、图谱配置、enhancement 引用、RepoWiki 链接和真实问答 fixture。",
+      "filePaths": [
+        "scripts/check-repowiki.mjs",
+        "scripts/run-userwiki-qa-smoke.mjs",
+        ".agents/skills/userwiki/references/qa-smoke-cases.json"
+      ]
+    }
+  ]
+}

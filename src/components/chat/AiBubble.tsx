@@ -88,7 +88,13 @@ function ContentRenderer({
 }) {
   switch (field) {
     case 'text':
-      return <AssistantMarkdown text={value as string} conversationId={message.conversationId} />
+      return (
+        <AssistantMarkdown
+          text={value as string}
+          conversationId={message.conversationId}
+          generatedFiles={message.content.generatedFiles}
+        />
+      )
 
     case 'tables':
       return (
@@ -130,7 +136,7 @@ function ErrorCallout({ error }: { error: MessageError }) {
   return (
     <div
       role="alert"
-      className="border border-destructive/40 bg-destructive/5 rounded-lg p-3 my-2 flex items-start gap-2"
+      className="border border-destructive/40 bg-destructive/5 rounded-md p-3 my-2 flex items-start gap-2"
     >
       <AlertCircle className="text-destructive shrink-0 mt-0.5" size={18} aria-hidden="true" />
       <div className="flex-1 min-w-0">

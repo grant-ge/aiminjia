@@ -378,7 +378,7 @@ impl FeishuStreamClient {
             }
             Some(t) if t == MSG_TYPE_CARD => {
                 // PR4/5 will hook card.action.trigger; for PR3 just log.
-                log::info!("[feishu-stream] card frame received (deferred to PR4/5)");
+                log::debug!("[feishu-stream] card frame received (deferred to PR4/5)");
             }
             other => {
                 log::debug!(
@@ -461,7 +461,7 @@ impl FeishuStreamClient {
                         );
                         return;
                     }
-                    log::info!(
+                    log::debug!(
                         "[feishu-stream] forwarding msg_id={} chat_type={:?} text_len={}",
                         channel_msg.msg_id,
                         channel_msg.conversation_type,

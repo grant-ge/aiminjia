@@ -13,7 +13,7 @@ export function PeerMessageBanner({ banners }: Props) {
   return (
     <div className="flex w-full flex-col gap-1.5">
       {peerItems.length > 0 && (
-        <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm">
+        <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
           <div className="mb-1.5 flex items-center gap-1.5 font-medium text-foreground">
             <span>🔔</span>
             <span>团队消息</span>
@@ -31,7 +31,7 @@ export function PeerMessageBanner({ banners }: Props) {
         </div>
       )}
       {taskItems.map((b, i) => (
-        <div key={i} className="rounded-lg border border-border bg-muted px-3 py-2 text-sm">
+        <div key={i} className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
           <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
             <span>✅</span>
             <span>子任务完成</span>

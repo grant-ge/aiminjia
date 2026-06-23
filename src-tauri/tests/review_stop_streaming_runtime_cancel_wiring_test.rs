@@ -56,3 +56,21 @@ fn review_stop_streaming_requests_immediate_pending_drain_after_turn_exit() {
         "stopped turns must use PendingQueueManager::schedule_drain_immediate instead of the default debounce"
     );
 }
+
+#[test]
+fn review_stop_streaming_marks_running_agenda_occurrences_terminal() {
+    let source = include_str!("../src/transport/tauri_commands/chat.rs");
+    let start = source
+        .find("pub async fn stop_streaming(&self, conversation_id: String)")
+        .expect("stop_streaming should exist");
+    let end = source[start..]
+        .find("pub async fn approve_permission_request")
+        .map(|offset| start + offset)
+        .expect("approve_permission_request should follow stop_streaming");
+    let stop_streaming_body = &source[start..end];
+
+    assert!(
+        stop_streaming_body.contains("fail_running_agenda_occurrences_for_conversation"),
+        "stop_streaming must close running agenda occurrences so stopped scheduled runs do not remain running forever"
+    );
+}

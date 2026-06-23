@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ComposerAttachmentToken } from './types'
+import { Button } from '@/components/ui/button'
 
 const FILE_TYPE_ICON = {
   excel: FileSpreadsheet,
@@ -49,7 +50,7 @@ export function AttachmentTokenView({ node, deleteNode }: AttachmentTokenViewPro
         className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
       />
       <span className="truncate">{attrs.fileName}</span>
-      <button
+      <Button unstyled
         type="button"
         aria-label="remove attachment"
         // mousedown inside contentEditable=false re-positions the editor selection before
@@ -60,10 +61,10 @@ export function AttachmentTokenView({ node, deleteNode }: AttachmentTokenViewPro
           e.stopPropagation()
           deleteNode()
         }}
-        className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-background"
+        className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-md hover:bg-background"
       >
         <X className="h-3 w-3" />
-      </button>
+      </Button>
     </NodeViewWrapper>
   )
 }

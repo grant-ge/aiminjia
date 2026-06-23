@@ -105,7 +105,6 @@ data-aijia-{业务名}[-{字段}]="{值}"
 | `src/components/chat/StreamingBubble.tsx` | `data-aijia-streaming-bubble` |
 | `src/components/common/Modal.tsx` | `data-aijia-dialog` / `data-aijia-dialog-tool`（透传 props） |
 | `src/components/common/PermissionAskDialog.tsx` | `data-aijia-dialog="permission-ask"` / `-tool` / `-title` / `-description` / `-action="allow\|deny"` |
-| `src/components/interactions/AskUserQuestionDialog.tsx` | `data-aijia-dialog="ask-user-question"` / `-title` / `-description` / `-action="option\|cancel\|confirm"` / `-question-index` / `-option-index` / `-option-label` |
 | `src/components/common/ConfirmDialog.tsx` | `data-aijia-dialog="confirm"` / `-title` / `-description` / `-action="cancel\|confirm"` |
 
 后续追加请在本表登记一条，并说明对应的 `aijia <subcommand>`。

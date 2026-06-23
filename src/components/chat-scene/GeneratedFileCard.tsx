@@ -4,10 +4,11 @@
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ExternalLink, Eye, FolderOpen } from 'lucide-react'
+import { ChevronDown, Download, ExternalLink, Eye, FolderOpen } from 'lucide-react'
 
 import type { GeneratedFilePrimaryAction } from '@/components/chat/generatedFileActions'
 import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
+import { Button } from '@/components/ui/button'
 
 interface GeneratedFileCardProps {
   title: string
@@ -17,12 +18,14 @@ interface GeneratedFileCardProps {
   primaryAction?: GeneratedFilePrimaryAction
   canPreview?: boolean
   canOpenExternal?: boolean
+  canDownload?: boolean
   canReveal?: boolean
   /** 文件绝对路径，用于 e2e CLI 按 filePath 子串定位卡片 */
   filePath?: string
   onOpen?: () => void
   onPreview?: () => void
   onOpenExternal?: () => void
+  onDownload?: () => void
   onReveal?: () => void
 }
 
@@ -51,6 +54,7 @@ function useActionLabels() {
     previewInside: t('fileCard.previewInside'),
     previewUnavailable: t('fileCard.previewUnavailable'),
     openExternal: t('fileCard.openExternal'),
+    download: t('fileCard.download'),
     reveal: t('fileCard.reveal'),
   }
 }
@@ -97,20 +101,24 @@ export function GeneratedFileCard({
   primaryAction = 'open',
   canPreview = false,
   canOpenExternal = true,
+  canDownload = true,
   canReveal = true,
   filePath,
   onOpen,
   onPreview,
   onOpenExternal,
+  onDownload,
   onReveal,
 }: GeneratedFileCardProps) {
   const ACTION_LABELS = useActionLabels()
   const openExternalAction = onOpenExternal ?? onOpen
   const previewAction = canPreview ? onPreview : undefined
   const enabledOpenExternalAction = canOpenExternal !== false ? openExternalAction : undefined
+  const downloadAction = canDownload !== false ? onDownload : undefined
   const revealAction = canReveal !== false ? onReveal : undefined
   const previewEnabled = Boolean(previewAction)
   const openEnabled = Boolean(enabledOpenExternalAction)
+  const downloadEnabled = Boolean(downloadAction)
   const revealEnabled = Boolean(revealAction)
   const isPreviewPrimary = primaryAction === 'preview'
   const primaryLabel = isPreviewPrimary ? ACTION_LABELS.preview : ACTION_LABELS.open
@@ -140,6 +148,13 @@ export function GeneratedFileCard({
       onSelect: () => enabledOpenExternalAction?.(),
     },
     {
+      id: 'download',
+      label: ACTION_LABELS.download,
+      icon: <Download className="h-4 w-4" />,
+      disabled: !downloadEnabled,
+      onSelect: () => downloadAction?.(),
+    },
+    {
       id: 'reveal',
       label: ACTION_LABELS.reveal,
       icon: <FolderOpen className="h-4 w-4" />,
@@ -149,7 +164,7 @@ export function GeneratedFileCard({
   ]
 
   return (
-    <div data-testid="generated-file-card" data-aijia-file-path={filePath ?? ''} className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-lg border border-border bg-card px-4">
+    <div data-testid="generated-file-card" data-aijia-file-path={filePath ?? ''} className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-md border border-border bg-card px-4">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex h-16 w-12 shrink-0 items-center justify-center">
           <TiltedFileIcon title={title} sub={sub} />
@@ -159,28 +174,28 @@ export function GeneratedFileCard({
           <div className="truncate text-xs leading-4 text-muted-foreground">{sub}</div>
         </div>
       </div>
-      <div className="flex shrink-0 items-center rounded-full border border-border bg-background text-sm text-foreground">
-        <button
+      <div className="flex shrink-0 items-center rounded-md border border-border bg-background text-sm text-foreground">
+        <Button unstyled
           type="button"
           onClick={handlePrimaryAction}
           disabled={isPrimaryDisabled}
           aria-label={`${primaryLabel} ${title}`}
-          className="flex items-center gap-2 rounded-l-full py-1.5 pl-3 pr-2 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+          className="flex items-center gap-2 rounded-l-md py-1.5 pl-3 pr-2 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
         >
           {appIcon}
           <span>{appName}</span>
-        </button>
+        </Button>
         <span className="h-4 w-px bg-border" />
         <AppDropdown
           ariaLabel={`${ACTION_LABELS.more}：${title}`}
           contentClassName="min-w-48"
           trigger={
-            <button
+            <Button unstyled
               type="button"
-              className="flex items-center rounded-r-full py-1.5 pl-2 pr-2 transition-colors hover:bg-muted"
+              className="flex items-center rounded-r-md py-1.5 pl-2 pr-2 transition-colors hover:bg-muted"
             >
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
+            </Button>
           }
           items={menuItems}
         />

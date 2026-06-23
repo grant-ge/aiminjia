@@ -20,6 +20,12 @@ fn loads_user_and_global_skills_with_user_precedence() {
     write_skill(global.path(), "salary-query", "global desc", "global body");
     write_skill(user.path(), "salary-query", "user desc", "user body");
     write_skill(global.path(), "biz-writing", "biz desc", "biz body");
+    write_skill(
+        global.path(),
+        "dingtalk-workspace",
+        "required builtin desc",
+        "required builtin body",
+    );
 
     let skills = load_skill_roots(&[user.path().to_path_buf(), global.path().to_path_buf()]);
     let skills = skills.expect("skills should load");
@@ -30,9 +36,14 @@ fn loads_user_and_global_skills_with_user_precedence() {
         "user desc"
     );
     assert_eq!(
-        skills.get("biz-writing").unwrap().frontmatter.description,
-        "biz desc"
+        skills
+            .get("dingtalk-workspace")
+            .unwrap()
+            .frontmatter
+            .description,
+        "required builtin desc"
     );
+    assert!(!skills.contains_key("biz-writing"));
 }
 
 #[test]

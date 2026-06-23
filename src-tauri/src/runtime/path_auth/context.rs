@@ -21,6 +21,7 @@ pub struct PermissionRule {
 pub struct ToolPermissionContext {
     pub mode: PermissionMode,
     pub primary_root: Option<PathBuf>,
+    pub read_roots: Vec<PathBuf>,
     pub additional_working_dirs: HashMap<PathBuf, RuleSource>,
     pub allow_rules: Vec<PermissionRule>,
     pub deny_rules: Vec<PermissionRule>,
@@ -31,6 +32,7 @@ impl ToolPermissionContext {
         Self {
             mode: PermissionMode::Default,
             primary_root: None,
+            read_roots: Vec::new(),
             additional_working_dirs: HashMap::new(),
             allow_rules: Vec::new(),
             deny_rules: Vec::new(),

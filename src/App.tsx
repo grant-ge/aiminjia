@@ -5,10 +5,8 @@ import { AuthGate } from '@/components/auth/AuthGate'
 import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { UpdaterPanel } from '@/components/common/UpdaterPanel'
-import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
-import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
-import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
 import { SettingsModal } from '@/components/settings/SettingsModal'
+import { SidebarCollapseFrame } from '@/components/layout/SidebarCollapseFrame'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { NetworkStatusIndicator } from '@/components/shell/NetworkStatusIndicator'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
@@ -20,16 +18,15 @@ import { InboxPage } from '@/features/inbox/InboxPage'
 import { ExpertTeamsPage } from '@/features/expert-teams/ExpertTeamsPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
+import { SkillDetailDialog } from '@/features/skill-detail/SkillDetailDialog'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useDragDropListener } from '@/hooks/useDragDropListener'
 import { usePendingEventListener } from '@/hooks/usePendingEventListener'
+import { useAppNavigationMenu } from '@/hooks/useAppNavigationMenu'
 import {
-  approvePermissionRequest,
-  cancelPermissionRequest,
-  denyPermissionRequest,
   getConversations,
   getPluginInfo,
   getSettings,
@@ -37,19 +34,20 @@ import {
   onConversationCreated,
   onConversationTitleUpdated,
 } from '@/lib/tauri'
+import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useSidebarStatusStore } from '@/stores/sidebarStatusStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { useStreamingStore } from '@/stores/streamingStore'
-import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
 import { hydrateHomeStore } from '@/stores/homeStore'
 import { initChannelListeners } from '@/stores/channelStore'
 import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
+import type { SkillInfo } from '@/lib/tauri'
 
 applyFontScale(loadPersistedFontScale())
 
@@ -79,56 +77,38 @@ function RouteSwitch() {
 }
 
 function AppShell() {
-  const pendingAsks = useStreamingStore((s) => s.pendingAsks)
-  const removePendingAsk = useStreamingStore((s) => s.removePendingAsk)
-  const pendingInteractions = useInteractionStore((s) => s.pendingInteractions)
-  const removeInteraction = useInteractionStore((s) => s.removeInteraction)
-  const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
-  const activeInteraction = pendingInteractions[0] ?? null
   useUpdater()
-
-  const handleAllowAsk = async ({ remember, destination }: PermissionAskDecision) => {
-    if (!activeAsk) return
-    const toolCallId = activeAsk.toolCallId
-    removePendingAsk(toolCallId)
-    try {
-      await approvePermissionRequest(toolCallId, null, remember, destination)
-    } catch (err) {
-      console.error('[permission:ask] approve failed', err)
-    }
-  }
-
-  const handleDenyAsk = async ({ remember, destination }: PermissionAskDecision) => {
-    if (!activeAsk) return
-    const toolCallId = activeAsk.toolCallId
-    removePendingAsk(toolCallId)
-    try {
-      await denyPermissionRequest(toolCallId, undefined, remember, destination)
-    } catch (err) {
-      console.error('[permission:ask] deny failed', err)
-    }
-  }
-
-  const handleCancelAsk = async () => {
-    if (!activeAsk) return
-    const toolCallId = activeAsk.toolCallId
-    removePendingAsk(toolCallId)
-    try {
-      await cancelPermissionRequest(toolCallId)
-    } catch (err) {
-      console.error('[permission:ask] cancel failed', err)
-    }
+  const sidebarHidden = useUiStore((state) => state.sidebarHidden)
+  const skillDetailDialogId = useUiStore((state) => state.skillDetailDialogId)
+  const closeSkillDetailDialog = useUiStore((state) => state.closeSkillDetailDialog)
+  const setPendingSkill = useUiStore((state) => state.setPendingSkill)
+  const setRoute = useUiStore((state) => state.setRoute)
+  const skillForDialog = useSkillStore((state) =>
+    skillDetailDialogId ? state.getById(skillDetailDialogId) : undefined,
+  )
+  const handleUseSkillFromDialog = (skill: SkillInfo) => {
+    const localized = localizeSkill(skill)
+    setPendingSkill({
+      id: skill.id,
+      label: localized.name,
+      trigger: skill.triggerText?.trim() || `/${skill.id}`,
+    })
+    closeSkillDetailDialog()
+    setRoute({ kind: 'home' })
   }
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
       <NetworkStatusIndicator />
-      <div className="flex min-h-0 flex-1">
-        <AppSidebar />
+      <div className="flex min-h-0 flex-1 bg-sidebar">
+        <SidebarCollapseFrame hidden={sidebarHidden}>
+          <AppSidebar />
+        </SidebarCollapseFrame>
         <main
-          className="min-w-0 flex-1 overflow-hidden border-l border-border"
-          style={{ boxShadow: 'var(--shadow-sidebar-edge)' }}
+          className={`min-w-0 flex-1 overflow-hidden border-t border-border bg-background ${
+            sidebarHidden ? '' : 'rounded-l-md border-l'
+          }`}
         >
           <RouteSwitch />
         </main>
@@ -136,21 +116,15 @@ function AppShell() {
       <SettingsModal />
       <ConfirmDialogHost />
       <ToastContainer />
-      <PermissionAskDialog
-        open={activeAsk !== null}
-        ask={activeAsk}
-        onAllow={handleAllowAsk}
-        onDeny={handleDenyAsk}
-        onCancel={handleCancelAsk}
-      />
-      {activeInteraction ? (
-        <AskUserQuestionDialog
-          interactionId={activeInteraction.interactionId}
-          questions={activeInteraction.payload.questions}
-          onClose={() => removeInteraction(activeInteraction.interactionId)}
-        />
-      ) : null}
       <UpdaterPanel />
+      <SkillDetailDialog
+        open={Boolean(skillDetailDialogId && skillForDialog)}
+        skill={skillForDialog ?? null}
+        onOpenChange={(open) => {
+          if (!open) closeSkillDetailDialog()
+        }}
+        onUse={handleUseSkillFromDialog}
+      />
     </div>
   )
 }
@@ -160,6 +134,7 @@ function App() {
   useNetworkStatus()
   useDragDropListener()
   usePendingEventListener()
+  useAppNavigationMenu()
   const { t } = useTranslation()
 
   useEffect(() => {
@@ -177,6 +152,10 @@ function App() {
         useSettingsStore.getState().setSettings(settings)
       })
       .catch((err) => console.error('Failed to load settings:', err))
+  }, [])
+
+  useEffect(() => {
+    useSidebarStatusStore.getState().hydrateFromSession()
   }, [])
 
   useEffect(() => {

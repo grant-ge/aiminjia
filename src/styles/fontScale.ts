@@ -1,15 +1,16 @@
 import type { FontScale } from '@/types/settings'
 
 export const FONT_SCALE_ROOT_PX: Record<FontScale, number> = {
-  small: 14,
+  small: 14.7692307692,
   medium: 16,
-  large: 18,
+  large: 17.2307692308,
 }
 
 export const FONT_SCALE_STORAGE_KEY = 'aijia-font-scale'
+export const DEFAULT_FONT_SCALE: FontScale = 'medium'
 
 export function normalizeFontScale(value: unknown): FontScale {
-  return value === 'small' || value === 'large' || value === 'medium' ? value : 'medium'
+  return value === 'small' || value === 'large' || value === 'medium' ? value : DEFAULT_FONT_SCALE
 }
 
 export function applyFontScale(value: FontScale) {
@@ -19,11 +20,11 @@ export function applyFontScale(value: FontScale) {
 }
 
 export function loadPersistedFontScale(): FontScale {
-  if (typeof localStorage === 'undefined') return 'medium'
+  if (typeof localStorage === 'undefined') return DEFAULT_FONT_SCALE
   try {
     return normalizeFontScale(localStorage.getItem(FONT_SCALE_STORAGE_KEY))
   } catch {
-    return 'medium'
+    return DEFAULT_FONT_SCALE
   }
 }
 

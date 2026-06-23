@@ -11,8 +11,10 @@ describe('AssistantMarkdown', () => {
     expect(screen.getByText('重点')).toBeInTheDocument()
     expect(container.querySelector('strong')).toBeInTheDocument()
     expect(container.firstElementChild?.className).toContain('assistant-markdown')
-    expect(container.firstElementChild?.className).toContain('text-[15px]')
-    expect(container.firstElementChild?.className).toContain('leading-[1.65]')
+    expect(container.firstElementChild?.className).toContain('text-sm')
+    expect(container.firstElementChild?.className).toContain('leading-[1.58]')
+    expect(container.firstElementChild?.className).toContain('tracking-normal')
+    expect(container.firstElementChild?.className).not.toContain('tracking-[-0.003em]')
   })
 
   it('renders nothing for blank text', () => {

@@ -16,9 +16,7 @@ use std::sync::Arc;
 use crate::auth::AuthManager;
 use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::providers::aijia_gateway_v2;
-use crate::llm::providers::claude;
 use crate::llm::providers::custom;
-use crate::llm::providers::lotus;
 use crate::llm::providers::openai;
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::router::{self, RouteResult};
@@ -42,7 +40,7 @@ pub fn thinking_config_for_route(
     route: &RouteResult,
     settings: &AppSettings,
 ) -> Option<ThinkingConfig> {
-    if route.provider != "claude" && route.provider != "aijia-v2" {
+    if route.provider != "aijia-v2" {
         return None;
     }
 
@@ -90,6 +88,15 @@ pub(crate) fn format_llm_error_diagnostics(err: &anyhow::Error) -> String {
     parts.join("; ")
 }
 
+fn cloud_session_error_message(err: &anyhow::Error) -> String {
+    let message = err.to_string();
+    if message.contains("登录已过期") || message.contains("未登录") {
+        message
+    } else {
+        format!("登录状态异常：{message}")
+    }
+}
+
 fn attach_anthropic_multimodal_turn(
     messages: &mut [ChatMessage],
     anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
@@ -113,7 +120,7 @@ fn attach_anthropic_multimodal_turn(
 ///
 /// Parses the error message for HTTP status codes and known error patterns.
 /// Non-retryable errors (401 auth, 400 bad request, etc.) return false.
-/// Whether the error indicates the lotus session key was revoked / rejected
+/// Whether the error indicates the cloud session key was revoked / rejected
 /// by the server, regardless of what the local `expires_at` says. Used by
 /// `stream_message` to trigger a one-shot session refresh + retry instead of
 /// surfacing "API key invalid" to the user.
@@ -127,9 +134,9 @@ fn is_auth_revoked_error(err: &anyhow::Error) -> bool {
         return false;
     }
     // Match by the gateway's structured error *type/code*, not the
-    // human-readable message text. The lotus gateway tags every session-key
-    // auth failure with `authentication_error` (anthropic ingress) /
-    // `auth_error` (openai ingress) — this covers "Session key expired",
+    // human-readable message text. The cloud gateway tags session-key auth
+    // failures with `authentication_error` / `auth_error` — this covers
+    // "Session key expired",
     // "Session key revoked", "Invalid session key", "Missing Authorization
     // header", "Invalid key format", etc. A fresh session_key fixes all of
     // them, so a refresh + retry is always the right response. Other
@@ -149,19 +156,8 @@ fn is_auth_revoked_error(err: &anyhow::Error) -> bool {
         || lower.contains("authorization")
 }
 
-/// Whether a provider string belongs to the authenticated cloud gateway path.
-/// Routing now forces this path to `aijia-v2`, but old provider names may still
-/// appear in persisted settings or defensive route fallbacks.
 fn provider_uses_cloud_gateway(provider: &str) -> bool {
-    !matches!(provider, "openai" | "claude" | "custom")
-}
-
-fn force_cloud_route_to_v2(route: &mut RouteResult) {
-    if !provider_uses_cloud_gateway(&route.provider) {
-        return;
-    }
-
-    route.provider = "aijia-v2".to_string();
+    provider == "aijia-v2"
 }
 
 fn gate_log_expected_for_route(route: &RouteResult) -> bool {
@@ -202,6 +198,7 @@ fn is_retryable_error(err: &anyhow::Error) -> bool {
     let lower = msg.to_lowercase();
     lower.contains("timed out")
         || lower.contains("timeout")
+        || lower.contains("error sending request")
         || lower.contains("connection reset")
         || lower.contains("connection refused")
         || lower.contains("broken pipe")
@@ -269,7 +266,7 @@ pub struct LlmGateway {
     // Stream-level bridge only. Runtime-owned cancellation stays in
     // SessionRuntime; gateway/run_registry must not become a second owner.
     run_registry: Arc<RuntimeRunRegistry>,
-    /// Cloud auth manager — used to fetch a fresh session_key for Lotus requests.
+    /// Cloud auth manager — used to fetch a fresh session_key for AIjia Gateway requests.
     /// None in tests / non-cloud builds.
     auth_manager: Option<Arc<AuthManager>>,
 }
@@ -288,7 +285,7 @@ impl LlmGateway {
         }
     }
 
-    /// Attach an [`AuthManager`] so cloud (Lotus) requests can retrieve a fresh session_key.
+    /// Attach an [`AuthManager`] so cloud requests can retrieve a fresh session_key.
     pub fn with_auth_manager(mut self, auth_manager: Arc<AuthManager>) -> Self {
         self.auth_manager = Some(auth_manager);
         self
@@ -414,9 +411,9 @@ impl LlmGateway {
     }
 
     /// Like [`stream_message`] but accepts structured per-block cache
-    /// segments. Providers that support block-level `cache_control`
-    /// (currently Claude/Anthropic) honor the segments; others fall back
-    /// to the flat `system_prompt`.
+    /// segments. AIjia Gateway V2 can carry these hints to upstream models
+    /// that support block-level prompt caching; other providers fall back to
+    /// the flat `system_prompt`.
     pub async fn stream_message_with_segments(
         &self,
         settings: &AppSettings,
@@ -495,17 +492,10 @@ impl LlmGateway {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
-                            e
-                        ));
-                    }
+                    Err(e) => return Err(anyhow::anyhow!(cloud_session_error_message(&e))),
                 }
             }
         }
-        force_cloud_route_to_v2(&mut route);
-
         log::info!(
             "{}",
             route_log_summary(&task_type, &route, settings, conversation_id, run_id)
@@ -573,22 +563,21 @@ impl LlmGateway {
         let stream = match retry_dispatch_stream(&route, request.clone()).await {
             Ok(s) => s,
             Err(e) if provider_uses_cloud_gateway(&route.provider) && is_auth_revoked_error(&e) => {
-                // 401 + "Session key revoked" from lotus → the local cache
+                // 401 + "Session key revoked" from the gateway → the local cache
                 // wallclock can't be trusted (clock skew, server-side revoke,
                 // tz mismatch — see auth/mod.rs invalidate_session_key).
                 // Force a renewal and retry once. If still 401, surface to UI.
                 if let Some(auth) = &self.auth_manager {
                     log::warn!(
-                        "[stream_message] lotus returned 401 Session key revoked — forcing session refresh"
+                        "[stream_message] cloud gateway returned 401 Session key revoked — forcing session refresh"
                     );
                     auth.invalidate_session_key().await;
                     match auth.get_session_key().await {
                         Ok(sk) => {
                             route.api_key = sk;
                             // Rebuild request so the new api_key reaches the
-                            // provider (claude.rs reads route.api_key only at
-                            // build time → the cached `request` carries the
-                            // stale key in Authorization header).
+                            // Rebuild request so the new api_key reaches the
+                            // provider.
                             let mut mask_ctx_retry = MaskingContext::new(masking_level);
                             let mut masked_retry = mask_ctx_retry.mask_messages(&messages);
                             if provider_uses_cloud_gateway(&route.provider) {
@@ -671,16 +660,10 @@ impl LlmGateway {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
-                            e
-                        ));
-                    }
+                    Err(e) => return Err(anyhow::anyhow!(cloud_session_error_message(&e))),
                 }
             }
         }
-
         log::info!(
             "{}",
             route_log_summary(&task_type, &route, settings, None, None)
@@ -724,9 +707,9 @@ impl LlmGateway {
     /// anthropic_multimodal_turn / trace_id / run_id，保证 fallback 与
     /// stream 走完全相同的 request 上下文（不丢图 / cache 不失效 / 追踪不断链）。
     ///
-    /// 内部仍走 `retry_dispatch_send` → 非流式 `/anthropic/v1/messages`，
-    /// 网关侧已支持非流式分支（lotus-server anthropic_native.go:190）并在流式失败
-    /// 自动退款（anthropic_native.go:499），所以 fallback 不会双扣费。
+    /// 内部仍走 `retry_dispatch_send`，但云端路由会强制进入
+    /// `/aijia/v2/ai/responses` 的非流式分支；不再触碰 legacy Anthropic
+    /// ingress。
     ///
     /// Spec: docs/superpowers/specs/2026-05-28-streaming-error-handling-design.md §五.9.2
     #[allow(clippy::too_many_arguments)]
@@ -752,17 +735,10 @@ impl LlmGateway {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
-                            e
-                        ));
-                    }
+                    Err(e) => return Err(anyhow::anyhow!(cloud_session_error_message(&e))),
                 }
             }
         }
-        force_cloud_route_to_v2(&mut route);
-
         log::info!(
             "Sending (non-stream fallback) task {:?} to provider '{}' conv={:?}",
             task_type,
@@ -982,20 +958,12 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             let p = openai::OpenAiProvider::new(route.api_key.clone());
             p.stream(request).await
         }
-        "claude" => {
-            let p = claude::ClaudeProvider::new(route.api_key.clone(), None);
-            p.stream(request).await
-        }
         "custom" => {
             let p = custom::CustomProvider::new(
                 route.api_key.clone(),
                 route.endpoint_url.clone(),
                 route.model_hint.clone(),
             );
-            p.stream(request).await
-        }
-        "lotus" => {
-            let p = lotus::LotusProvider::new(route.api_key.clone());
             p.stream(request).await
         }
         "aijia-v2" => {
@@ -1006,11 +974,7 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             );
             p.stream(request).await
         }
-        other => {
-            log::warn!("Unknown provider '{}', falling back to lotus", other);
-            let p = lotus::LotusProvider::new(route.api_key.clone());
-            p.stream(request).await
-        }
+        other => Err(anyhow::anyhow!("Unknown LLM provider: {}", other)),
     }
 }
 
@@ -1021,20 +985,12 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             let p = openai::OpenAiProvider::new(route.api_key.clone());
             p.send(request).await
         }
-        "claude" => {
-            let p = claude::ClaudeProvider::new(route.api_key.clone(), None);
-            p.send(request).await
-        }
         "custom" => {
             let p = custom::CustomProvider::new(
                 route.api_key.clone(),
                 route.endpoint_url.clone(),
                 route.model_hint.clone(),
             );
-            p.send(request).await
-        }
-        "lotus" => {
-            let p = lotus::LotusProvider::new(route.api_key.clone());
             p.send(request).await
         }
         "aijia-v2" => {
@@ -1045,11 +1001,7 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             );
             p.send(request).await
         }
-        other => {
-            log::warn!("Unknown provider '{}', falling back to lotus", other);
-            let p = lotus::LotusProvider::new(route.api_key.clone());
-            p.send(request).await
-        }
+        other => Err(anyhow::anyhow!("Unknown LLM provider: {}", other)),
     }
 }
 
@@ -1069,7 +1021,7 @@ mod tests {
             Some(503)
         );
         assert_eq!(
-            extract_status_code("Anthropic API error (401): unauthorized"),
+            extract_status_code("AIjia v2 stream error (401 Unauthorized): unauthorized"),
             Some(401)
         );
     }
@@ -1128,6 +1080,9 @@ mod tests {
         )));
         assert!(is_retryable_error(&anyhow::anyhow!("connection refused")));
         assert!(is_retryable_error(&anyhow::anyhow!("Broken pipe")));
+        assert!(is_retryable_error(&anyhow::anyhow!(
+            "error sending request for url (https://ai-tenant.renlijia.com/aijia/v2/ai/responses)"
+        )));
     }
 
     #[test]
@@ -1226,44 +1181,10 @@ mod tests {
     }
 
     #[test]
-    fn force_cloud_route_to_v2_rewrites_cloud_routes() {
-        let mut lotus_route = RouteResult {
-            provider: "lotus".to_string(),
-            api_key: "session".to_string(),
-            model_hint: String::new(),
-            use_tools: true,
-            endpoint_url: String::new(),
-            model_type: "chat".to_string(),
-        };
-        let mut custom_route = RouteResult {
-            provider: "custom".to_string(),
-            api_key: "key".to_string(),
-            model_hint: String::new(),
-            use_tools: true,
-            endpoint_url: "http://localhost".to_string(),
-            model_type: "chat".to_string(),
-        };
-
-        force_cloud_route_to_v2(&mut lotus_route);
-        force_cloud_route_to_v2(&mut custom_route);
-
-        assert_eq!(lotus_route.provider, "aijia-v2");
-        assert_eq!(custom_route.provider, "custom");
-    }
-
-    #[test]
     fn route_log_summary_marks_gate_log_expectation() {
         let settings = AppSettings {
             cloud_gateway_mode: CloudGatewayMode::Legacy,
             ..AppSettings::default()
-        };
-        let legacy_route = RouteResult {
-            provider: "lotus".to_string(),
-            api_key: "session".to_string(),
-            model_hint: "claude-sonnet".to_string(),
-            use_tools: true,
-            endpoint_url: String::new(),
-            model_type: "chat".to_string(),
         };
         let v2_route = RouteResult {
             provider: "aijia-v2".to_string(),
@@ -1273,14 +1194,15 @@ mod tests {
             endpoint_url: String::new(),
             model_type: "chat".to_string(),
         };
+        let custom_route = RouteResult {
+            provider: "custom".to_string(),
+            api_key: "session".to_string(),
+            model_hint: "local-model".to_string(),
+            use_tools: true,
+            endpoint_url: "http://localhost".to_string(),
+            model_type: "chat".to_string(),
+        };
 
-        let legacy = route_log_summary(
-            &router::TaskType::General,
-            &legacy_route,
-            &settings,
-            Some("conv-1"),
-            Some("run-1"),
-        );
         let v2 = route_log_summary(
             &router::TaskType::General,
             &v2_route,
@@ -1288,13 +1210,20 @@ mod tests {
             Some("conv-1"),
             Some("run-1"),
         );
+        let custom = route_log_summary(
+            &router::TaskType::General,
+            &custom_route,
+            &settings,
+            Some("conv-1"),
+            Some("run-1"),
+        );
 
-        assert!(legacy.contains("provider=lotus"));
-        assert!(legacy.contains("gate_log_expected=false"));
-        assert!(legacy.contains("conv=conv-1"));
-        assert!(legacy.contains("run=run-1"));
         assert!(v2.contains("provider=aijia-v2"));
         assert!(v2.contains("gate_log_expected=true"));
+        assert!(v2.contains("conv=conv-1"));
+        assert!(v2.contains("run=run-1"));
+        assert!(custom.contains("provider=custom"));
+        assert!(custom.contains("gate_log_expected=false"));
     }
 
     #[test]
@@ -1304,20 +1233,21 @@ mod tests {
             thinking_budget_tokens: 8192,
             ..AppSettings::default()
         };
-        let lotus_route = RouteResult {
-            provider: "lotus".to_string(),
+        let custom_route = RouteResult {
+            provider: "custom".to_string(),
             api_key: "session".to_string(),
             model_hint: String::new(),
             use_tools: true,
-            endpoint_url: String::new(),
+            endpoint_url: "http://localhost".to_string(),
             model_type: "chat".to_string(),
         };
         let v2_route = RouteResult {
             provider: "aijia-v2".to_string(),
-            ..lotus_route.clone()
+            endpoint_url: String::new(),
+            ..custom_route.clone()
         };
 
-        assert_eq!(thinking_config_for_route(&lotus_route, &settings), None);
+        assert_eq!(thinking_config_for_route(&custom_route, &settings), None);
         assert_eq!(
             thinking_config_for_route(&v2_route, &settings),
             Some(ThinkingConfig::Enabled {
@@ -1370,5 +1300,12 @@ mod stability_tests {
         );
 
         assert!(!is_auth_revoked_error(&err));
+    }
+
+    #[test]
+    fn cloud_session_error_message_does_not_mention_api_key() {
+        let err = anyhow::anyhow!("登录已过期，请重新登录");
+
+        assert_eq!(cloud_session_error_message(&err), "登录已过期，请重新登录");
     }
 }

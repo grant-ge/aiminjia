@@ -147,11 +147,11 @@ jobs:
         with:
           name: windows-unsigned
           path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.exe.sig
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.msi.sig
           retention-days: 30
 
-      - name: Upload unsigned exe to OSS staging
+      - name: Upload unsigned MSI to OSS staging
         # release-windows.ps1 pulls from this public staging URL.
         shell: pwsh
         env:
@@ -159,9 +159,9 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
-          $sig = "$($exe.FullName).sig"
-          node scripts/ci-upload-staging.mjs $version $exe.FullName $sig
+          $msi = Get-ChildItem src-tauri/target/release/bundle/msi/*.msi | Select-Object -First 1
+          $sig = "$($msi.FullName).sig"
+          node scripts/ci-upload-staging.mjs $version $msi.FullName $sig
 
   # ────────────────────────────────────────────────────────────
   # Summary

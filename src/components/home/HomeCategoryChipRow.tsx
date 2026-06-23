@@ -11,6 +11,7 @@ import {
   Search,
   Sparkles,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export interface HomeChipItem {
   key: string
@@ -48,23 +49,23 @@ export function HomeCategoryChipRow({
   onSelect,
 }: HomeCategoryChipRowProps) {
   return (
-    <div className="flex w-full items-center justify-between gap-1.5 rounded-full bg-card/95 p-2">
+    <div className="flex w-full items-center justify-between gap-1.5 rounded-md bg-card/95 p-2">
       {items.map((it) => {
         const active = it.key === activeKey
         return (
-          <button
+          <Button unstyled
             key={it.key}
             type="button"
             onClick={() => onSelect(it.key)}
             className={
               active
-                ? 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-3 text-sm font-semibold text-foreground'
-                : 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-3 text-sm font-medium text-muted-foreground'
+                ? 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-3 text-sm font-semibold text-foreground'
+                : 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-3 text-sm font-medium text-muted-foreground'
             }
           >
             <span className={active ? 'text-primary' : ''}>{renderIcon(it.icon)}</span>
             <span className={active ? 'text-primary' : ''}>{it.label}</span>
-          </button>
+          </Button>
         )
       })}
     </div>

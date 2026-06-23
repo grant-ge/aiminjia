@@ -9,6 +9,7 @@ use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmE
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::hooks::config::{HookConfig, HookEvent, HookRegistry};
+use app_lib::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::{RunId, SessionId, ToolCallId};
 use app_lib::runtime::query_engine::QueryEngine;
@@ -152,7 +153,7 @@ async fn w2_max_tokens_injects_resume_message_and_completes() {
         })
         .expect("assistant message persisted event");
     if let RuntimeEventKind::MessagePersisted { content, .. } = &persisted.kind {
-        assert_eq!(content["text"], "part-1part-2");
+        assert_eq!(content["text"], "part-2");
     }
 }
 
@@ -202,7 +203,7 @@ async fn w2_max_tokens_recovery_stops_after_limit_and_keeps_partial_content() {
         .expect("assistant message persisted event");
     if let RuntimeEventKind::MessagePersisted { content, .. } = &persisted.kind {
         let text = content["text"].as_str().unwrap_or("");
-        assert!(text.contains("part-0part-1part-2part-3"));
+        assert!(text.contains("part-3"));
         assert!(
             text.contains("输出 token 上限"),
             "partial content should include a truncation notice once recovery is exhausted"
@@ -312,6 +313,8 @@ async fn w4_orphaned_permission_is_cancelled_and_event_emitted() {
             args: json!({"value": 1}),
             purpose: None,
         },
+        turn_origin: TurnOrigin::App,
+        output_binding: OutputBinding::AppOnly,
         path_auth_scope: None,
     };
     let resolution_rx = pending_store

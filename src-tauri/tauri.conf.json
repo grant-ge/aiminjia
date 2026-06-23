@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AIjia",
-  "version": "0.5.33",
+  "version": "0.5.36-1",
   "identifier": "com.aijia.app",
   "build": {
     "frontendDist": "../dist",
@@ -39,7 +39,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis",
+      "msi",
       "app"
     ],
     "createUpdaterArtifacts": true,

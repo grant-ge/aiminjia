@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { getSubagentTranscript } from '@/lib/tauri'
 import type { SubAgentTranscriptEntry } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 interface SubAgentTranscriptViewerProps {
   transcriptRef: string
@@ -69,7 +70,7 @@ function TranscriptBody({
             return (
               <div key={`${entry.role}-${index}`} className="flex items-center gap-2.5">
                 <span
-                  className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold"
+                  className="mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-xs font-semibold"
                   style={{
                     background: badgeStyle.bg,
                     color: badgeStyle.color,
@@ -153,7 +154,7 @@ export function SubAgentTranscriptViewer({
 
   return (
     <div>
-      <button
+      <Button unstyled
         onClick={handleToggle}
         className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition-colors hover:bg-[var(--color-bg-hover)]"
         style={{ color: 'var(--color-text-muted)' }}
@@ -186,7 +187,7 @@ export function SubAgentTranscriptViewer({
 
         {loadState === 'loaded' && (
           <span
-            className="rounded-full px-1.5 py-0.5 font-medium"
+            className="rounded-md px-1.5 py-0.5 font-medium"
             style={{
               background: 'var(--color-bg-neutral)',
               color: 'var(--color-text-muted)',
@@ -195,7 +196,7 @@ export function SubAgentTranscriptViewer({
             {entries.length}
           </span>
         )}
-      </button>
+      </Button>
 
       {expanded && (
         <div

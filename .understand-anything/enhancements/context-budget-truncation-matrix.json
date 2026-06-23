@@ -1,0 +1,389 @@
+{
+  "module": "context-budget-truncation-matrix",
+  "source_basis": "code-tests-only",
+  "coverage": "代码/测试来源：chat history rebuild、pre-LLM preprocess/compaction、tool result collector、runtime tool catalog、workspace/shell/grep tools、skill catalog、AGENTS.md、project/cognitive memory、multimodal image context、context overflow warning 和 QueryEngine budget tests。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/chat/history.rs",
+      "summary": "聊天历史重建器，当前生产路径使用默认 120000 字符和 30 round 上限，超限时从最老 round 开始移除，并在 compact boundary 存在时按 tail_message_id 截断后注入 summary context。",
+      "tags": ["history", "context-budget", "truncation"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "summary": "Tauri chat executor 的生产 load_history 实现，读取 messages 和 compact boundaries 后调用 history.rs，因此 HistoryConfig 默认预算会进入真实聊天请求。",
+      "tags": ["transport", "history", "production-path"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "summary": "每轮 LLM step 前构造 PreprocessConfig::default 并调用 prepare_messages_for_llm，同时把 skill catalog、project/core memory、env context 和图片块送入 LlmStepInput。",
+      "tags": ["turn-driver", "context-budget", "production-path"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "summary": "LLM 前消息预算入口，依次应用 64000 字符 tool result 总预算、保留最近 2 条 tool result、160/200 字符 preview、8000 字符长结果折叠和 auto compact 触发逻辑。",
+      "tags": ["preprocess", "tool-budget", "compaction"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/compaction.rs",
+      "summary": "定义 microcompact 和 auto compact 阈值：120000 字符触发 microcompact，480000 字符触发 auto compact；compact 后只保留从最后一个 user message 起的 tail，其余依赖 summary。",
+      "tags": ["compaction", "microcompact", "boundary"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/compact_client.rs",
+      "summary": "CompactSummaryClient 抽象说明默认未配置 client 时 compact summary 返回空并跳过压缩，用于区分 auto compact 触发逻辑和实际 summary 生成能力。",
+      "tags": ["compaction", "summary-client", "effect-status"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/tool_result_collector.rs",
+      "summary": "工具结果进入 LLM tool message 前的统一收集器，按每个工具结果的 max_result_size_chars 截断并追加 Output truncated 提示。",
+      "tags": ["tool-result", "truncation", "llm-input"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/definition.rs",
+      "summary": "RuntimeTool 定义默认工具结果上限 default_max_result_size_chars=8000，是大多数工具输出进入 LLM 上下文前的默认硬预算。",
+      "tags": ["tools", "context-budget", "defaults"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/catalog.rs",
+      "summary": "工具目录为 Read、Glob、Skill 等工具覆盖默认结果预算，例如 Read=16000、Glob=4000、Skill=16000。",
+      "tags": ["tools", "catalog", "context-budget"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/workspace.rs",
+      "summary": "ReadWorkspaceFile 在源头限制读取内容：默认 max_bytes=1048576，offset 模式默认 limit=2000 行，随后按字节边界截断。",
+      "tags": ["workspace", "file-read", "context-budget"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/shell_common.rs",
+      "summary": "Bash 和 PowerShell 共享的 shell 输出采集上限 MAX_OUTPUT_BYTES=512 KiB，超过部分在进入工具结果前被截断。",
+      "tags": ["shell", "tool-output", "truncation"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/grep.rs",
+      "summary": "Grep 工具限制最多 1000 个匹配结果，并跳过大于 2 MiB 的文件，影响模型可见的搜索上下文。",
+      "tags": ["grep", "search", "context-budget"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/skill/catalog_prompt.rs",
+      "summary": "Skill catalog 使用固定 200000 token 窗口调用方、3% 上下文预算、4 chars/token 和 80 字符描述截断，超预算时降级为只列 skill id。",
+      "tags": ["skill", "catalog", "dynamic-context"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agents_md.rs",
+      "summary": "AGENTS.md 动态上下文读取上限为 64 KiB，超过时按字符边界截断并记录 warn。",
+      "tags": ["agents-md", "dynamic-context", "truncation"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/project_memory.rs",
+      "summary": "Project memory 每次按当前 query 只召回最多 5 条相关 entry 并渲染进动态上下文。",
+      "tags": ["memory", "project-memory", "recall-limit"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/storage/file_store/cognitive.rs",
+      "summary": "Cognitive memory 限制单条内容最长 4000 字符，core memory 超过 200 行会按评分淘汰弱 section，影响长期记忆可见性。",
+      "tags": ["memory", "cognitive", "capacity"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/multimodal.rs",
+      "summary": "多模态图片上下文最多 4 张、单张 3 MiB、总计 6 MiB；超限图片会降级而不进入当轮多模态上下文。",
+      "tags": ["multimodal", "image", "context-budget"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/llm/context_decay.rs",
+      "summary": "定义 provider context window 和 apply_decay 工具输出衰减函数；当前主 chat 路径只使用窗口大小做 overflow warn，apply_decay 未接入主请求链。",
+      "tags": ["context-window", "warning", "not-wired"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/query_engine.rs",
+      "summary": "包含 QueryEngine budget/cost 配置方法，但普通 chat 构造链未发现 with_max_budget_usd 或 with_cost_per_1k_tokens 的生产注入点。",
+      "tags": ["query-engine", "budget", "effect-status"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/history.rs",
+      "type": "calls",
+      "reason": "生产 load_history_via_runtime_history 构造 HistoryConfig::default 并调用 build_chat_history，因此 30 round/120000 字符预算会进入真实聊天请求。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/history.rs",
+      "targetFilePath": "src-tauri/src/storage/file_store/compact_boundaries.rs",
+      "type": "reads_from",
+      "reason": "history 回放读取 compact boundary 的 summary_text 和 tail_message_id，决定旧 transcript 是否只从 tail 起回放。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "type": "calls",
+      "reason": "每轮 LLM step 前都通过 PreprocessConfig::default 进入 prepare_messages_for_llm，触发 tool budget、microcompact、collapse 和 auto compact。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/compaction.rs",
+      "type": "calls",
+      "reason": "preprocess 调用 microcompact 和 compact_messages_via_llm，把超过预算的旧工具结果或旧消息压缩成 summary/tail 结构。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/compact_client.rs",
+      "type": "depends_on",
+      "reason": "auto compact 是否真正产出 summary 取决于 CompactSummaryClient；默认无 client 时触发逻辑存在但 summary 为空。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/dispatcher.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/definition.rs",
+      "type": "reads_from",
+      "reason": "dispatcher 在派发工具时读取 ToolDefinition.default_max_result_size_chars 并随 outcome 传给后续 tool result collector。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/catalog.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/definition.rs",
+      "type": "configures",
+      "reason": "工具 catalog 用 with_max_result_size_chars 覆盖默认 8000 字符上限，定义不同工具进入 LLM 上下文的结果预算。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/tool_result_collector.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/definition.rs",
+      "type": "depends_on",
+      "reason": "tool_result_collector 依赖 outcome 上携带的 max_result_size_chars，对最终 tool message 内容做 UTF-8 边界截断。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/workspace.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/tool_result_collector.rs",
+      "type": "transforms",
+      "reason": "ReadWorkspaceFile 先按 max_bytes/line limit 裁剪原始文件内容，再由 tool_result_collector 按工具结果上限裁剪为 LLM 可见 tool message。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/shell_common.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/tool_result_collector.rs",
+      "type": "transforms",
+      "reason": "Bash/PowerShell 共享 shell_common 的 512 KiB 输出上限，随后同样进入 tool_result_collector 的结果预算链。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/grep.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/tool_result_collector.rs",
+      "type": "transforms",
+      "reason": "Grep 结果数量和文件大小限制决定搜索工具输出的上游内容规模，最终仍作为 tool message 注入 LLM。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/catalog_prompt.rs",
+      "type": "calls",
+      "reason": "生产 get_skill_catalog 固定调用 format_full_catalog(200000)，该预算化 skill 列表随后进入动态上下文。",
+      "weight": 0.87
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/runtime/agents_md.rs",
+      "type": "calls",
+      "reason": "chat turn driver 加载授权 workspace 的 AGENTS.md，64 KiB 截断后的内容会作为上下文消息进入 LLM。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/runtime/project_memory.rs",
+      "type": "calls",
+      "reason": "turn driver 用当前用户消息作为 query 召回最多 5 条 project memory，并注入每轮动态上下文。",
+      "weight": 0.85
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/multimodal.rs",
+      "type": "calls",
+      "reason": "当前用户附件中的图片会经 build_anthropic_image_blocks 受数量和字节预算限制后进入 LlmStepInput。",
+      "weight": 0.85
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/llm/context_decay.rs",
+      "type": "calls",
+      "reason": "主路径只调用 context_window_for_provider 做 80% overflow warn，没有调用 apply_decay 改写消息。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "type": "configures",
+      "reason": "SessionRuntime 构造或复用 QueryEngine；当前普通 chat 构造链未看到生产预算阈值注入。",
+      "weight": 0.82
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "长对话忘前文的第一嫌疑是 history 预算而不是用户 settings",
+      "description": "当前生产路径没有从 AppSettings 读取历史 round 或字符预算，而是在 load_history_via_runtime_history 中使用 HistoryConfig::default；默认 30 round 和 120000 字符会在 build_chat_history 的 trim_to_budget 中从最老 round 开始移除。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/history.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/tests/history_rebuild_test.rs"
+      ]
+    },
+    {
+      "title": "compact boundary 会把排障从代码阈值转到本地持久化状态",
+      "description": "一旦 conversation 有 compact_boundaries.jsonl，history 会按最新 boundary 的 tail_message_id 截断 transcript，并把 summary_text 注入为 synthetic user context；旧 summary 质量差或空缺时，用户体感会像模型忘记更早对话。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/history.rs",
+        "src-tauri/src/storage/file_store/compact_boundaries.rs",
+        "src-tauri/tests/plan_k_compact_boundary_test.rs"
+      ]
+    },
+    {
+      "title": "工具上下文有两层截断：工具源头预算和 LLM tool message 预算",
+      "description": "Read、shell、grep 等工具在源头就限制文件大小、输出大小或匹配数量；随后 ToolDefinition.default_max_result_size_chars 和 tool_result_collector 再限制最终进入 LLM 的 tool message 内容。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/workspace.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_common.rs",
+        "src-tauri/src/runtime/tools/builtin/grep.rs",
+        "src-tauri/src/runtime/tools/definition.rs",
+        "src-tauri/src/runtime/chat/tool_result_collector.rs"
+      ]
+    },
+    {
+      "title": "preprocess 是每轮 LLM step 前真正生效的上下文改写层",
+      "description": "PreprocessConfig::default 每轮创建并进入 prepare_messages_for_llm，64000 工具总预算、最近 2 条保留、microcompact 120000、collapse 8000 和 auto compact 480000 都在这里决策。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/src/runtime/chat/preprocess.rs",
+        "src-tauri/src/runtime/chat/compaction.rs",
+        "src-tauri/tests/plan_u3_context_pipeline_test.rs"
+      ]
+    },
+    {
+      "title": "生效性标注必须区分生效、半生效、未接入和测试专用",
+      "description": "CONTEXT_WINDOW_* 和 CONTEXT_OVERFLOW_THRESHOLD 当前进入主流程但只用于 warn；context_decay.apply_decay 和 AutoCompactConfig.max_output_chars 未接入主 chat 请求链；QueryEngine budget/cost 注入当前主要由测试覆盖，普通 chat 主链未见生产注入。",
+      "evidence": [
+        "src-tauri/src/llm/context_decay.rs",
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/src/runtime/chat/compaction.rs",
+        "src-tauri/src/runtime/query_engine.rs",
+        "src-tauri/tests/plan_o_queryengine_session_state_test.rs"
+      ]
+    },
+    {
+      "title": "动态上下文也有独立预算，不应只看历史 messages",
+      "description": "skill catalog、AGENTS.md、project/core memory 和图片附件都在 messages 之外影响 LLM 输入；这些预算分散在各自模块中，排障时需要与 history/preprocess 一起检查。",
+      "evidence": [
+        "src-tauri/src/plugin/skill/catalog_prompt.rs",
+        "src-tauri/src/runtime/agents_md.rs",
+        "src-tauri/src/runtime/project_memory.rs",
+        "src-tauri/src/storage/file_store/cognitive.rs",
+        "src-tauri/src/runtime/chat/multimodal.rs"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "上下文预算缺少集中 ContextPolicy",
+      "description": "历史、工具、动态上下文、记忆和图片的预算分散在多个模块，排障需要跨文件拼表；建议后续收敛为显式 ContextPolicy 或至少保持 RepoWiki 矩阵同步。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/history.rs",
+        "src-tauri/src/runtime/chat/preprocess.rs",
+        "src-tauri/src/runtime/tools/definition.rs",
+        "src-tauri/src/plugin/skill/catalog_prompt.rs"
+      ]
+    },
+    {
+      "title": "普通 chat 主链未见 QueryEngine budget 生产注入",
+      "description": "QueryEngine 提供 with_max_budget_usd 和 with_cost_per_1k_tokens，但当前普通 chat 构造链没有找到生产注入点；这比旧 wiki 中的“尚未确认”更明确。",
+      "evidence": [
+        "src-tauri/src/runtime/query_engine.rs",
+        "src-tauri/src/runtime/session_runtime.rs",
+        "src-tauri/tests/plan_o_queryengine_session_state_test.rs"
+      ]
+    },
+    {
+      "title": "compact summary client 默认未配置会让 auto compact 只剩触发逻辑",
+      "description": "prepare_messages_for_llm 可以触发 auto compact，但 chat_turn_driver 默认 compact_client=None；默认路径会 warn 并返回空 summary，不会产生新的有效 compact boundary。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/src/runtime/chat/compact_client.rs",
+        "src-tauri/src/runtime/chat/preprocess.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "判断长对话是否被 history 预算裁掉",
+      "description": "从 transport 的 load_history_via_runtime_history 进入 history.rs，检查 HistoryConfig 默认值、trim_to_budget 和 compact boundary 回放。",
+      "filePaths": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/chat/history.rs",
+        "src-tauri/src/storage/file_store/compact_boundaries.rs"
+      ]
+    },
+    {
+      "title": "判断工具输出是否在 LLM 前被压缩",
+      "description": "从 chat_turn_driver 的 PreprocessConfig::default 进入 preprocess 和 compaction，再看 tool_result_collector 如何限制最终 tool message。",
+      "filePaths": [
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/src/runtime/chat/preprocess.rs",
+        "src-tauri/src/runtime/chat/compaction.rs",
+        "src-tauri/src/runtime/chat/tool_result_collector.rs"
+      ]
+    },
+    {
+      "title": "追踪工具源头预算",
+      "description": "先看 ToolDefinition 默认上限和 catalog 覆盖，再分别检查 Read、shell、grep 的源头截断规则。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/definition.rs",
+        "src-tauri/src/runtime/tools/catalog.rs",
+        "src-tauri/src/runtime/tools/builtin/workspace.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_common.rs",
+        "src-tauri/src/runtime/tools/builtin/grep.rs"
+      ]
+    },
+    {
+      "title": "检查动态上下文预算",
+      "description": "不要只看 messages；skill catalog、AGENTS.md、project/cognitive memory 和多模态图片都有独立预算，会共同影响 LLM 可见上下文。",
+      "filePaths": [
+        "src-tauri/src/plugin/skill/catalog_prompt.rs",
+        "src-tauri/src/runtime/agents_md.rs",
+        "src-tauri/src/runtime/project_memory.rs",
+        "src-tauri/src/storage/file_store/cognitive.rs",
+        "src-tauri/src/runtime/chat/multimodal.rs"
+      ]
+    },
+    {
+      "title": "区分生效、半生效和未接入预算",
+      "description": "context window 目前只用于 warn，context_decay.apply_decay 与 max_output_chars 未接入主 chat 请求链，QueryEngine budget 注入点主要由测试覆盖。",
+      "filePaths": [
+        "src-tauri/src/llm/context_decay.rs",
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/src/runtime/chat/compaction.rs",
+        "src-tauri/src/runtime/query_engine.rs",
+        "src-tauri/tests/plan_o_queryengine_session_state_test.rs"
+      ]
+    }
+  ]
+}

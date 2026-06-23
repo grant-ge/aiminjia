@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom'
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { beforeEach, describe, it, expect } from 'vitest'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 
 import { ToolStepRow } from '../ToolStepRow'
 import type { RenderToolStep } from '@/hooks/useTurnRenderModel'
+import { useDevSettingsStore } from '@/stores/devSettingsStore'
 
 function makeStep(overrides: Partial<RenderToolStep> = {}): RenderToolStep {
   return {
@@ -18,6 +19,10 @@ function makeStep(overrides: Partial<RenderToolStep> = {}): RenderToolStep {
 }
 
 describe('ToolStepRow', () => {
+  beforeEach(() => {
+    useDevSettingsStore.setState({ showToolErrorIcon: false })
+  })
+
   it('Read 工具：显示 basename', () => {
     render(<ToolStepRow step={makeStep()} />)
     expect(screen.getByText(/Read/)).toBeInTheDocument()
@@ -57,5 +62,20 @@ describe('ToolStepRow', () => {
     const step = makeStep({ status: 'running', output: undefined, progressTail: 'tail line' })
     render(<ToolStepRow step={step} />)
     expect(screen.getByText('tail line')).toBeInTheDocument()
+  })
+
+  it('默认隐藏 error 行内红色 icon，dev 开关开启时才显示', () => {
+    const step = makeStep({ status: 'error' })
+    const { container, rerender } = render(<ToolStepRow step={step} />)
+
+    expect(screen.queryByTestId('tool-step-row-error-icon')).not.toBeInTheDocument()
+    expect(container.querySelector('.text-destructive')).not.toBeInTheDocument()
+
+    act(() => {
+      useDevSettingsStore.setState({ showToolErrorIcon: true })
+    })
+    rerender(<ToolStepRow step={step} />)
+
+    expect(screen.getByTestId('tool-step-row-error-icon')).toBeInTheDocument()
   })
 })

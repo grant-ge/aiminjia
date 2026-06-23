@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Copy } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TableColumn, TableRow } from './tableSchema'
 import { toCsv, toTsv } from './tableUtils'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   enableCopy?: boolean
@@ -48,23 +49,21 @@ export function TableToolbar({ enableCopy, columns, rows }: Props) {
   const tooltip = shiftHeld
     ? t('dataTable.copyTsv', 'Copy as TSV')
     : t('dataTable.copyCsv', 'Copy as CSV (hold Shift for TSV)')
-  const toneClass =
-    copied === 'ok'
-      ? 'text-[var(--color-semantic-green)]'
-      : copied === 'fail'
-        ? 'text-[var(--color-semantic-red)]'
-        : 'text-[var(--color-text-muted)] hover:text-[var(--primary)]'
 
   return (
-    <button
+    <Button
       type="button"
+      link
       onClick={handleCopy}
       title={tooltip}
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-md transition-colors ${toneClass}`}
-      style={{ background: 'transparent' }}
+      className="gap-1 text-[var(--color-text-muted)]"
       data-testid="table-copy-button"
     >
-      <Copy size={15} strokeWidth={2} aria-hidden="true" />
+      {copied === 'ok' ? (
+        <Check className="h-3.5 w-3.5" aria-hidden="true" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+      )}
       <span>
         {copied === 'ok'
           ? t('common.copied', 'Copied')
@@ -72,6 +71,6 @@ export function TableToolbar({ enableCopy, columns, rows }: Props) {
             ? t('common.copyFailed', 'Copy failed')
             : t('common.copy', 'Copy')}
       </span>
-    </button>
+    </Button>
   )
 }

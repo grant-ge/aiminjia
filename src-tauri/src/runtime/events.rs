@@ -88,9 +88,22 @@ pub enum RuntimeEventKind {
         #[serde(default)]
         reason: RetryReason,
     },
+    StreamNotice {
+        level: String,
+        code: Option<String>,
+        message: String,
+        from_route: Option<serde_json::Value>,
+        to_route: Option<serde_json::Value>,
+    },
     StreamError {
         error: String,
         raw_error: Option<String>,
+        code: Option<String>,
+        retryable: Option<bool>,
+        handling: Option<String>,
+        request_phase: Option<String>,
+        current_route: Option<serde_json::Value>,
+        alternatives: Option<Vec<serde_json::Value>>,
     },
     ToolCallExecuting {
         tool_call_id: ToolCallId,
@@ -132,7 +145,11 @@ pub enum RuntimeEventKind {
         mode: PermissionMode,
         remember_options: Vec<PermissionDestination>,
         default_destination: Option<PermissionDestination>,
+        path_auth_scope: Option<String>,
         primary_model: String,
+    },
+    PermissionAskResolved {
+        tool_call_id: ToolCallId,
     },
     UserInteractionRequired {
         interaction_id: crate::runtime::interaction::InteractionId,
@@ -259,7 +276,8 @@ impl RuntimeEvent {
             RuntimeEventKind::ToolCallExecuting { tool_call_id, .. }
             | RuntimeEventKind::ToolCallCompleted { tool_call_id, .. }
             | RuntimeEventKind::ToolProgress { tool_call_id, .. }
-            | RuntimeEventKind::PermissionAskRequired { tool_call_id, .. } => {
+            | RuntimeEventKind::PermissionAskRequired { tool_call_id, .. }
+            | RuntimeEventKind::PermissionAskResolved { tool_call_id } => {
                 Some(tool_call_id.clone())
             }
             RuntimeEventKind::UserInteractionRequired { tool_call_id, .. } => {

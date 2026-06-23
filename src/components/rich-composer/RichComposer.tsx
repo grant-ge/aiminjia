@@ -8,13 +8,22 @@ import {
 } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowUp, Blocks, Folder, Plus, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, ArrowUp, Blocks, BrainCircuit, Check, ChevronDown, Folder, Plus, Shield, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import { buildComposerExtensions } from './composerSchema'
 import { serializeComposerDoc } from './serializer'
 import { parseMarkdownToComposerJson } from './parseMarkdown'
 import type { ComposerAttachmentToken, ComposerJsonNode, ComposerSkillToken, RichComposerSubmitPayload } from './types'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import type { PermissionMode, ReasoningMode } from '@/lib/tauri'
 
 // `/` should open the skill picker only where a real slash-command could
 // start: an empty doc, or right after whitespace. Anywhere else (mid-word,
@@ -53,6 +62,10 @@ export interface RichComposerProps {
   onOpenSkill?: () => void
   skillCommand?: ComposerSkillCommand | null
   onClearSkillCommand?: () => void
+  permissionMode?: PermissionMode
+  onPermissionModeChange?: (mode: PermissionMode) => void
+  reasoningMode?: ReasoningMode
+  onReasoningModeChange?: (mode: ReasoningMode) => void
 
   projectLabel?: string
   onPickProject?: () => void
@@ -60,7 +73,7 @@ export interface RichComposerProps {
 
   onOpenAttachment?: () => void
   skillTokens?: ComposerSkillToken[]
-  /** Extra classes appended to the outer rounded-xl container. Caller-controlled
+  /** Extra classes appended to the outer rounded-md container. Caller-controlled
    * styling (e.g. shadow for the in-chat composer vs. flat for home composer). */
   containerClassName?: string
   /** When true, caps the editor content area at 200px and enables internal scrolling. */
@@ -90,6 +103,10 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     onOpenSkill,
     skillCommand,
     onClearSkillCommand,
+    permissionMode = 'default',
+    onPermissionModeChange,
+    reasoningMode = 'auto',
+    onReasoningModeChange,
     projectLabel = 'Desktop',
     onPickProject,
     showProjectButton = true,
@@ -229,18 +246,21 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   // Send button is disabled when there's nothing to send. During streaming
   // we still allow send (it queues via PendingQueueManager).
   const sendDisabled = disabled || isEmpty || submittingRef.current
+  const stopIcon = <span className="block h-3 w-3 rounded-md bg-current" />
+  const fullAccess = permissionMode === 'fullAccess'
+  const deepReasoning = reasoningMode === 'deep'
 
   return (
     <div className="relative z-10 flex w-full flex-col gap-2">
       <div
         data-testid="composer-root"
-        className={`flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4${containerClassName ? ` ${containerClassName}` : ''}`}
+        className={`flex w-full flex-col rounded-md border border-border bg-card px-4 pb-1 pt-4${containerClassName ? ` ${containerClassName}` : ''}`}
       >
         {topSlot}
         {skillCommand ? (
           <div className="-mt-2 mb-1 flex items-center">
             <div
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs"
               style={{
                 borderColor: 'var(--color-accent-border)',
                 background: 'var(--color-accent-subtle)',
@@ -253,7 +273,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               />
               <span className="truncate font-medium">{skillCommand.label}</span>
               <span
-                className="shrink-0 rounded px-1 text-[11px]"
+                className="shrink-0 rounded-md px-1 text-[11px]"
                 style={{
                   background: 'var(--color-accent-muted)',
                   color: 'var(--color-accent-600)',
@@ -262,37 +282,40 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                 {skillCommand.command}
               </span>
               {onClearSkillCommand ? (
-                <button
+                <Button unstyled
                   type="button"
                   aria-label={t('composer.removeSkill', { name: skillCommand.label })}
                   onClick={onClearSkillCommand}
-                  className="ml-0.5 shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--color-accent-muted)]"
+                  className="ml-0.5 shrink-0 rounded-md p-0.5 transition-colors hover:bg-[var(--color-accent-muted)]"
                   style={{ color: 'var(--color-accent-700)' }}
                 >
                   <X className="h-3 w-3" />
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>
         ) : null}
         <EditorContent
           editor={editor}
-          className={`min-h-[40px] w-full text-sm text-foreground [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90${limitEditorHeight ? ' [&_.ProseMirror]:max-h-[200px] [&_.ProseMirror]:overflow-y-auto [&_.ProseMirror]:overscroll-contain' : ''}`}
+          className={`min-h-[40px] w-full text-sm text-foreground [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded-md [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded-md [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90${limitEditorHeight ? ' [&_.ProseMirror]:max-h-[200px] [&_.ProseMirror]:overflow-y-auto [&_.ProseMirror]:overscroll-contain' : ''}`}
         />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               data-aijia-composer-plus
               aria-label={t('composer.addAttachment')}
               onClick={onOpenAttachment}
               disabled={disabled}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            <button
+              icon={<Plus />}
+            />
+            <Button
               type="button"
+              variant={skillCommand ? 'secondary' : 'ghost'}
+              size="sm"
+              data-aijia-skill-picker-trigger
               onClick={onOpenSkill}
               disabled={disabled}
               aria-label={
@@ -301,30 +324,153 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                   : t('composer.openSkillPicker')
               }
               aria-pressed={Boolean(skillCommand)}
-              className={
-                skillCommand
-                  ? 'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold transition-colors hover:bg-[var(--color-accent-muted)] disabled:opacity-40'
-                  : 'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40'
-              }
               style={
                 skillCommand
                   ? { background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' }
                   : undefined
               }
+              icon={<Blocks />}
             >
-              <Blocks className="h-3.5 w-3.5" />
-              <span>{skillCommand ? t('composer.skillLoaded') : t('composer.skill')}</span>
-            </button>
+              {skillCommand ? t('composer.skillLoaded') : t('composer.skill')}
+            </Button>
+            {onPermissionModeChange ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={disabled}
+                    className="focus-visible:ring-0 data-[state=open]:bg-muted/70"
+                    aria-label={t('composer.permissionModeLabel', {
+                      mode: fullAccess
+                        ? t('composer.permissionModeFull')
+                        : t('composer.permissionModeDefault'),
+                    })}
+                    icon={fullAccess ? <ShieldCheck /> : <Shield />}
+                  >
+                    {fullAccess ? t('composer.permissionModeFull') : t('composer.permissionModeDefault')}
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className="w-[288px] p-1.5"
+                >
+                  <DropdownMenuItem
+                    className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-2.5 text-sm"
+                    onSelect={() => onPermissionModeChange('default')}
+                  >
+                    <span className="flex h-4 w-4 items-center justify-center text-foreground">
+                      {!fullAccess ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <Shield className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                    <span className="truncate">{t('composer.permissionModeDefaultLong')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-2.5 text-sm"
+                    onSelect={() => onPermissionModeChange('fullAccess')}
+                  >
+                    <span className="flex h-4 w-4 items-center justify-center text-foreground">
+                      {fullAccess ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                    <span className="truncate">{t('composer.permissionModeFullLong')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="mx-1 my-1.5 bg-border" />
+                  <div className="px-2.5 py-2 text-xs leading-5 text-muted-foreground">
+                    <div className="mb-1 font-semibold text-foreground">
+                      {t('composer.fullAccessRulesTitle')}
+                    </div>
+                    <p className="mb-1">{t('composer.fullAccessRulesIntro')}</p>
+                    <ul className="list-disc space-y-1 pl-4">
+                      <li>{t('composer.fullAccessRuleLessConfirm')}</li>
+                      <li>{t('composer.fullAccessRuleSensitive')}</li>
+                      <li>{t('composer.fullAccessRuleTrusted')}</li>
+                      <li>{t('composer.fullAccessRuleSwitchBack')}</li>
+                    </ul>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+            {onReasoningModeChange ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={deepReasoning ? 'secondary' : 'ghost'}
+                    size="sm"
+                    disabled={disabled}
+                    className="focus-visible:ring-0 data-[state=open]:bg-muted/70"
+                    aria-label={t('composer.reasoningModeLabel', {
+                      mode: deepReasoning
+                        ? t('composer.reasoningModeDeep')
+                        : t('composer.reasoningModeAuto'),
+                    })}
+                    aria-pressed={deepReasoning}
+                    icon={<BrainCircuit />}
+                    style={
+                      deepReasoning
+                        ? { background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' }
+                        : undefined
+                    }
+                  >
+                    {deepReasoning ? t('composer.reasoningModeDeep') : t('composer.reasoningModeAuto')}
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className="w-[292px] p-1.5"
+                >
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm"
+                    onSelect={() => onReasoningModeChange('auto')}
+                  >
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-foreground">
+                      {!deepReasoning ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block truncate">{t('composer.reasoningModeAutoLong')}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {t('composer.reasoningModeAutoDesc')}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm"
+                    onSelect={() => onReasoningModeChange('deep')}
+                  >
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-foreground">
+                      {deepReasoning ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block truncate">{t('composer.reasoningModeDeepLong')}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {t('composer.reasoningModeDeepDesc')}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             {showProjectButton ? (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={onPickProject}
                 disabled={disabled}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                icon={<Folder />}
               >
-                <Folder className="h-3.5 w-3.5" />
-                <span>{projectLabel}</span>
-              </button>
+                {projectLabel}
+              </Button>
             ) : null}
           </div>
           <div className="flex items-center gap-3">
@@ -336,30 +482,25 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               "current turn" UX focused on the stop action.
             */}
             {isStreaming ? (
-              <button
+              <Button
                 type="button"
+                size="sm"
                 aria-label={t('composer.stop')}
                 onClick={() => onStop?.()}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90"
-              >
-                <span className="block h-3 w-3 rounded-[2px] bg-current" />
-              </button>
+                icon={stopIcon}
+              />
             ) : (
-              <button
+              <Button
                 type="button"
+                size="md"
                 aria-label={t('composer.send')}
                 onClick={() => {
                   void trySubmit()
                 }}
                 disabled={sendDisabled}
-                className={
-                  sendDisabled
-                    ? 'flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground'
-                    : 'flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90'
-                }
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
+                variant={sendDisabled ? 'secondary' : 'default'}
+                icon={<ArrowUp />}
+              />
             )}
           </div>
         </div>

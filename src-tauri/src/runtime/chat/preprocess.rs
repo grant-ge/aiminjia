@@ -126,7 +126,7 @@ pub struct PreprocessConfig {
 
 impl Default for PreprocessConfig {
     fn default() -> Self {
-        let context_window = crate::llm::context_decay::CONSERVATIVE_CONTEXT_WINDOW;
+        let context_window = crate::llm::context_decay::FALLBACK_CONTEXT_WINDOW;
         Self {
             budget: ToolResultBudgetConfig::default(),
             microcompact: MicrocompactConfig::default(),

@@ -18,14 +18,18 @@ use crate::storage::{AiJiaHome, CurrentUserStorage, UserScope};
 fn format_auth_error(e: anyhow::Error) -> String {
     if let Some(req_err) = e.downcast_ref::<reqwest::Error>() {
         if req_err.is_connect() || req_err.is_timeout() || req_err.is_request() {
-            return format!("网络连接失败，请检查网络后重试\n\n详情：{:#}", e);
+            let msg = format!("网络连接失败，请检查网络后重试\n\n详情：{:#}", e);
+            log::warn!("[auth] network error: {:#}", e);
+            return msg;
         }
     }
+    log::error!("[auth] {:#}", e);
     format!("{:#}", e)
 }
 
 /// Login with username and password.
 /// Returns user info, tenant info, and available models.
+#[tracing::instrument(skip_all, fields(username = %username))]
 #[tauri::command]
 pub async fn cloud_login(
     app: tauri::AppHandle,
@@ -144,6 +148,7 @@ pub async fn cloud_login(
 /// Deactivation handlers (registered in setup) take care of clearing
 /// CurrentUserStorage, resetting FileManager workspace, and shutting
 /// down ChannelManager — no need to duplicate that logic here.
+#[tracing::instrument(skip_all)]
 #[tauri::command]
 pub async fn cloud_logout(auth: State<'_, Arc<AuthManager>>) -> Result<(), String> {
     auth.logout().await;
@@ -153,12 +158,14 @@ pub async fn cloud_logout(auth: State<'_, Arc<AuthManager>>) -> Result<(), Strin
 /// Get current cloud auth state (for app init / restore).
 /// If logged in, proactively refreshes auth/profile from server so tenant branding
 /// changes (product name/logo/colors) apply without requiring logout + re-login.
+#[tracing::instrument(skip_all)]
 #[tauri::command]
 pub async fn get_cloud_auth(auth: State<'_, Arc<AuthManager>>) -> Result<CloudAuthInfo, String> {
     Ok(auth.refresh_auth_info().await)
 }
 
 /// Fetch available cloud models.
+#[tracing::instrument(skip_all)]
 #[tauri::command]
 pub async fn get_cloud_models(
     auth: State<'_, Arc<AuthManager>>,
@@ -179,6 +186,7 @@ pub async fn get_cloud_models(
 }
 
 /// Send an SMS verification code for personal registration.
+#[tracing::instrument(skip_all, fields(phone = %phone))]
 #[tauri::command]
 pub async fn cloud_send_sms_code(
     auth: State<'_, Arc<AuthManager>>,
@@ -192,6 +200,7 @@ pub async fn cloud_send_sms_code(
 }
 
 /// Send an email verification code for personal registration.
+#[tracing::instrument(skip_all, fields(email = %email))]
 #[tauri::command]
 pub async fn cloud_send_email_code(
     auth: State<'_, Arc<AuthManager>>,
@@ -208,6 +217,7 @@ pub async fn cloud_send_email_code(
 /// On success the caller should follow up with `cloud_login` using the same
 /// identifier + password — that path activates the user scope and creates
 /// the session key.
+#[tracing::instrument(skip_all, fields(method = %method))]
 #[tauri::command]
 pub async fn cloud_register(
     auth: State<'_, Arc<AuthManager>>,
@@ -250,6 +260,7 @@ pub async fn cloud_register(
 }
 
 /// Reset a personal account password via phone or email + verification code.
+#[tracing::instrument(skip_all, fields(method = %method))]
 #[tauri::command]
 pub async fn cloud_reset_password(
     auth: State<'_, Arc<AuthManager>>,
@@ -372,6 +383,7 @@ pub fn save_last_brand(
 
 /// Change password on the cloud server.
 /// After success, the user is automatically logged out.
+#[tracing::instrument(skip_all)]
 #[tauri::command]
 pub async fn cloud_change_password(
     auth: State<'_, Arc<AuthManager>>,

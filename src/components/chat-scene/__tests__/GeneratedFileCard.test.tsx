@@ -11,9 +11,11 @@ const defaultProps = {
   primaryAction: 'preview' as const,
   canPreview: true,
   canOpenExternal: true,
+  canDownload: true,
   canReveal: true,
   onPreview: vi.fn(),
   onOpenExternal: vi.fn(),
+  onDownload: vi.fn(),
   onReveal: vi.fn(),
 }
 
@@ -21,6 +23,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof GeneratedFileCard
   const callbacks = {
     onPreview: vi.fn(),
     onOpenExternal: vi.fn(),
+    onDownload: vi.fn(),
     onReveal: vi.fn(),
   }
 
@@ -29,6 +32,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof GeneratedFileCard
   return {
     onPreview: props.onPreview ?? callbacks.onPreview,
     onOpenExternal: props.onOpenExternal ?? callbacks.onOpenExternal,
+    onDownload: props.onDownload ?? callbacks.onDownload,
     onReveal: props.onReveal ?? callbacks.onReveal,
   }
 }
@@ -97,17 +101,20 @@ describe('GeneratedFileCard', () => {
   })
 
   it('fires each dropdown action callback', () => {
-    const { onPreview, onOpenExternal, onReveal } = renderCard()
+    const { onPreview, onOpenExternal, onDownload, onReveal } = renderCard()
 
     openMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '在侧边栏预览' }))
     openMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '用默认应用打开' }))
     openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: '下载到...' }))
+    openMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
 
     expect(onPreview).toHaveBeenCalledTimes(1)
     expect(onOpenExternal).toHaveBeenCalledTimes(1)
+    expect(onDownload).toHaveBeenCalledTimes(1)
     expect(onReveal).toHaveBeenCalledTimes(1)
   })
 
@@ -149,5 +156,16 @@ describe('GeneratedFileCard', () => {
     fireEvent.click(item)
 
     expect(onReveal).not.toHaveBeenCalled()
+  })
+
+  it('disables download menu item when download cannot run', () => {
+    const { onDownload } = renderCard({ canDownload: false })
+
+    openMenu()
+    const item = screen.getByRole('menuitem', { name: '下载到...' })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(item)
+
+    expect(onDownload).not.toHaveBeenCalled()
   })
 })

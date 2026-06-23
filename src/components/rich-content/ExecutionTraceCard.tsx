@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 export interface ExecutionTraceCardSection {
   title: string
@@ -44,18 +45,18 @@ export function ExecutionTraceCard({
 
   return (
     <div
-      className="overflow-hidden rounded-lg border border-border"
+      className="overflow-hidden rounded-md border border-border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',
       }}
     >
       {headerCollapsible ? (
-        <button
+        <Button unstyled
           type="button"
           aria-expanded={headerExpanded}
           onClick={() => setHeaderExpanded((prev) => !prev)}
-          className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] ${headerExpanded ? 'rounded-t-lg border-b border-border' : 'rounded-lg'}`}
+          className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] ${headerExpanded ? 'rounded-t-md border-b border-border' : 'rounded-md'}`}
           style={{
             background: 'var(--color-bg-elevated)',
             borderColor: 'var(--color-border)',
@@ -90,7 +91,7 @@ export function ExecutionTraceCard({
             </span>
           </span>
           <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            className="rounded-md px-2 py-0.5 text-xs font-medium"
             style={{
               background: 'var(--color-bg-neutral)',
               color: 'var(--color-text-muted)',
@@ -98,10 +99,10 @@ export function ExecutionTraceCard({
           >
             {badge}
           </span>
-        </button>
+        </Button>
       ) : (
         <div
-          className="flex items-center justify-between rounded-t-lg border-b px-4 py-2.5 border-border"
+          className="flex items-center justify-between rounded-t-md border-b px-4 py-2.5 border-border"
           style={{
             background: 'var(--color-bg-elevated)',
             borderColor: 'var(--color-border)',
@@ -114,7 +115,7 @@ export function ExecutionTraceCard({
             {title}
           </span>
           <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            className="rounded-md px-2 py-0.5 text-xs font-medium"
             style={{
               background: 'var(--color-bg-neutral)',
               color: 'var(--color-text-muted)',
@@ -180,7 +181,7 @@ export function ExecutionTraceCard({
           className={hasContentBeforeExpander ? 'border-t border-border' : ''}
           style={{ borderColor: 'var(--color-border)' }}
         >
-          <button
+          <Button unstyled
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition-colors hover:bg-[var(--color-bg-hover)]"
@@ -206,7 +207,7 @@ export function ExecutionTraceCard({
               />
             </svg>
             <span className="font-medium">{expanded ? collapseLabel ?? expandLabel : expandLabel}</span>
-          </button>
+          </Button>
           {body ? (
             <div className="border-t border-border" style={{ borderColor: 'var(--color-border)' }}>
               {body}

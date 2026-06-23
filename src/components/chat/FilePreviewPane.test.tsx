@@ -51,6 +51,16 @@ describe('FilePreviewPane', () => {
     expect(onClosePreview).toHaveBeenCalledTimes(1)
   })
 
+  it('uses the compact fixed app chrome height for the preview header', () => {
+    previewMock.getFilePreview.mockReturnValue(new Promise(() => {}))
+
+    render(<FilePreviewPane target={target} onOpenExternal={() => {}} />)
+
+    const header = screen.getByTestId('file-preview-header')
+    expect(header).toHaveClass('h-12')
+    expect(header).not.toHaveClass('py-2')
+  })
+
   it('loads and renders markdown content', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'markdown',
@@ -114,20 +124,44 @@ describe('FilePreviewPane', () => {
     expect(image).toHaveAttribute('src', 'data:image/png;base64,iVBORw==')
   })
 
-  it('renders html preview responses in a sandboxed iframe', async () => {
+  it('offers download from the image preview context menu', async () => {
+    const onDownload = vi.fn()
+    previewMock.getFilePreview.mockResolvedValue({
+      kind: 'image',
+      fileName: 'mock-status-chart.png',
+      mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,iVBORw==',
+    })
+
+    render(
+      <FilePreviewPane
+        target={{ ...target, fileName: 'mock-status-chart.png', fileType: 'png' }}
+        onOpenExternal={() => {}}
+        onDownload={onDownload}
+      />,
+    )
+
+    const image = await screen.findByRole('img', { name: 'mock-status-chart.png' })
+    fireEvent.contextMenu(image)
+    fireEvent.click(await screen.findByRole('menuitem', { name: '下载到...' }))
+
+    expect(onDownload).toHaveBeenCalledWith({ ...target, fileName: 'mock-status-chart.png', fileType: 'png' })
+  })
+
+  it('allows scripts inside generated html preview while keeping it sandboxed', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'html',
       fileName: 'report.html',
       mimeType: 'text/html',
-      content: '<h1>Report</h1>',
+      content: '<h1>Report</h1><script>document.body.dataset.ready = "true"</script>',
       sandbox: true,
     })
 
     render(<FilePreviewPane target={{ ...target, fileName: 'report.html', fileType: 'html' }} onOpenExternal={() => {}} />)
 
     const frame = await screen.findByTitle('report.html')
-    expect(frame).toHaveAttribute('sandbox', '')
-    expect(frame).toHaveAttribute('srcdoc', '<h1>Report</h1>')
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame).toHaveAttribute('srcdoc', '<h1>Report</h1><script>document.body.dataset.ready = "true"</script>')
   })
 
   it('renders unsupported preview responses and keeps external open available', async () => {

@@ -34,6 +34,32 @@
     "loading": "加载中...",
     "openFile": "打开文件"
   },
+  "chatHeader": {
+    "more": "更多",
+    "exportConversation": "导出对话",
+    "createSkillFromConversation": "总结对话并创建技能",
+    "createScheduleFromConversation": "总结对话并创建定时任务"
+  },
+  "resultCards": {
+    "copyId": "复制 ID",
+    "skill": {
+      "created": "技能已创建",
+      "view": "查看技能",
+      "nameLabel": "技能名称",
+      "triggerLabel": "触发方式",
+      "descriptionLabel": "技能描述",
+      "fallbackDescription": "技能已创建，可前往技能详情查看。"
+    },
+    "schedule": {
+      "created": "定时任务已创建",
+      "edit": "编辑",
+      "view": "查看定时任务",
+      "frequency": "频率",
+      "nextFire": "下次运行",
+      "fallbackPrompt": "定时任务已创建。",
+      "unavailable": "当前无法读取这个定时任务，可能已被删除或暂时不可用。"
+    }
+  },
   "sidebar": {
     "archiveChat": "归档聊天",
     "archiveChatTooltip": "归档对话",
@@ -46,6 +72,15 @@
     "copyConversationId": "复制对话 ID",
     "noHistory": "还没有历史任务",
     "defaultFolder": "默认项目",
+    "conversationLoading": "对话运行中",
+    "status": {
+      "permissionReviewChip": "审核",
+      "permissionReviewTooltip": "等待你审核权限请求",
+      "waitingReplyChip": "等待回复",
+      "waitingReplyTooltip": "等待你回复问题"
+    },
+    "showMoreConversations": "显示更多 {{count}} 个",
+    "collapseConversations": "收起",
     "project": "项目",
     "employeeTab": "员工",
     "expertTeamTab": "专家",
@@ -88,7 +123,18 @@
   "messageList": {
     "cannotPreview": "无法预览此文件",
     "cannotOpen": "无法打开文件",
-    "cannotReveal": "无法在文件夹中显示"
+    "cannotDownload": "无法下载文件",
+    "cannotReveal": "无法在文件夹中显示",
+    "fileDownloaded": "已下载文件",
+    "toolReceipt": {
+      "interactionSubmitted": "已记录你的回答",
+      "interactionAsked": "询问了用户 {{count}} 个问题",
+      "interactionReceived": "收到：{{summary}}",
+      "interactionCancelled": "已忽略补充问题",
+      "permissionApproved": "已允许权限申请",
+      "permissionDenied": "用户拒绝了这个权限申请",
+      "permissionCancelled": "已取消权限申请"
+    }
   },
   "subagent": {
     "resultCard": {
@@ -301,6 +347,14 @@
       "chatWidthCentered": "居中",
       "chatWidthFull": "全宽"
     },
+    "permissions": {
+      "title": "系统权限",
+      "description": "设置新会话默认采用的工具权限。会话内显式选择的权限优先于这里的全局默认。",
+      "defaultAccess": "默认访问",
+      "defaultAccessDesc": "用户目录默认可读，敏感路径会询问；工作区可写，其他位置写入会询问；删除始终更严格。",
+      "fullAccess": "完全访问",
+      "fullAccessDesc": "普通读写和常规删除尽量不打断；系统目录、用户主目录等高风险删除仍会被拦截。"
+    },
     "archived": {
       "newChat": "新对话",
       "noRecords": "暂无归档记录",
@@ -343,6 +397,27 @@
       "minutesAgo": "{{count}} 分钟前",
       "hoursAgo": "{{count}} 小时前"
     },
+    "environment": {
+      "title": "环境切换",
+      "env": {
+        "test": "测试",
+        "pre": "预发",
+        "prod": "生产"
+      },
+      "custom": "自定义",
+      "customTitle": "自定义环境地址",
+      "customHint": "分别输入 tenant 与 ops 源地址（如 https://host:port，不含路径），切换后将退出当前登录并需要重新登录。",
+      "tenantLabel": "Tenant 网关地址",
+      "opsLabel": "Ops 运营端地址",
+      "tenantPlaceholder": "https://ai-tenant.example.com",
+      "opsPlaceholder": "https://ai-ops.example.com",
+      "invalidHost": "地址格式不正确，请填写如 https://host 的源地址（不含路径）",
+      "switchTarget": "将切换到",
+      "switchFailed": "环境切换失败",
+      "confirmTitle": "切换环境",
+      "confirmRelogin": "切换到「{{env}}」环境将退出当前登录，需要重新登录。确定继续？",
+      "confirmButton": "切换"
+    },
     "about": {
       "icon": "图标",
       "version": "版本",
@@ -356,22 +431,61 @@
       "logUpload": "上传日志",
       "logUploadDesc": "出现问题时，将本地日志上传给开发团队协助排查。",
       "uploadLogs": "上传日志",
-      "uploading": "上传中..."
+      "uploading": "上传中...",
+      "logLevel": "日志级别",
+      "logLevelDesc": "调整运行时日志详细程度，减少不必要的噪音。",
+      "logLevelError": "仅错误",
+      "logLevelWarn": "警告",
+      "logLevelInfo": "标准",
+      "logLevelDebug": "调试"
     },
     "billing": {
-      "title": "我的账户",
+      "title": "账户与消耗",
       "balance": "当前余额",
       "monthCost": "本月已消耗",
       "monthRequests": "本月调用",
+      "rangeCost": "区间费用",
+      "rangeTokens": "区间 Tokens",
+      "rangeRequests": "区间调用",
+      "averageCost": "均次 {{cost}}",
       "bonusHint": "含 10 元赠送",
       "records": "消耗记录",
       "empty": "还没有消耗记录",
       "retry": "重试",
+      "unavailableValue": "暂不可用",
+      "summaryUnavailable": "余额信息暂不可用，不影响查看消耗记录。",
+      "recordsUnavailable": "消耗记录暂不可用，请稍后重试或联系管理员。",
+      "partialSummaryHint": "当前服务未返回全量统计，摘要按当前页记录聚合。",
+      "totalRecords": "共 {{count}} 条",
+      "prevPage": "上一页",
+      "nextPage": "下一页",
+      "pageIndicator": "第 {{page}} / {{totalPages}} 页",
+      "search": {
+        "type": "请求类型",
+        "typePlaceholder": "类型",
+        "model": "模型名称",
+        "modelPlaceholder": "模型",
+        "apply": "搜索",
+        "clear": "清除"
+      },
+      "range": {
+        "today": "今天",
+        "last7Days": "近 7 天",
+        "last30Days": "近 30 天",
+        "thisMonth": "本月",
+        "lastMonth": "上月",
+        "startDate": "开始日期",
+        "endDate": "结束日期",
+        "to": "至"
+      },
       "cols": {
         "time": "时间",
         "type": "类型",
+        "model": "模型",
         "inputTokens": "输入 Tokens",
         "outputTokens": "输出 Tokens",
+        "cachedTokens": "缓存 Tokens",
+        "totalTokens": "总 Tokens",
         "cost": "费用"
       }
     },
@@ -416,6 +530,26 @@
     "openSkillPicker": "选择技能",
     "openSkillPickerWithSkill": "当前技能：{{name}}",
     "removeSkill": "移除技能 {{name}}",
+    "permissionModeLabel": "权限模式：{{mode}}",
+    "permissionModeDefault": "默认",
+    "permissionModeFull": "完全",
+    "permissionModeDefaultLong": "默认权限",
+    "permissionModeFullLong": "完全访问权限",
+    "permissionModeDefaultDesc": "使用设置中的默认权限策略",
+    "permissionModeFullDesc": "本会话使用完全访问；普通读写删尽量不询问，高风险删除仍会拦截",
+    "reasoningModeLabel": "思考模式：{{mode}}",
+    "reasoningModeAuto": "自动",
+    "reasoningModeDeep": "深度思考",
+    "reasoningModeAutoLong": "自动思考",
+    "reasoningModeDeepLong": "深度思考",
+    "reasoningModeAutoDesc": "按任务复杂度走默认推理策略，兼顾速度和质量。",
+    "reasoningModeDeepDesc": "为复杂分析、审查和长任务增加推理预算，可能更慢、用量更高。",
+    "fullAccessRulesTitle": "完全访问权限说明",
+    "fullAccessRulesIntro": "开启后，本会话会这样处理：",
+    "fullAccessRuleLessConfirm": "减少确认步骤，允许 AI 直接执行更多操作",
+    "fullAccessRuleSensitive": "文件修改、命令执行会更少打断你",
+    "fullAccessRuleTrusted": "仅建议在你信任当前任务时使用",
+    "fullAccessRuleSwitchBack": "你可随时切回默认权限",
     "paste": {
       "cannotPaste": "无法粘贴",
       "clipboardImageFailed": "读取剪贴板图片失败",
@@ -562,6 +696,7 @@
     "dialogTitleDownloading": "正在下载更新 v{{version}}",
     "dialogTitleReady": "更新下载完成 v{{version}}",
     "dialogTitleFailed": "更新失败",
+    "dialogTitleInstalling": "正在安装更新 v{{version}}",
     "versionLine": "当前 {{current}} → 新版本 {{next}}",
     "releaseNotesHeader": "本次更新内容",
     "updateAvailableDesc": "有新版本可用，是否现在更新？",
@@ -571,6 +706,12 @@
     "downloadComplete": "下载完成 · {{size}}",
     "installAndRestart": "立即安装并重启",
     "installing": "正在安装...",
+    "installStage": {
+      "preparing": "正在准备安装包...",
+      "verifying": "正在校验更新版本...",
+      "installing": "正在安装更新...",
+      "finishing": "正在完成安装..."
+    },
     "retry": "重试",
     "downloadFailedMessage": "下载失败：{{error}}",
     "installFailedTitle": "更新安装失败",
@@ -611,14 +752,66 @@
     "collapse": "收起"
   },
   "userMessage": {
+    "copy": "复制用户消息",
     "expandAll": "展开全部",
     "collapse": "收起"
+  },
+  "pendingAction": {
+    "permission": {
+      "title": "需要你允许我用提升权限只读检查 {{target}} 是否可访问。",
+      "allowOnce": "是",
+      "allowRemember": "是，且对于后续同类操作不再询问",
+      "deny": "否，请告知如何调整",
+      "denyPlaceholder": "例如：不要读取这个目录，改用工作区里的摘要文件。",
+      "skip": "拒绝",
+      "submit": "提交",
+      "allowedFeedback": "用户允许了这个权限申请（{{scope}}）。",
+      "allowScopeSession": "仅本次",
+      "allowScopeWorkspace": "后续同工作区同类操作不再询问",
+      "allowScopeUser": "后续同用户同类操作不再询问",
+      "deniedFeedback": "用户拒绝了这个权限申请",
+      "deniedFeedbackWithUserInput": "用户拒绝了这个权限申请，并给出调整说明：{{feedback}}",
+      "skippedFeedback": "用户跳过了这个权限申请，当前任务已停止。",
+      "denyLooksLikeAllow": "这看起来像是在允许权限。请先选择上面的允许选项，再提交。"
+    },
+    "interaction": {
+      "title": "需要补充信息",
+      "previous": "上一题",
+      "next": "下一题",
+      "progress": "{{current}} of {{total}}",
+      "skip": "忽略",
+      "continue": "继续",
+      "stop": "停止任务",
+      "custom": "其他",
+      "customPlaceholder": "请输入你的调整说明",
+      "validationRequired": "请先回答这一题。",
+      "submittedFeedback": "用户回答了补充问题：{{summary}}",
+      "cancelledFeedback": "用户忽略了这个补充问题。请基于已有信息继续；不要输出空标题、空书名号或空占位符，缺少关键名称时请使用通用名称。"
+    },
+    "tabs": {
+      "label": "待处理事项",
+      "permission": "权限 {{name}}",
+      "question": "问题 {{index}}"
+    },
+    "stalePermission": {
+      "title": "需要恢复任务状态",
+      "messageBefore": "上一次任务停在权限确认阶段：",
+      "messageAfter": "。当前运行时没有找到可继续处理的权限申请，请停止当前任务后重新发送。",
+      "stop": "停止任务"
+    },
+    "staleInteraction": {
+      "title": "需要恢复任务状态",
+      "messageBefore": "上一次任务停在补充问题阶段：",
+      "messageAfter": "。当前运行时没有找到可继续处理的问题，请停止当前任务后重新发送。",
+      "stop": "停止任务"
+    }
   },
   "toolGroupSummary": {
     "bucket": {
       "command": "运行了 {{count}} 个命令",
       "file_read": "读取了 {{count}} 个文件",
       "file_edit": "编辑了 {{count}} 个文件",
+      "interaction": "询问了用户 {{count}} 个问题",
       "search": "搜索了 {{count}} 次",
       "mcp": "调用了 {{count}} 个 MCP 工具",
       "other": "使用了 {{count}} 个工具"
@@ -811,22 +1004,42 @@
   },
   "ExpertTeams": {
     "pageTitle": "专家团",
-    "syncServer": "同步服务端",
-    "syncing": "同步中...",
-    "syncDone": "同步完成，更新 {{count}} 个专家团",
+    "syncServer": "更新内容",
+    "syncing": "更新中...",
+    "syncDone": "内容已更新",
     "syncUpToDate": "已是最新",
-    "syncFailed": "同步失败",
+    "syncFailed": "更新失败",
     "conversationTitle": "专家团: {{name}}",
     "startFailed": "无法启动专家团",
     "createConversationFailed": "创建会话失败，请重试。",
     "startTeam": "启动 {{name}}",
+    "openTeamDetail": "查看 {{name}} 详情",
+    "viewDetail": "查看详情",
+    "summon": "召唤专家团",
+    "starting": "召唤中...",
+    "defaultGroup": "全部专家团",
+    "allCategory": "全部",
+    "groupCount": "{{count}} 个专家团",
+    "directoryEmpty": "暂时没有可用专家团。请更新内容后再试。",
+    "directoryLoadError": "没拉到专家团目录：{{err}}。网络恢复后再更新。",
+    "directoryPartialError": "部分专家团快照未同步，当前显示已缓存内容：{{err}}",
     "openTableHint": "主持人按议题召集",
+    "moreMembers": "更多",
     "members": "团队成员",
-    "directorInvites": "主持人将按议题召集 3-5 位专家",
+    "directorInvites": "主持人将按议题召集 3-4 位专家",
     "pickTopic": "点击一个议题直接开始：",
     "startingTopic": "正在启动：{{topic}}...",
     "topicQuote": "「{{topic}}」",
-    "customTopicHint": "或在下方输入你自己的议题，回车发送。"
+    "customTopicHint": "或在下方输入你自己的议题，回车发送。",
+    "detail": {
+      "intro": "能力介绍",
+      "overview": "基础信息",
+      "category": "分组",
+      "members": "成员",
+      "memberCount": "{{count}} 位专家",
+      "mode": "协作方式",
+      "examples": "适合讨论的议题"
+    }
   },
   "nav": {
     "home": "新任务",
@@ -872,8 +1085,40 @@
     "reportCount": "{{count}} 份汇报",
     "allIdle": "所有员工空闲",
     "myEmployees": "我的数字员工",
-    "syncServer": "同步服务端",
-    "syncing": "同步中...",
+    "employeeDirectory": "数字员工",
+    "allCategory": "全部",
+    "uncategorized": "其他员工",
+    "groupCount": "{{count}} 位员工",
+    "summon": "召唤",
+    "assignWork": "派活",
+    "enterRunning": "进入会话",
+    "summoning": "召唤中...",
+    "summonEmployee": "召唤 {{name}} 派活",
+    "openEmployeeDetail": "查看 {{name}} 详情",
+    "viewDetail": "查看详情",
+    "directoryEmpty": "暂时没有可用数字员工。请更新内容后再试。",
+    "directoryLoadError": "没拉到数字员工目录：{{err}}。网络恢复后再更新。",
+    "directoryPartialError": "目录更新失败，当前显示本地缓存：{{err}}",
+    "startFailed": "派活失败",
+    "detail": {
+      "category": "分组",
+      "version": "模板版本",
+      "latest": "最新",
+      "trigger": "触发方式",
+      "skills": "平台技能",
+      "dialogFirst": "对话补全",
+      "contextAware": "按上下文补全信息",
+      "resultOriented": "交付清晰结果",
+      "intro": "能力介绍",
+      "overview": "基础信息",
+      "strengths": "能力侧重",
+      "examples": "适合交给 TA 的任务",
+      "skillSet": "可调用技能"
+    },
+    "refreshDone": "内容已更新",
+    "refreshFailed": "更新失败",
+    "syncServer": "更新内容",
+    "syncing": "更新中...",
     "templateMarket": "员工市场",
     "todayFeed": "今日动态",
     "viewAll": "查看全部",
@@ -904,15 +1149,7 @@
     "cronEveryDay": "每天 {{time}}",
     "cronWeekdays": "工作日 {{time}}",
     "cronWeekly": "每周{{days}} {{time}}",
-    "dayNames": [
-      "日",
-      "一",
-      "二",
-      "三",
-      "四",
-      "五",
-      "六"
-    ],
+    "dayNames": ["日", "一", "二", "三", "四", "五", "六"],
     "responsibility": "职责",
     "templateVersion": "模板版本",
     "triggerMethod": "触发方式",
@@ -959,10 +1196,12 @@
     "previewInside": "在侧边栏预览",
     "previewUnavailable": "暂不支持预览",
     "openExternal": "用默认应用打开",
+    "download": "下载到...",
     "reveal": "在文件夹中显示"
   },
   "filePreview": {
     "openWithDefault": "用默认应用打开",
+    "download": "下载到...",
     "selectArtifact": "选择左侧文件以预览",
     "loadingPreview": "正在加载预览...",
     "cannotPreview": "无法预览此文件",
@@ -985,11 +1224,11 @@
     "title": "技能中心",
     "installedCount": "已安装 {{count}} 个技能",
     "searchPlaceholder": "搜索技能名称或场景",
-    "syncBuiltin": "同步内置技能",
-    "syncLocal": "同步本地技能",
+    "syncBuiltin": "更新官方技能",
+    "syncLocal": "检查本机技能",
     "syncSkills": "同步技能",
     "syncing": "同步中...",
-    "syncLocalDone": "本地技能已刷新",
+    "syncLocalDone": "本机技能已更新",
     "importSkill": "+ 导入技能",
     "importDirectory": "导入技能目录",
     "importArchive": "导入压缩包 (.zip)",
@@ -1023,7 +1262,7 @@
     "loadFailed": "技能加载失败",
     "retry": "重试",
     "noLocalSkills": "还没有本地技能",
-    "noLocalSkillsDesc": "在对话里找数字员工\"小程\"聊聊，让它帮你把工作流程沉淀成可复用技能；或点右上角\"+ 导入技能\"选一个本地技能目录上传。",
+    "noLocalSkillsDesc": "点右上角\"+ 导入技能\"选择一个本地技能目录上传。",
     "noMatch": "没有匹配的技能",
     "noMatchDesc": "\"{{query}}\" 下没找到技能。试试切到\"全部\"或换个关键词。",
     "noSkillsInCategory": "该分类下还没有技能",
@@ -1075,6 +1314,11 @@
       "received": "接收到",
       "receivedFrom": "接收到 {{name}}",
       "sentTo": "发送给 {{name}}",
+      "timeline": {
+        "systemReminder": "角色说明",
+        "received": "收到消息",
+        "turn": "思考与行动"
+      },
       "parseHint": "解析提示",
       "rawData": "原始数据",
       "parseWarnings": {
@@ -1104,13 +1348,22 @@
         "planApprove": "{{from}} 同意方案",
         "planReject": "{{from}} 修改建议：{{feedback}}",
         "planRejectNoFeedback": "{{from}} 不同意方案"
+      },
+      "facilitation": {
+        "assignment": "Lead 向 {{count}} 位专家发起首轮观点征集",
+        "cross_review": "Lead 发起交叉点评",
+        "debate": "Lead 推进辩论轮次",
+        "instruction": "Lead 发出主持指令",
+        "hiddenLowSignal": "Lead 主持进度更新（{{count}} 条）",
+        "expand": "展开",
+        "collapse": "收起"
       }
     }
   },
   "channel": {
     "title": "IM 频道",
     "heroTitle": "IM 频道",
-    "heroDesc": "配置 IM 频道，让 AI 小家 接收并回复来自各平台的消息。",
+    "heroDesc": "配置 IM 频道，让 {{productName}} 接收并回复来自各平台的消息。",
     "heroPrivacy": "频道配置信息仅存储在本地，不会上传到云端。",
     "status": {
       "unconfigured": "未配置",
@@ -1144,7 +1397,10 @@
       "addNumber": "添加号码",
       "deleteRow": "删除此行",
       "removeChannel": "移除整个频道",
-      "saveManualConfig": "保存手动配置"
+      "saveManualConfig": "保存手动配置",
+      "sendGreeting": "唤醒机器人",
+      "sendingGreeting": "唤醒中…",
+      "sendDingtalkGreetingAria": "唤醒钉钉机器人"
     },
     "chat": {
       "groupChat": "群聊",
@@ -1256,6 +1512,12 @@
         "errorBeginFailed": "钉钉扫码开通失败，请重试",
         "errorNoConfig": "钉钉已授权，但未返回频道配置",
         "errorScanFailed": "钉钉扫码开通失败"
+      },
+      "greeting": {
+        "sentTitle": "机器人已唤醒",
+        "sentMessage": "请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。",
+        "failedTitle": "唤醒机器人失败",
+        "failedMessage": "请稍后重试"
       },
       "inactive": "该会话来自已下线的机器人，无法发送新消息"
     },
@@ -1520,6 +1782,25 @@
   },
   "schedules": {
     "pageTitle": "定时任务",
+    "console": {
+      "kicker": "自动化控制台",
+      "title": "定时任务运行台",
+      "desc": "集中查看任务健康状态、下次触发时间和常用操作，让周期性工作像一个稳定的后台队列一样可控。",
+      "active": "运行中",
+      "paused": "已暂停",
+      "next24h": "未来 24h",
+      "needsCare": "需处理",
+      "cancelledHint": "管理已停止触发的任务。",
+      "listHint": "按下次触发时间和运行状态检查任务。",
+      "nextUp": "下一次执行",
+      "nextUpTask": "即将触发：{{title}}",
+      "noNext": "暂无即将触发的任务",
+      "health": "任务健康"
+    },
+    "quickCreate": "快捷创建",
+    "quickCreateDesc": "从常见场景开始，再按实际节奏微调。",
+    "templatesTitle": "常用模板",
+    "templatesDesc": "适合周期性例行工作的起点。",
     "newTaskAria": "新建日程",
     "taskList": "任务列表",
     "cancelled": "已取消",
@@ -1539,7 +1820,7 @@
       "noCancelled": "没有已取消的任务",
       "noCancelledDesc": "取消的任务会出现在这里，可以恢复或永久删除。",
       "noTasks": "还没有定时任务",
-      "noTasksDesc": "选择上方模板或在对话中创建你的第一个定时任务。"
+      "noTasksDesc": "选择模板或在对话中创建你的第一个定时任务。"
     },
     "cancel": {
       "title": "取消此定时任务？",

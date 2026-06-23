@@ -104,7 +104,7 @@ export function ChatAvatar({
       aria-label={name}
       title={name}
       style={style}
-      className="inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full text-xs font-semibold text-white"
+      className="inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-md text-xs font-semibold text-white"
     >
       {usingImage ? (
         <img

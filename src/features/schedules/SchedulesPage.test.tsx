@@ -111,6 +111,18 @@ describe('SchedulesPage', () => {
     expect(invokeMock).toHaveBeenCalledWith('list_agenda_items', { filter: undefined })
   })
 
+  it('renders the empty task copy without directional wording', async () => {
+    setupInvokeQueue({
+      agendaListSequence: [[]],
+    })
+
+    render(<SchedulesPage />)
+
+    expect(await screen.findByText('还没有定时任务')).toBeInTheDocument()
+    expect(screen.getByText('选择模板或在对话中创建你的第一个定时任务。')).toBeInTheDocument()
+    expect(screen.queryByText('选择上方模板或在对话中创建你的第一个定时任务。')).not.toBeInTheDocument()
+  })
+
   it('asks for confirmation before cancelling an agenda item', async () => {
     const cancelCalls: Array<{ id: string }> = []
     setupInvokeQueue({

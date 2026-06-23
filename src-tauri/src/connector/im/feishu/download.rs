@@ -88,6 +88,7 @@ impl FeishuFileDownloader {
         Self {
             client: Client::builder()
                 .timeout(DOWNLOAD_TIMEOUT)
+                .no_proxy()
                 .build()
                 .expect("build reqwest client"),
             token_cache,

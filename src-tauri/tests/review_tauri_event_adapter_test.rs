@@ -41,6 +41,12 @@ fn stream_error_maps_to_streaming_error_with_error_and_raw_error() {
     let legacy = mapped(RuntimeEventKind::StreamError {
         error: "LLM 超时".to_string(),
         raw_error: Some("upstream timeout".to_string()),
+        code: None,
+        retryable: None,
+        handling: None,
+        request_phase: None,
+        current_route: None,
+        alternatives: None,
     });
 
     assert_eq!(legacy.name, "streaming:error");
@@ -121,6 +127,7 @@ fn permission_ask_required_maps_to_permission_ask_with_full_confirmation_payload
             PermissionDestination::Workspace,
         ],
         default_destination: Some(PermissionDestination::Session),
+        path_auth_scope: None,
         primary_model: "deepseek-v3".into(),
     });
 
@@ -154,6 +161,7 @@ fn permission_ask_required_dont_ask_mode_maps_mode_as_dont_ask() {
             PermissionDestination::Workspace,
         ],
         default_destination: Some(PermissionDestination::Session),
+        path_auth_scope: None,
         primary_model: "deepseek-v3".into(),
     });
 

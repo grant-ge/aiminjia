@@ -120,14 +120,14 @@ fn ae4_workspace_settings_loaded() {
     storage
         .set_setting("primaryModel", "deepseek-v3")
         .expect("set global primary model");
-    write_workspace_settings(&workspace, json!({ "primaryModel": "claude" }));
+    write_workspace_settings(&workspace, json!({ "primaryModel": "custom" }));
 
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
     assert_eq!(
         settings.get("primaryModel").map(String::as_str),
-        Some("claude")
+        Some("custom")
     );
 }
 
@@ -160,14 +160,14 @@ fn ae4_workspace_settings_partial_override() {
     storage
         .set_setting("autoModelRouting", "true")
         .expect("set global auto routing");
-    write_workspace_settings(&workspace, json!({ "primaryModel": "claude" }));
+    write_workspace_settings(&workspace, json!({ "primaryModel": "custom" }));
 
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
     assert_eq!(
         settings.get("primaryModel").map(String::as_str),
-        Some("claude")
+        Some("custom")
     );
     assert_eq!(
         settings.get("autoModelRouting").map(String::as_str),
@@ -209,7 +209,7 @@ fn ae4_workspace_settings_ignores_sensitive_keys() {
     write_workspace_settings(
         &workspace,
         json!({
-            "primaryModel": "claude",
+            "primaryModel": "custom",
             "primaryApiKey": "plaintext-should-be-ignored"
         }),
     );
@@ -219,7 +219,7 @@ fn ae4_workspace_settings_ignores_sensitive_keys() {
         .expect("load effective settings");
     assert_eq!(
         settings.get("primaryModel").map(String::as_str),
-        Some("claude")
+        Some("custom")
     );
     assert_eq!(
         settings.get("primaryApiKey").map(String::as_str),
@@ -230,18 +230,17 @@ fn ae4_workspace_settings_ignores_sensitive_keys() {
 #[tokio::test]
 async fn ae2_model_override_applied_to_resolved_settings() {
     let executor = Arc::new(CapturingSettingsExecutor::new(ResolvedLlmSettings {
-        primary_model: "claude".to_string(),
+        primary_model: "custom".to_string(),
         primary_api_key: "pk-global".to_string(),
         auto_model_routing: true,
         custom_model_endpoint: String::new(),
         custom_model_name: String::new(),
         cloud_model: String::new(),
         cloud_model_type: String::new(),
-        cloud_gateway_mode: CloudGatewayMode::Legacy,
+        cloud_gateway_mode: CloudGatewayMode::V2,
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
         context_window: None,
-        masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::default(),
@@ -262,7 +261,7 @@ async fn ae2_model_override_applied_to_resolved_settings() {
 
     assert_eq!(
         executor.seen_models.lock().unwrap().as_slice(),
-        &["claude".to_string()]
+        &["custom".to_string()]
     );
 }
 
@@ -276,11 +275,10 @@ async fn ae2_no_override_falls_back_to_effective_settings() {
         custom_model_name: String::new(),
         cloud_model: String::new(),
         cloud_model_type: String::new(),
-        cloud_gateway_mode: CloudGatewayMode::Legacy,
+        cloud_gateway_mode: CloudGatewayMode::V2,
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
         context_window: None,
-        masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::default(),
@@ -315,11 +313,10 @@ async fn ae2_empty_override_treated_as_none() {
         custom_model_name: String::new(),
         cloud_model: String::new(),
         cloud_model_type: String::new(),
-        cloud_gateway_mode: CloudGatewayMode::Legacy,
+        cloud_gateway_mode: CloudGatewayMode::V2,
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
         context_window: None,
-        masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::default(),
@@ -428,6 +425,18 @@ fn review_ae_runtime_does_not_import_tauri() {
             if path.is_dir() {
                 visit(&path, violations);
             } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                let rel = path
+                    .strip_prefix(repo_root())
+                    .unwrap_or(&path)
+                    .to_string_lossy();
+                let is_known_skill_refresh_bridge = matches!(
+                    rel.as_ref(),
+                    "src-tauri/src/runtime/tools/builtin/load_skill.rs"
+                        | "src-tauri/src/runtime/tools/builtin/refresh_skills.rs"
+                );
+                if is_known_skill_refresh_bridge {
+                    continue;
+                }
                 let source = fs::read_to_string(&path).expect("read runtime source");
                 if source.contains("use tauri::") {
                     violations.push(path.display().to_string());

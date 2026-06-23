@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { GroupMatchInput, groupMatchFromRecord, groupMatchToRecord, type GroupMatchConfig } from './GroupMatchInput'
 import { KnowledgeSourcesField, parseKnowledgeSources, type KnowledgeSource } from './KnowledgeSourcesField'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   initial: Record<string, unknown>
@@ -67,7 +67,7 @@ function InlineTagEditor({ label, hint, tags, onChange }: { label: string; hint:
         {tags.map((tag, i) => (
           <span key={`${tag}-${i}`} className="flex items-center gap-0.5 rounded-md bg-accent px-2 py-0.5 text-xs">
             {tag}
-            <button type="button" onClick={() => onChange(tags.filter((_, idx) => idx !== i))} className="ml-0.5 text-xs text-muted-foreground hover:text-destructive">×</button>
+            <Button unstyled type="button" onClick={() => onChange(tags.filter((_, idx) => idx !== i))} className="ml-0.5 text-xs text-muted-foreground hover:text-destructive">×</Button>
           </span>
         ))}
         <input
@@ -81,7 +81,7 @@ function InlineTagEditor({ label, hint, tags, onChange }: { label: string; hint:
             }
           }}
           placeholder="+"
-          className="h-6 w-16 rounded border border-input bg-background px-1 text-xs"
+          className="h-6 w-16 rounded-md border border-input bg-background px-1 text-xs"
         />
       </div>
       <p className="text-xs text-muted-foreground/70">{hint}</p>

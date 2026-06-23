@@ -1,10 +1,21 @@
+#[cfg(not(windows))]
+use app_lib::runtime::dependencies::BundledRuntimeResolver;
 use app_lib::runtime::dependencies::{
-    BundledRuntimeResolver, RuntimeInstallPlan, RuntimeInstaller, RuntimeManager,
-    RuntimeManifestSource, RuntimePaths, RuntimePlatform, RuntimeResolver,
+    RuntimeInstallPlan, RuntimeInstaller, RuntimeManager, RuntimeManifestSource, RuntimePaths,
+    RuntimePlatform, RuntimeResolver,
 };
+#[cfg(not(windows))]
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 use zip::write::SimpleFileOptions;
+
+fn current_layout() -> app_lib::runtime::dependencies::RuntimeLayout {
+    app_lib::runtime::dependencies::RuntimeLayout::current().expect("current layout")
+}
+
+fn file_url(path: &std::path::Path) -> String {
+    format!("file://{}", path.display()).replace('\\', "/")
+}
 
 #[test]
 fn manager_ensure_installs_payload_that_shared_resolver_can_read() {
@@ -30,7 +41,7 @@ fn manager_ensure_installs_payload_that_shared_resolver_can_read() {
         paths
             .version_dir("2026.05.02")
             .unwrap()
-            .join("python/bin/python3")
+            .join(current_layout().python())
     );
 }
 
@@ -48,7 +59,7 @@ fn manager_reinstall_repairs_corrupt_current_payload() {
         paths
             .version_dir("2026.05.03")
             .unwrap()
-            .join("node/bin/node"),
+            .join(current_layout().node()),
     )
     .expect("corrupt node executable");
 
@@ -72,8 +83,13 @@ fn manager_ensure_rejects_corrupt_already_current_payload() {
     .expect("valid paths");
     let manager = RuntimeManager::new(paths.clone(), "2026.05.06");
     manager.ensure().expect("initial install");
-    std::fs::remove_file(paths.version_dir("2026.05.06").unwrap().join("uv/bin/uv"))
-        .expect("corrupt uv executable");
+    std::fs::remove_file(
+        paths
+            .version_dir("2026.05.06")
+            .unwrap()
+            .join(current_layout().uv()),
+    )
+    .expect("corrupt uv executable");
 
     let error = manager
         .ensure()
@@ -129,6 +145,7 @@ async fn manager_ensure_managed_keeps_valid_cache_without_reading_manifest() {
     );
 }
 
+#[cfg(not(windows))]
 #[tokio::test]
 async fn manager_ensure_managed_bootstraps_cache_from_bundled_fallback() {
     let tempdir = tempdir().expect("tempdir");
@@ -192,6 +209,7 @@ async fn manager_ensure_managed_bootstraps_cache_from_bundled_fallback() {
     );
 }
 
+#[cfg(not(windows))]
 #[test]
 fn manager_resolver_bootstraps_cache_from_bundled_fallback_on_first_dependency_lookup() {
     let tempdir = tempdir().expect("tempdir");
@@ -242,6 +260,7 @@ fn manager_resolver_bootstraps_cache_from_bundled_fallback_on_first_dependency_l
     );
 }
 
+#[cfg(not(windows))]
 fn write_test_runtime_executable(path: &std::path::Path) {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("create executable parent");
@@ -280,6 +299,7 @@ fn write_manager_runtime_zip(path: &std::path::Path) {
     zip.finish().expect("finish zip");
 }
 
+#[cfg(not(windows))]
 fn sha256_hex(path: &std::path::Path) -> String {
     format!(
         "{:x}",
@@ -287,6 +307,7 @@ fn sha256_hex(path: &std::path::Path) -> String {
     )
 }
 
+#[cfg(not(windows))]
 #[test]
 fn manager_ensure_uses_configured_file_manifest_source_instead_of_dev_stub() {
     let tempdir = tempdir().expect("tempdir");
@@ -310,14 +331,14 @@ fn manager_ensure_uses_configured_file_manifest_source_instead_of_dev_stub() {
                   "version": "2026.05.14",
                   "platforms": {{
                     "darwin-arm64": {{
-                      "url": "file://{}",
+                      "url": "{}",
                       "sha256": "{}"
                     }}
                   }}
                 }}
               }}
             }}"#,
-            artifact.display(),
+            file_url(&artifact),
             sha
         ),
     )
@@ -347,6 +368,7 @@ fn manager_ensure_uses_configured_file_manifest_source_instead_of_dev_stub() {
         .contains("managed-runtime-stub"));
 }
 
+#[cfg(not(windows))]
 #[tokio::test]
 async fn manager_reinstall_uses_configured_file_manifest_source() {
     let tempdir = tempdir().expect("tempdir");
@@ -370,14 +392,14 @@ async fn manager_reinstall_uses_configured_file_manifest_source() {
                   "version": "2026.05.15",
                   "platforms": {{
                     "darwin-arm64": {{
-                      "url": "file://{}",
+                      "url": "{}",
                       "sha256": "{}"
                     }}
                   }}
                 }}
               }}
             }}"#,
-            artifact.display(),
+            file_url(&artifact),
             sha
         ),
     )
@@ -407,6 +429,7 @@ async fn manager_reinstall_uses_configured_file_manifest_source() {
         .expect("manifest reinstall should repair dependencies");
 }
 
+#[cfg(not(windows))]
 #[test]
 fn manager_runtime_resolver_ensures_from_manifest_before_returning_dependencies() {
     let tempdir = tempdir().expect("tempdir");
@@ -430,14 +453,14 @@ fn manager_runtime_resolver_ensures_from_manifest_before_returning_dependencies(
                   "version": "2026.05.16",
                   "platforms": {{
                     "darwin-arm64": {{
-                      "url": "file://{}",
+                      "url": "{}",
                       "sha256": "{}"
                     }}
                   }}
                 }}
               }}
             }}"#,
-            artifact.display(),
+            file_url(&artifact),
             sha
         ),
     )
@@ -464,6 +487,7 @@ fn manager_runtime_resolver_ensures_from_manifest_before_returning_dependencies(
     );
 }
 
+#[cfg(not(windows))]
 #[test]
 fn manager_installs_verified_archive_for_downloaded_artifact_boundary() {
     let tempdir = tempdir().expect("tempdir");
@@ -492,6 +516,7 @@ fn manager_installs_verified_archive_for_downloaded_artifact_boundary() {
     );
 }
 
+#[cfg(not(windows))]
 #[test]
 fn manager_installs_runtime_from_file_manifest_source() {
     let tempdir = tempdir().expect("tempdir");
@@ -515,14 +540,14 @@ fn manager_installs_runtime_from_file_manifest_source() {
                   "version": "2026.05.12",
                   "platforms": {{
                     "darwin-arm64": {{
-                      "url": "file://{}",
+                      "url": "{}",
                       "sha256": "{}"
                     }}
                   }}
                 }}
               }}
             }}"#,
-            artifact.display(),
+            file_url(&artifact),
             sha
         ),
     )
@@ -569,14 +594,14 @@ fn manager_manifest_install_checksum_failure_does_not_switch_current() {
                   "version": "2026.05.13",
                   "platforms": {{
                     "darwin-arm64": {{
-                      "url": "file://{}",
+                      "url": "{}",
                       "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                     }}
                   }}
                 }}
               }}
             }}"#,
-            artifact.display()
+            file_url(&artifact)
         ),
     )
     .expect("write manifest");

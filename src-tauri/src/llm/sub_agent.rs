@@ -39,6 +39,7 @@ pub struct SubAgentRuntimeDeps {
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub app_handle: Option<tauri::AppHandle>,
+    pub auth_manager: Option<Arc<crate::auth::AuthManager>>,
     pub runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
     /// Phase 5 path-auth inheritance: snapshot of the parent turn's merged
     /// ToolPermissionContext (UserSettings working dirs + allow_rules + session
@@ -71,7 +72,7 @@ impl SubAgentRuntimeDeps {
             run_id: Some(run_id),
             agent_id,
             app_handle: self.app_handle.clone(),
-            auth_manager: None,
+            auth_manager: self.auth_manager.clone(),
             model: String::new(),
             gateway: None,
             tool_registry: None,
@@ -156,6 +157,7 @@ mod tests {
     use crate::runtime::tools::permission::{
         default_permission_ask, PermissionDecision, PermissionReason,
     };
+    use std::sync::Arc;
 
     #[test]
     fn sub_agent_config_carries_model_override_and_agent_name() {
@@ -207,6 +209,47 @@ mod tests {
         assert!(cfg.agent_name.is_none());
         assert!(cfg.parent_tool_use_id.is_none());
         assert!(cfg.disallowed_tools.is_empty());
+    }
+
+    #[test]
+    fn request_scoped_tool_deps_inherits_auth_manager() {
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let storage =
+            Arc::new(crate::storage::file_store::AppStorage::new(tmp.path()).expect("app storage"));
+        let file_manager = Arc::new(crate::storage::file_manager::FileManager::new(tmp.path()));
+        let auth_manager = Arc::new(crate::auth::AuthManager::for_test());
+        let runtime_deps = SubAgentRuntimeDeps {
+            storage,
+            file_manager,
+            workspace_path: tmp.path().to_path_buf(),
+            conversation_id: "conv-1".to_string(),
+            session_id: crate::runtime::ids::SessionId::new("session-1"),
+            run_id: None,
+            agent_id: None,
+            agent_runtime: None,
+            event_bus: None,
+            skill_registry: None,
+            authorized_workspace: None,
+            read_file_state: None,
+            app_handle: None,
+            auth_manager: Some(auth_manager.clone()),
+            runtime_resolver: None,
+            permission_ctx: None,
+            current_persona_id: None,
+        };
+
+        let request_scoped = runtime_deps.request_scoped_tool_deps(
+            crate::runtime::ids::RunId::new("child-run-1"),
+            None,
+            None,
+            None,
+        );
+
+        assert!(request_scoped.auth_manager.is_some());
+        assert!(Arc::ptr_eq(
+            request_scoped.auth_manager.as_ref().unwrap(),
+            &auth_manager
+        ));
     }
 
     #[test]

@@ -61,7 +61,7 @@ describe('ExecutionTraceCard', () => {
   })
 
 
-  it('clips hover backgrounds inside the outer rounded border', () => {
+  it('clips hover backgrounds inside the outer rounded-md border', () => {
     const { container } = render(
       <ExecutionTraceCard
         title="子代理结果"
@@ -94,7 +94,7 @@ describe('ExecutionTraceCard', () => {
     fireEvent.click(header)
 
     expect(header).not.toHaveClass('border-b')
-    expect(header).toHaveClass('rounded-lg')
+    expect(header).toHaveClass('rounded-md')
   })
 
 })

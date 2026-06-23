@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::plugin::skill::substitution::{substitute_skill_body, SkillSubstitutionContext};
 use crate::runtime::tools::builtin::refresh_skills::SkillRegistryRefresher;
@@ -35,6 +36,7 @@ const REFRESH_THROTTLE: Duration = Duration::from_secs(5);
 
 pub struct LoadSkillRuntimeTool {
     skill_registry: Arc<Mutex<SkillRegistry>>,
+    enablement_store: Option<Arc<SkillEnablementStore>>,
     /// Optional refresh hook. test / legacy 路径可以传 None，此时 miss-retry
     /// 会跳过 refresh，直接走原 "not found" 路径。
     refresher: Option<Arc<dyn SkillRegistryRefresher>>,
@@ -46,6 +48,19 @@ impl LoadSkillRuntimeTool {
     pub fn new(skill_registry: Arc<Mutex<SkillRegistry>>) -> Self {
         Self {
             skill_registry,
+            enablement_store: None,
+            refresher: None,
+            last_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn with_enablement(
+        skill_registry: Arc<Mutex<SkillRegistry>>,
+        enablement_store: Arc<SkillEnablementStore>,
+    ) -> Self {
+        Self {
+            skill_registry,
+            enablement_store: Some(enablement_store),
             refresher: None,
             last_refresh: Arc::new(Mutex::new(None)),
         }
@@ -57,12 +72,40 @@ impl LoadSkillRuntimeTool {
     ) -> Self {
         Self {
             skill_registry,
+            enablement_store: None,
             refresher: Some(refresher),
             last_refresh: Arc::new(Mutex::new(None)),
         }
     }
 
     /// 判断是否允许触发 refresh（throttle）。允许后立刻记录本次时间。
+    pub fn with_refresher_and_enablement(
+        skill_registry: Arc<Mutex<SkillRegistry>>,
+        refresher: Arc<dyn SkillRegistryRefresher>,
+        enablement_store: Arc<SkillEnablementStore>,
+    ) -> Self {
+        Self {
+            skill_registry,
+            enablement_store: Some(enablement_store),
+            refresher: Some(refresher),
+            last_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn enablement_state(&self) -> SkillEnablementState {
+        self.enablement_store
+            .as_ref()
+            .map(|store| store.load_or_default())
+            .unwrap_or_default()
+    }
+
+    fn unavailable_skill_error(skill_id: &str, available_ids: String) -> ToolError {
+        ToolError::ExecutionFailed(format!(
+            "Unknown or unavailable skill: {}. Available: {}",
+            skill_id, available_ids
+        ))
+    }
+
     fn try_acquire_refresh_slot(&self) -> bool {
         let mut last = self.last_refresh.lock().unwrap();
         let now = Instant::now();
@@ -90,7 +133,7 @@ impl RuntimeTool for LoadSkillRuntimeTool {
         let ids = self
             .skill_registry
             .lock()
-            .map(|reg| reg.skill_ids().join(", "))
+            .map(|reg| reg.enabled_skill_ids(&self.enablement_state()).join(", "))
             .unwrap_or_default();
         let available = if ids.is_empty() {
             "无可用专项技能".to_string()
@@ -131,18 +174,26 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             .to_string();
 
         // Clone the DiskSkill out of the registry (short lock window)
-        let skill = {
+        let enablement = self.enablement_state();
+        let (skill, exists, available_ids) = {
             let reg = self
                 .skill_registry
                 .lock()
                 .map_err(|e| ToolError::ExecutionFailed(format!("Registry lock failed: {}", e)))?;
-            reg.get(&skill_id).cloned()
+            (
+                reg.get_enabled(&skill_id, &enablement).cloned(),
+                reg.get(&skill_id).is_some(),
+                reg.enabled_skill_ids(&enablement).join(", "),
+            )
         };
 
         // 兜底：registry miss 时，throttle 内尝试 refresh-then-retry。
         // 覆盖"LLM 同 turn install + 立即 Skill('new-skill')"的边缘场景。
         let skill = match skill {
             Some(s) => s,
+            None if exists => {
+                return Err(Self::unavailable_skill_error(&skill_id, available_ids));
+            }
             None => {
                 if self.try_acquire_refresh_slot() {
                     if let Some(refresher) = self.refresher.as_ref() {
@@ -150,16 +201,14 @@ impl RuntimeTool for LoadSkillRuntimeTool {
                     }
                 }
                 // 重查
+                let enablement = self.enablement_state();
                 let reg = self.skill_registry.lock().map_err(|e| {
                     ToolError::ExecutionFailed(format!("Registry lock failed: {}", e))
                 })?;
-                let available_ids = reg.skill_ids().join(", ");
-                reg.get(&skill_id).cloned().ok_or_else(|| {
-                    ToolError::ExecutionFailed(format!(
-                        "Unknown or unavailable skill: {}. Available: {}",
-                        skill_id, available_ids
-                    ))
-                })?
+                let available_ids = reg.enabled_skill_ids(&enablement).join(", ");
+                reg.get_enabled(&skill_id, &enablement)
+                    .cloned()
+                    .ok_or_else(|| Self::unavailable_skill_error(&skill_id, available_ids))?
             }
         };
 
@@ -219,5 +268,145 @@ impl RuntimeTool for LoadSkillRuntimeTool {
                     .unwrap_or_else(|| skill.frontmatter.name.clone()),
             })),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::skill::enablement::SkillEnablementStore;
+    use crate::plugin::skill::types::{DiskSkill, SkillFrontmatter, SkillMetadata, SkillSource};
+    use crate::runtime::tools::{RuntimeTool, ToolDescriptionContext, ToolExecutionContext};
+    use crate::storage::{AiJiaHome, CurrentUserStorage, UserScope};
+    use std::path::PathBuf;
+
+    fn disk_skill(id: &str) -> DiskSkill {
+        DiskSkill {
+            id: id.to_string(),
+            root: PathBuf::from("/tmp").join(id),
+            frontmatter: SkillFrontmatter {
+                name: id.to_string(),
+                description: format!("description for {id}"),
+                when_to_use: None,
+                allowed_tools: vec![],
+                argument_hint: None,
+                arguments: vec![],
+                model: None,
+                effort: None,
+                context: None,
+                agent: None,
+                user_invocable: true,
+                disable_model_invocation: false,
+                version: None,
+                paths: vec![],
+                hooks: Default::default(),
+                shell: None,
+                category: None,
+                metadata: SkillMetadata::default(),
+            },
+            body: format!("body for {id}"),
+            source: SkillSource::User,
+        }
+    }
+
+    fn enablement_store(tmp: &tempfile::TempDir) -> Arc<SkillEnablementStore> {
+        let home = Arc::new(AiJiaHome::from_path(tmp.path().to_path_buf()));
+        let current_user = Arc::new(CurrentUserStorage::new(home));
+        current_user.activate_scope(UserScope::new(1, 2)).unwrap();
+        Arc::new(SkillEnablementStore::new(current_user))
+    }
+
+    #[tokio::test]
+    async fn skill_definition_lists_only_enabled_skill_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let enablement = enablement_store(&tmp);
+        enablement
+            .set_enabled("disabled-skill", false)
+            .expect("disable skill");
+        let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(vec![
+            disk_skill("enabled-skill"),
+            disk_skill("disabled-skill"),
+        ])));
+        let tool = LoadSkillRuntimeTool::with_enablement(registry, enablement);
+
+        let definition = tool.definition(&ToolDescriptionContext::default()).await;
+
+        assert!(definition.description.contains("enabled-skill"));
+        assert!(!definition.description.contains("disabled-skill"));
+    }
+
+    #[tokio::test]
+    async fn load_skill_rejects_disabled_skill_without_refresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        let enablement = enablement_store(&tmp);
+        enablement
+            .set_enabled("disabled-skill", false)
+            .expect("disable skill");
+        let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(vec![disk_skill(
+            "disabled-skill",
+        )])));
+        let tool = LoadSkillRuntimeTool::with_enablement(registry, enablement);
+
+        let err = tool
+            .execute(
+                json!({ "skill_id": "disabled-skill" }),
+                ToolExecutionContext::for_test("conv", "run", "tool-call"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(format!("{err:?}").contains("Unknown or unavailable skill"));
+    }
+
+    struct InsertingRefresher {
+        registry: Arc<Mutex<SkillRegistry>>,
+    }
+
+    impl std::fmt::Debug for InsertingRefresher {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("InsertingRefresher").finish_non_exhaustive()
+        }
+    }
+
+    impl SkillRegistryRefresher for InsertingRefresher {
+        fn refresh_skill_registry(&self) -> Result<(), String> {
+            self.registry
+                .lock()
+                .map_err(|e| e.to_string())?
+                .insert(disk_skill("disabled-after-refresh"));
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn load_skill_miss_refresh_still_rejects_disabled_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        let enablement = enablement_store(&tmp);
+        enablement
+            .set_enabled("disabled-after-refresh", false)
+            .expect("disable skill");
+        let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(Vec::new())));
+        let tool = LoadSkillRuntimeTool::with_refresher_and_enablement(
+            registry.clone(),
+            Arc::new(InsertingRefresher {
+                registry: registry.clone(),
+            }),
+            enablement,
+        );
+
+        let err = tool
+            .execute(
+                json!({ "skill_id": "disabled-after-refresh" }),
+                ToolExecutionContext::for_test("conv", "run", "tool-call"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(format!("{err:?}").contains("Unknown or unavailable skill"));
+        assert!(registry
+            .lock()
+            .unwrap()
+            .get("disabled-after-refresh")
+            .is_some());
     }
 }

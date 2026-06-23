@@ -23,12 +23,12 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = DialogPrimitive.Overlay.displayName
 
 // spec §7.9 — Sheet: bg-card, --shadow-lg, right=520px / left=320px,
-// top/bottom drawers get rounded-t-xl / rounded-b-xl
+// top/bottom drawers get rounded-t-md / rounded-b-md
 const sheetVariants = cva('fixed z-50 gap-4 bg-card p-6 shadow-[var(--shadow-lg)] transition ease-in-out', {
   variants: {
     side: {
-      top: 'inset-x-0 top-0 rounded-b-xl border-b border-border',
-      bottom: 'inset-x-0 bottom-0 rounded-t-xl border-t border-border',
+      top: 'inset-x-0 top-0 rounded-b-md border-b border-border',
+      bottom: 'inset-x-0 bottom-0 rounded-t-md border-t border-border',
       left: 'inset-y-0 left-0 h-full w-[320px] border-r border-border',
       right: 'inset-y-0 right-0 h-full w-[520px] border-l border-border',
     },

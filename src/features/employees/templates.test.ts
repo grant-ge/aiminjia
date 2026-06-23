@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { EmployeeTemplateSnapshot } from '@/lib/tauri'
 
-import { snapshotToTemplate } from './templates'
+import { getEmployeeVisual } from './employeeVisual'
+import { BUILTIN_TEMPLATES, findTemplate, snapshotToTemplate } from './templates'
 
 function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): EmployeeTemplateSnapshot {
   return {
@@ -26,6 +27,12 @@ function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): Employ
 }
 
 describe('snapshotToTemplate', () => {
+  it('does not expose the retired skill-creation employee', () => {
+    const retiredTemplateId = ['builtin', 'xiao', 'cheng'].join(':').replace(':cheng', 'cheng')
+    expect(BUILTIN_TEMPLATES.map((template) => template.templateId)).not.toContain(retiredTemplateId)
+    expect(findTemplate(retiredTemplateId)).toBeNull()
+  })
+
   it('uses catalog fields and version when a builtin id comes from the server catalog', () => {
     const snap = makeSnapshot({ templateId: 'builtin:xiaoyuan', name: '远程小研', version: '1.2.0' })
     const out = snapshotToTemplate(snap)
@@ -92,5 +99,35 @@ describe('snapshotToTemplate', () => {
     expect(out.role).toBe('Market research analyst')
     expect(out.description).toBe('Tracks competitors weekly.')
     expect(out.badge).toBe('Ready')
+  })
+
+  it('uses remote avatar fields from localized displayI18n', () => {
+    const snap = makeSnapshot({
+      templateId: 'org:salary-expert',
+      displayI18n: {
+        'zh-CN': {
+          name: '方予衡',
+          role: '薪酬专家',
+          description: '读取薪酬数据。',
+          badge: '平台技能',
+          avatarAssetKey: 'desktop-resources/employee-avatars/hr-v1/salary-expert.svg',
+          avatarUrl: 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/employee-avatars/hr-v1/salary-expert.svg',
+        },
+      },
+    })
+    const out = snapshotToTemplate(snap, 'zh-CN')
+    expect(out.avatarAssetKey).toBe('desktop-resources/employee-avatars/hr-v1/salary-expert.svg')
+    expect(out.avatarUrl).toBe('https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/employee-avatars/hr-v1/salary-expert.svg')
+    expect(getEmployeeVisual(out).avatarUrl).toBe('/employee-avatars/方予衡.svg')
+  })
+
+  it('derives a public release avatar URL from avatarAssetKey when avatarUrl is absent', () => {
+    const snap = makeSnapshot({
+      templateId: 'org:attendance-expert',
+      avatarAssetKey: 'desktop-resources/employee-avatars/hr-v1/attendance-expert.svg',
+    })
+    const out = snapshotToTemplate(snap)
+    expect(out.avatarUrl).toBe('https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/employee-avatars/hr-v1/attendance-expert.svg')
+    expect(getEmployeeVisual(out).avatarUrl).toBe(out.avatarUrl)
   })
 })

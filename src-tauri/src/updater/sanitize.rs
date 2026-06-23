@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 fn is_macos_metadata(path: &Path) -> bool {
@@ -63,7 +63,6 @@ pub fn strip_macos_metadata(input: &[u8]) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
     use flate2::write::GzEncoder;
-    use std::io::Write;
 
     fn make_tar_with(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let buf: Vec<u8> = Vec::new();

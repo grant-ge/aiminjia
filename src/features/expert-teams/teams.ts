@@ -1,18 +1,24 @@
 // code/src/features/expert-teams/teams.ts
-// 内置专家团 — 单一真相源。任何 UI / prompt 渲染从此读取。
-// MVP 仅中文；不做 i18n，prompt 也是中文。
+// Legacy expert-team definitions.
+// The expert-team marketplace is server-authoritative; this file remains only
+// for existing conversations and tests that reference the original built-ins.
 
-export type ExpertTeamId =
-  | 'marketing'
-  | 'operations'
-  | 'strategy'
-  | 'negotiation'
-  | 'retrospective'
-  | 'investment'
-  | 'debate'
-  | 'roundtable'
+export type ExpertTeamId = string
 
 export type FacilitationStyle = 'rounds' | 'debate' | 'open'
+
+export interface ExpertAvatarAtlas {
+  kind: 'atlas'
+  url: string
+  x: number
+  y: number
+  w: number
+  h: number
+  atlasWidth: number
+  atlasHeight: number
+}
+
+export type ExpertAvatarSource = string | ExpertAvatarAtlas
 
 export interface ExpertPersona {
   /** 角色名，会被注入 sub-agent system prompt */
@@ -21,6 +27,10 @@ export interface ExpertPersona {
   avatarName?: string
   /** Runtime teammate name emitted by Team events. UI keeps this name visible but can use it for avatar lookup. */
   agentName?: string
+  /** Server-provided avatar. Existing remote teams use an OSS atlas; newer rows may provide avatar text. */
+  avatar?: ExpertAvatarSource | null
+  /** Short text fallback when no image avatar is available. */
+  avatarText?: string | null
   /** 简短 persona，描述风格 / 关注点 */
   persona: string
   /**
@@ -36,6 +46,7 @@ export interface ExpertTeam {
   name: string
   emoji: string
   tagline: string
+  description?: string
   /** 团队成员。`roundtable` 为空数组，主持人按议题动态召集。 */
   experts: ExpertPersona[]
   /** 卡片底部展示的示例话题 chip */
@@ -44,6 +55,16 @@ export interface ExpertTeam {
   composerPlaceholder: string
   /** 决定 buildDirectorPrompt 的模板分支 */
   facilitationStyle: FacilitationStyle
+  /** Optional server-authored director prompt template with {{teamName}} style variables. */
+  directorPromptTemplate?: string | null
+  /** Server-side workplace directory category metadata. */
+  workplaceCategoryId?: string | null
+  workplaceCategoryName?: string | null
+  workplaceCategoryDescription?: string | null
+  workplaceCategoryIcon?: string | null
+  workplaceCategoryColor?: string | null
+  workplaceCategorySortOrder?: number | null
+  sortOrder?: number | null
 }
 
 export const EXPERT_TEAMS: ExpertTeam[] = [
@@ -166,10 +187,11 @@ export const EXPERT_TEAMS: ExpertTeam[] = [
 
 type ExpertTeamLocale = 'zh-CN' | 'en-US'
 type ExpertTeamText = Pick<ExpertTeam, 'name' | 'tagline' | 'examples' | 'composerPlaceholder'> & {
+  description?: string
   experts?: Array<Pick<ExpertPersona, 'name' | 'persona'>>
 }
 
-const EXPERT_TEAM_I18N: Record<ExpertTeamId, Partial<Record<ExpertTeamLocale, ExpertTeamText>>> = {
+const EXPERT_TEAM_I18N: Record<string, Partial<Record<ExpertTeamLocale, ExpertTeamText>>> = {
   marketing: {
     'en-US': {
       name: 'Marketing Planning Team',
@@ -279,6 +301,8 @@ const EXPERT_TEAM_I18N: Record<ExpertTeamId, Partial<Record<ExpertTeamLocale, Ex
   },
 }
 
+const remoteExpertTeams = new Map<ExpertTeamId, ExpertTeam>()
+
 function normalizeLocale(language?: string): ExpertTeamLocale {
   return language?.toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN'
 }
@@ -291,6 +315,7 @@ export function localizeExpertTeam(team: ExpertTeam, language?: string): ExpertT
     ...team,
     name: text.name,
     tagline: text.tagline,
+    description: text.description ?? team.description,
     examples: text.examples,
     composerPlaceholder: text.composerPlaceholder,
     experts: team.experts.map((expert, index) => {
@@ -311,8 +336,46 @@ export function getExpertTeams(language?: string): ExpertTeam[] {
 }
 
 export function getExpertTeam(id: ExpertTeamId, language?: string): ExpertTeam | undefined {
+  const remote = remoteExpertTeams.get(id)
+  if (remote) return remote
   const team = EXPERT_TEAMS.find((t) => t.id === id)
   return team ? localizeExpertTeam(team, language) : undefined
+}
+
+export function setRemoteExpertTeams(teams: ExpertTeam[]) {
+  remoteExpertTeams.clear()
+  for (const team of teams) {
+    remoteExpertTeams.set(team.id, team)
+  }
+}
+
+function normalizeExpertKey(value: string): string {
+  return value.toLowerCase().replace(/[\s\-_]+/g, '')
+}
+
+export function findExpertByAgentName(
+  team: ExpertTeam | null | undefined,
+  agentName: string,
+): ExpertPersona | null {
+  if (!team) return null
+  let expert = team.experts.find((e) => e.agentName === agentName || e.name === agentName)
+  if (expert) return expert
+
+  const target = normalizeExpertKey(agentName)
+  expert = team.experts.find((e) => {
+    const byName = normalizeExpertKey(e.name) === target
+    const byAgent = e.agentName ? normalizeExpertKey(e.agentName) === target : false
+    const byAvatarName = e.avatarName ? normalizeExpertKey(e.avatarName) === target : false
+    return byName || byAgent || byAvatarName
+  })
+  return expert ?? null
+}
+
+export function getExpertDisplayName(
+  team: ExpertTeam | null | undefined,
+  agentName: string,
+): string {
+  return findExpertByAgentName(team, agentName)?.name ?? agentName
 }
 
 /**

@@ -276,6 +276,7 @@ async fn ask_event_contains_full_permission_information() {
                 message: "用户拒绝".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("resolve ask");
@@ -322,6 +323,8 @@ async fn allow_resolution_replays_tool_and_returns_successful_tool_result_to_llm
                 updated_input: None,
                 remember: false,
                 destination: None,
+                message: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("allow ask");
@@ -392,6 +395,7 @@ async fn deny_resolution_returns_error_tool_result_and_turn_continues() {
                 message: "用户拒绝".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("deny ask");
@@ -528,6 +532,8 @@ async fn multiple_asks_are_processed_in_order_with_independent_results() {
                 updated_input: None,
                 remember: false,
                 destination: None,
+                message: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("allow first ask");
@@ -539,6 +545,7 @@ async fn multiple_asks_are_processed_in_order_with_independent_results() {
                 message: "拒绝 B".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         )
         .expect("deny second ask");
@@ -626,6 +633,7 @@ fn permission_ask_required_maps_to_frontend_permission_ask_payload() {
             mode: PermissionMode::Default,
             remember_options: vec![PermissionDestination::Session],
             default_destination: Some(PermissionDestination::Session),
+            path_auth_scope: None,
             primary_model: "deepseek-v3".into(),
         },
     );

@@ -1,4 +1,4 @@
-// 内置员工模板"身份元数据"——只保留 EmployeeCard / EmployeeDrawer / localizeEmployeeDisplay
+// 内置员工模板"身份元数据"——只保留 EmployeeCard / HireWizard / localizeEmployeeDisplay
 // 需要的最小字段（templateId / name / role / description / resourceConfigKind / avatar / badge）。
 //
 // 历史背景（2026-06）：之前 BUILTIN_TEMPLATES 兼任 HireWizard 的"离线兜底员工列表"，
@@ -12,7 +12,11 @@
 //   ② localizeEmployeeDisplay 查 base zh-CN 值用于已招员工的 i18n 翻译
 //   两者都不依赖运行时大字段，所以这里只留身份元数据。
 
-import type { EmployeeTemplateSnapshot } from '@/lib/tauri'
+import type {
+  EmployeeTemplateSnapshot,
+  WorkplaceDirectoryItem,
+  WorkplaceDirectoryRequiredSkill,
+} from '@/lib/tauri'
 
 export type ResourceConfigKind = 'monitoring-urls' | 'sales-table' | 'weekly-report' | 'tech-support' | 'customer-support' | 'none'
 
@@ -27,6 +31,8 @@ export interface EmployeeTemplate {
   templateId: string
   version?: string | null
   avatar: string
+  avatarAssetKey?: string | null
+  avatarUrl?: string | null
   name: string
   role: string
   description: string
@@ -36,12 +42,19 @@ export interface EmployeeTemplate {
   badge: string
   /** When set, dispatch_employee_run prepends "请第一步调用 load_skill('<id>')" to the user message. */
   defaultSkillId: string | null
-  /** When set, EmployeeDrawer.handleTrigger opens a file picker before calling employee_trigger. */
+  /** When set, dispatch flow opens a file picker before calling employee_trigger. */
   requiresAttachment: RequiresAttachmentSpec | null
-  /** Drives which ResourceConfigForm subcomponent is shown in HireWizard step 3 + the Drawer ⚙️ button. */
+  /** Drives which HireWizard resource config subcomponent is shown in step 3. */
   resourceConfigKind: ResourceConfigKind
   /** True when an employee with this templateId requires `dingtalk_status().connected === true` before dispatch. */
   requiresDingtalk: boolean
+  /** Server-localized platform skills this digital employee expects to use. */
+  requiredSkills?: WorkplaceDirectoryRequiredSkill[]
+  /** Server-side example assignments surfaced in the rich detail view. */
+  examples?: string[]
+  /** Server-side workplace directory category metadata, used for catalog grouping/display. */
+  workplaceCategoryId?: string | null
+  workplaceCategoryName?: string | null
   /**
    * JSON Schema for instance config (PR6, 2026-05-10). When present and
    * non-empty, HireWizard step 3 renders a SchemaForm against this schema
@@ -137,12 +150,6 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     description: '定时扫描客户钉钉群的业务咨询，查阅产品 FAQ 和历史对话经验，生成友好回复草稿。持续积累客服话术库。',
     badge: '🟠 需配置', resourceConfigKind: 'customer-support',
   }),
-  builtin({
-    templateId: 'builtin:xiaocheng', avatar: '🛠️', name: '小程',
-    role: '流程设计师',
-    description: '通过对话拆解你的工作流程，沉淀成可复用的 SKILL.md 技能。当你想让 AIjia 学会一项重复性任务时，找小程聊一聊，他会帮你把流程"教"给 AI。',
-    badge: '🟢 开箱即用', resourceConfigKind: 'none',
-  }),
 ]
 
 /** Look up the template that produced an employee, by `EmployeeRecord.templateId`. */
@@ -152,7 +159,12 @@ export function findTemplate(templateId: string | null | undefined): EmployeeTem
 }
 
 type TemplateLocale = 'zh-CN' | 'en-US'
-type EmployeeTemplateDisplay = Pick<EmployeeTemplate, 'name' | 'role' | 'description' | 'badge'>
+type EmployeeTemplateDisplay = Pick<
+  EmployeeTemplate,
+  'name' | 'role' | 'description' | 'badge' | 'avatarAssetKey' | 'avatarUrl'
+>
+
+const RELEASE_RESOURCE_BASE_URL = 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/'
 
 const BUILTIN_TEMPLATE_I18N: Record<string, Partial<Record<TemplateLocale, Partial<EmployeeTemplateDisplay>>>> = {
   'builtin:xiaoyuan': {
@@ -235,14 +247,6 @@ const BUILTIN_TEMPLATE_I18N: Record<string, Partial<Record<TemplateLocale, Parti
       badge: 'Needs knowledge base',
     },
   },
-  'builtin:xiaocheng': {
-    'en-US': {
-      name: 'XiaoCheng',
-      role: 'Workflow designer',
-      description: 'Helps turn repeatable work into reusable skills by clarifying scenarios, designing steps, and drafting skill instructions.',
-      badge: 'Ready',
-    },
-  },
 }
 
 function normalizeLocale(language?: string): TemplateLocale {
@@ -265,6 +269,19 @@ function selectTemplateDisplay(
 function selectTemplatePrompt(snap: EmployeeTemplateSnapshot, language?: string): string | undefined {
   const locale = normalizeLocale(language)
   return snap.promptI18n?.[locale]?.systemPromptExtra ?? snap.promptI18n?.['zh-CN']?.systemPromptExtra
+}
+
+function normalizeTemplateAvatarUrl(
+  avatarUrl: string | null | undefined,
+  avatarAssetKey: string | null | undefined,
+): string | null {
+  const explicitUrl = avatarUrl?.trim()
+  if (explicitUrl) return explicitUrl
+
+  const key = avatarAssetKey?.trim().replace(/^\/+/, '')
+  if (!key) return null
+  if (/^https?:\/\//i.test(key) || key.startsWith('/')) return key
+  return `${RELEASE_RESOURCE_BASE_URL}${key}`
 }
 
 function matchesKnownTemplateValue(
@@ -322,7 +339,6 @@ const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
   'builtin:xiaobiao': 'none',
   'builtin:xiaogong': 'tech-support',
   'builtin:xiaoke': 'customer-support',
-  'builtin:xiaocheng': 'none',
 }
 
 /**
@@ -340,15 +356,25 @@ const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
  * hand-tuned forms, but all user-facing template fields come from the
  * backend snapshot so server sync updates the visible catalog immediately.
  */
-export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: string): EmployeeTemplate {
+export function snapshotToTemplate(
+  snap: EmployeeTemplateSnapshot,
+  language?: string,
+  directoryItem?: WorkplaceDirectoryItem,
+  workplaceCategoryName?: string | null,
+): EmployeeTemplate {
   const display = selectTemplateDisplay(snap, language)
+  const directoryDisplay = directoryItem?.display
+  const avatarAssetKey = display.avatarAssetKey ?? snap.avatarAssetKey ?? null
+  const avatarUrl = normalizeTemplateAvatarUrl(display.avatarUrl ?? snap.avatarUrl, avatarAssetKey)
   return {
     templateId: snap.templateId,
     version: snap.version,
-    avatar: snap.avatar,
-    name: display.name ?? snap.name,
+    avatar: directoryItem?.icon || snap.avatar,
+    avatarAssetKey,
+    avatarUrl,
+    name: directoryDisplay?.name || display.name || snap.name,
     role: display.role ?? snap.role,
-    description: display.description ?? snap.description,
+    description: directoryDisplay?.description || display.description || snap.description,
     toolWhitelist: snap.toolWhitelist,
     cron: snap.cron === '' ? null : snap.cron,
     systemPromptExtra: selectTemplatePrompt(snap, language) ?? snap.systemPromptExtra,
@@ -357,6 +383,10 @@ export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: st
     requiresAttachment: snap.requiresAttachment,
     resourceConfigKind: RESOURCE_CONFIG_KIND_BY_ID[snap.templateId] ?? 'none',
     requiresDingtalk: snap.requiresDingtalk,
+    requiredSkills: directoryItem?.requiredSkills,
+    examples: directoryDisplay?.examples?.filter(Boolean),
+    workplaceCategoryId: directoryItem?.workplaceCategoryId ?? null,
+    workplaceCategoryName: workplaceCategoryName ?? null,
     resourceConfigSchema: snap.resourceConfigSchema,
   }
 }

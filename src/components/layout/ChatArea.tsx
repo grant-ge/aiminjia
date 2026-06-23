@@ -12,6 +12,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { MessageList } from '@/components/chat/MessageList'
 import type { ExpertTeamId } from '@/features/expert-teams/teams'
+import { Button } from '@/components/ui/button'
 
 interface ChatAreaProps {
   expertTeamId?: ExpertTeamId
@@ -86,7 +87,7 @@ export function ChatArea({ expertTeamId }: ChatAreaProps = {}) {
         // selection silently miss their targets.
         className="flex-1 overflow-y-auto overscroll-contain"
       >
-        <div className="px-6 pt-6 pb-12">
+        <div className="px-6 pb-12 pt-7">
           <div
             ref={contentRef}
             className={chatWidthMode === 'full' ? 'w-full' : 'mx-auto w-full max-w-[736px]'}
@@ -96,14 +97,14 @@ export function ChatArea({ expertTeamId }: ChatAreaProps = {}) {
         </div>
       </div>
       {showJumpToBottom ? (
-        <button
+        <Button unstyled
           type="button"
           aria-label="回到底部"
           onClick={jumpToBottom}
-          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
+          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowDown className="h-4 w-4" />
-        </button>
+        </Button>
       ) : null}
     </div>
   )

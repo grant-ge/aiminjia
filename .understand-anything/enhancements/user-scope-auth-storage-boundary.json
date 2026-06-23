@@ -1,0 +1,332 @@
+{
+  "module": "user-scope-auth-storage-boundary",
+  "source_basis": "code-tests-only",
+  "coverage": "代码/测试来源：storage user scope/current user paths、AiJiaHome、data version/migration、AuthManager/AuthClient/deactivation、cloud_login、workspace commands、FileManager、authorized workspace store、path_auth bridge/decide、chat runtime impl 以及 user-scope/migration/review tests。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/storage/user_scope.rs",
+      "summary": "定义用户作用域标识和 scope key 生成规则，tenant_id 与 user_id 共同构成本地隔离边界。",
+      "tags": ["auth-boundary", "scope-id", "isolation-key"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/storage/current_user_storage.rs",
+      "summary": "维护当前用户存储上下文，支持 activate/deactivate/get_or，未登录时回退 root storage。",
+      "tags": ["runtime-state", "scope-switch", "auth-boundary"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/storage/user_scoped_paths.rs",
+      "summary": "为当前作用域提供 config、permissions、conversations、assistant 等固定目录树快照。",
+      "tags": ["scoped-paths", "path-contract", "storage-layout"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/storage/aijia_home.rs",
+      "summary": "定义 ~/.renlijia 的全局目录和 users/<scope_key> 用户目录映射规则。",
+      "tags": ["global-vs-user", "path-model", "storage-root"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/storage/data_version.rs",
+      "summary": "数据版本兼容门控，检测旧加密或布局不兼容时清理 auth 残留，避免旧凭据复活。",
+      "tags": ["auth-safety", "data-version", "purge"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/storage/migration_user_scope.rs",
+      "summary": "legacy 根目录到用户作用域的迁移入口，处理 cloud_auth 引导、config 拆分和 turn stage 迁移。",
+      "tags": ["migration", "compatibility", "isolation"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/auth/mod.rs",
+      "summary": "AuthManager 负责 restore/login/refresh/logout、session_key 生命周期、401 处理以及 deactivation/revoked 分层。",
+      "tags": ["auth-lifecycle", "token-refresh", "security-boundary"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/auth/client.rs",
+      "summary": "网关 API client，封装登录/profile/billing 等请求和 401 识别语义。",
+      "tags": ["gateway-contract", "http-status", "error-semantics"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/auth/deactivation.rs",
+      "summary": "Auth deactivation/revoked handler trait 定义，支撑登出、改密和 401 自动撤销后的跨模块清理。",
+      "tags": ["auth", "deactivation", "revoked"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/commands/auth.rs",
+      "summary": "cloud_login 命令聚合迁移、scope 激活、workspacePath 回填、active_account 写入和 channel manager 启动。",
+      "tags": ["command-boundary", "scope-binding", "login-flow"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/storage/file_manager.rs",
+      "summary": "全局 workspace path 状态，登录后从用户 scope 回填，deactivation 时通过 handler 回退 root。",
+      "tags": ["workspace-path", "runtime-config", "reset-on-deauth"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+      "summary": "会话级 workspace 授权存储接口与 conv.json 持久化实现。",
+      "tags": ["workspace-authorization", "session-state", "repository-interface"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/path_auth/store_bridge.rs",
+      "summary": "聚合 session、workspace、user 多层路径授权规则，给 path_auth 决策器提供统一输入。",
+      "tags": ["path-auth", "rule-precedence", "permissions"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/path_auth/decide.rs",
+      "summary": "最终路径鉴权决策器，根据多层规则和路径意图判断 allow、deny 或 ask。",
+      "tags": ["path-auth", "decision", "security-boundary"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/tests/review_conversation_storage_user_scope_test.rs",
+      "summary": "用户作用域下 conversation storage 的 review 护栏测试。",
+      "tags": ["test", "user-scope", "conversation-storage"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/user_scope_migration_test.rs",
+      "summary": "legacy 到 user scope 迁移相关测试，固定迁移和隔离行为。",
+      "tags": ["test", "migration", "user-scope"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/storage/data_version.rs",
+      "type": "configures",
+      "reason": "启动初始化先执行数据兼容性门禁，再继续 cloud auth bootstrap 和用户作用域迁移，避免旧密文凭据复活。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/auth/mod.rs",
+      "type": "configures",
+      "reason": "App 启动时创建并恢复 AuthManager，并注册 deactivation/revoked 处理器。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/storage/migration_user_scope.rs",
+      "type": "calls",
+      "reason": "登录恢复后执行 legacy 到 user scope 的迁移、config 拆分和 turn stage 迁移。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/storage/current_user_storage.rs",
+      "type": "configures",
+      "reason": "启动时根据 auth 恢复结果 activate_scope，并把当前用户存储注入运行时状态。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/storage/file_manager.rs",
+      "type": "configures",
+      "reason": "启动和恢复时从当前用户 scope 读取 workspacePath 并写入全局 FileManager。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/storage/file_store/mod.rs",
+      "type": "configures",
+      "reason": "构建 RuntimeRepositoryFacade 并注入 CurrentUserStorage，使 runtime store 解析用户作用域路径。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/storage/file_store/mod.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+      "type": "depends_on",
+      "reason": "RuntimeRepositoryFacade 提供 auth-aware 的会话授权 store 实现。",
+      "weight": 0.76
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/auth.rs",
+      "targetFilePath": "src-tauri/src/storage/migration_user_scope.rs",
+      "type": "calls",
+      "reason": "cloud_login 内先迁移 legacy 数据和 config，再激活用户 scope。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/auth.rs",
+      "targetFilePath": "src-tauri/src/storage/current_user_storage.rs",
+      "type": "configures",
+      "reason": "cloud_login 使用 tenant/user 构造 UserScope 并 activate_scope。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/auth.rs",
+      "targetFilePath": "src-tauri/src/storage/file_manager.rs",
+      "type": "writes_to",
+      "reason": "cloud_login 从用户 scope 配置读取 workspacePath 并更新 FileManager。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": "src-tauri/src/storage/current_user_storage.rs",
+      "targetFilePath": "src-tauri/src/storage/user_scoped_paths.rs",
+      "type": "reads_from",
+      "reason": "激活 scope 时初始化用户目录快照，并对外提供 scoped paths。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/workspace.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+      "type": "writes_to",
+      "reason": "授权、查询、撤销会话 workspace 目录直接持久化到 authorized workspace store。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs",
+      "targetFilePath": "src-tauri/src/storage/file_store/mod.rs",
+      "type": "reads_from",
+      "reason": "运行时加载会话授权配置作为 chat/runtime context 输入。",
+      "weight": 0.74
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/path_auth/store_bridge.rs",
+      "targetFilePath": "src-tauri/src/runtime/path_auth/decide.rs",
+      "type": "configures",
+      "reason": "store bridge 汇总多层路径规则后交给 decide 做最终鉴权判定。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/auth/mod.rs",
+      "targetFilePath": "src-tauri/src/auth/deactivation.rs",
+      "type": "depends_on",
+      "reason": "AuthManager 通过 deactivation/revoked handler trait 触发 CurrentUserStorage、FileManager、ChannelManager 等跨模块清理。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/storage/migration_user_scope.rs",
+      "targetFilePath": "src-tauri/tests/user_scope_migration_test.rs",
+      "type": "tested_by",
+      "reason": "迁移测试固定 legacy 到 user scope 的兼容行为。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/storage/current_user_storage.rs",
+      "targetFilePath": "src-tauri/tests/review_conversation_storage_user_scope_test.rs",
+      "type": "tested_by",
+      "reason": "review test 固定 conversation storage 的用户作用域边界。",
+      "weight": 0.78
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "用户作用域以 tenant_id 和 user_id 为硬边界",
+      "description": "UserScope 由 tenant_id 与 user_id 共同生成 scope key，CurrentUserStorage 明确区分已登录 scope 与未登录 root fallback，避免不同用户路径混用。",
+      "evidence": [
+        "src-tauri/src/storage/user_scope.rs",
+        "src-tauri/src/storage/current_user_storage.rs",
+        "src-tauri/src/storage/aijia_home.rs"
+      ]
+    },
+    {
+      "title": "启动顺序是 auth/storage 安全边界",
+      "description": "数据版本检查必须先于 cloud auth bootstrap 和 scope 迁移；源码注释说明顺序错位会把旧密文 config 重新复制到新位置，导致旧凭据复活。",
+      "evidence": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/storage/data_version.rs",
+        "src-tauri/src/storage/migration_user_scope.rs"
+      ]
+    },
+    {
+      "title": "Auth 边界分离 deactivation 和 revoked",
+      "description": "常规登出、改密和自动 401 撤销通过不同 handler 语义清理运行态，避免把普通退出和凭据失效混为一谈。",
+      "evidence": [
+        "src-tauri/src/auth/deactivation.rs",
+        "src-tauri/src/auth/mod.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "title": "workspacePath 是跨层共享的用户会话状态",
+      "description": "login 和启动恢复都会从用户 scope 配置读取 workspacePath 并回填 FileManager；deactivation handler 会把 FileManager 回退到 root。",
+      "evidence": [
+        "src-tauri/src/commands/auth.rs",
+        "src-tauri/src/storage/file_manager.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "title": "会话授权和 path_auth 形成双层路径控制",
+      "description": "workspace 授权先按会话持久化到 conv.json，再由 path_auth store bridge 聚合 session/workspace/user 规则并交给 decide 做最终路径鉴权。",
+      "evidence": [
+        "src-tauri/src/commands/workspace.rs",
+        "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+        "src-tauri/src/runtime/path_auth/store_bridge.rs",
+        "src-tauri/src/runtime/path_auth/decide.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看启动时 auth 和 storage 的安全顺序",
+      "description": "从 lib.rs 进入，确认 data_version 门禁、cloud_auth bootstrap、AuthManager restore、user scope migration 和 activate_scope 的顺序。",
+      "filePaths": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/storage/data_version.rs",
+        "src-tauri/src/storage/migration_user_scope.rs",
+        "src-tauri/src/auth/mod.rs"
+      ]
+    },
+    {
+      "title": "理解用户作用域目录模型",
+      "description": "从 UserScope、AiJiaHome、UserScopedPaths 和 CurrentUserStorage 看 tenant/user scope key 如何落到 users/<scope_key> 目录树。",
+      "filePaths": [
+        "src-tauri/src/storage/user_scope.rs",
+        "src-tauri/src/storage/aijia_home.rs",
+        "src-tauri/src/storage/user_scoped_paths.rs",
+        "src-tauri/src/storage/current_user_storage.rs"
+      ]
+    },
+    {
+      "title": "追踪登录激活和 deactivation 清理",
+      "description": "从 cloud_login 到 workspacePath 回填，再看 AuthManager deactivation handler 如何清理 CurrentUserStorage、FileManager 和 channel/pending 状态。",
+      "filePaths": [
+        "src-tauri/src/commands/auth.rs",
+        "src-tauri/src/storage/file_manager.rs",
+        "src-tauri/src/auth/deactivation.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "title": "最后看 workspace 授权和 path_auth 决策",
+      "description": "从 commands/workspace.rs、authorized workspace store 到 path_auth store bridge/decide，理解会话授权与路径规则如何共同约束工具可见路径。",
+      "filePaths": [
+        "src-tauri/src/commands/workspace.rs",
+        "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+        "src-tauri/src/runtime/path_auth/store_bridge.rs",
+        "src-tauri/src/runtime/path_auth/decide.rs"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "IM channel 的业务侧回收仍可继续细化",
+      "description": "当前增强确认 deactivation handler 注册和触发，但未深入 connector 内部所有 channel session 回收细节。",
+      "evidence": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/tests/channel_deactivation_integration_test.rs"
+      ]
+    },
+    {
+      "title": "工具层最终文件阻断点可继续沿 runtime tools 细化",
+      "description": "本增强聚焦 user scope、workspace 授权和 path_auth 决策，具体每个 RuntimeTool 的路径鉴权调用点可作为后续 function trace。",
+      "evidence": [
+        "src-tauri/src/runtime/path_auth/store_bridge.rs",
+        "src-tauri/src/runtime/path_auth/decide.rs"
+      ]
+    }
+  ]
+}

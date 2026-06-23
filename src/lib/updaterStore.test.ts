@@ -3,13 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const checkMock = vi.fn()
 const relaunchMock = vi.fn()
 const getVersionMock = vi.fn()
-const listenMock = vi.fn(async (..._a: unknown[]) => () => {})
+const eventHandlers = new Map<string, (event: { payload: unknown }) => void>()
+const listenMock = vi.fn(async (event: string, handler: (event: { payload: unknown }) => void) => {
+  eventHandlers.set(event, handler)
+  return () => {}
+})
 const invokeMock = vi.fn()
 
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: (...a: unknown[]) => checkMock(...a) }))
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: (...a: unknown[]) => relaunchMock(...a) }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: (...a: unknown[]) => getVersionMock(...a) }))
-vi.mock('@tauri-apps/api/event', () => ({ listen: (...a: unknown[]) => listenMock(...a) }))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: (event: string, handler: (event: { payload: unknown }) => void) => listenMock(event, handler),
+}))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invokeMock(...a) }))
 
 async function loadModules() {
@@ -72,6 +78,7 @@ function fakeMultiPlatformUpdate(version = '0.5.30') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  eventHandlers.clear()
 })
 
 afterEach(() => {
@@ -79,6 +86,31 @@ afterEach(() => {
 })
 
 describe('updaterStore.bootstrap', () => {
+  it('tracks staged install progress events', async () => {
+    checkMock.mockResolvedValue(null)
+    getVersionMock.mockResolvedValue('0.5.29')
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    useUpdaterStore.setState({ version: '0.5.34' })
+
+    eventHandlers.get('updater:install-progress')?.({
+      payload: {
+        version: '0.5.34',
+        stage: 'installing',
+        current: 3,
+        total: 4,
+      },
+    })
+
+    expect((useUpdaterStore.getState() as unknown as {
+      installProgress: { stage: string; current: number; total: number } | null
+    }).installProgress).toEqual({
+      stage: 'installing',
+      current: 3,
+      total: 4,
+    })
+  })
+
   it('stays idle when no update available', async () => {
     checkMock.mockResolvedValue(null)
     getVersionMock.mockResolvedValue('0.5.29')
@@ -125,6 +157,39 @@ describe('updaterStore.bootstrap', () => {
     await useUpdaterStore.getState().bootstrap()
     expect(useUpdaterStore.getState().phase).toBe('ready')
   })
+
+  it('auto poll refreshes a stale ready candidate and downloads the newer version', async () => {
+    checkMock
+      .mockResolvedValueOnce(fakeUpdate('0.5.32'))
+      .mockResolvedValueOnce(fakeUpdate('0.5.33'))
+    getVersionMock.mockResolvedValue('0.5.31')
+    const downloadedVersions: string[] = []
+    invokeMock.mockImplementation(async (cmd: string, args?: { version?: string }) => {
+      if (cmd === 'updater_platform_key') return 'darwin-aarch64'
+      if (cmd === 'updater_check_cache') return { status: 'none', downloaded_size: 0 }
+      if (cmd === 'updater_read_cached_bytes') return [1, 2, 3]
+      if (cmd === 'updater_download') {
+        downloadedVersions.push(args?.version ?? '')
+        return undefined
+      }
+      if (cmd === 'updater_clear_cache') return undefined
+      throw new Error('unexpected: ' + cmd)
+    })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('ready')
+      expect(useUpdaterStore.getState().version).toBe('0.5.32')
+    })
+
+    await useUpdaterStore.getState().bootstrap()
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('ready')
+      expect(useUpdaterStore.getState().version).toBe('0.5.33')
+    })
+
+    expect(downloadedVersions).toEqual(['0.5.32', '0.5.33'])
+  })
 })
 
 describe('updaterStore.startDownload', () => {
@@ -149,6 +214,37 @@ describe('updaterStore.startDownload', () => {
     await vi.waitFor(() => {
       expect(useUpdaterStore.getState().phase).toBe('failed')
     })
+  })
+
+  it('refreshes stale failed candidate before direct startDownload calls', async () => {
+    checkMock
+      .mockResolvedValueOnce(fakeUpdate('0.5.32'))
+      .mockResolvedValueOnce(fakeUpdate('0.5.33'))
+    getVersionMock.mockResolvedValue('0.5.31')
+    const downloadedVersions: string[] = []
+    invokeMock.mockImplementation(async (cmd: string, args?: { version?: string }) => {
+      if (cmd === 'updater_platform_key') return 'darwin-aarch64'
+      if (cmd === 'updater_check_cache') return { status: 'none', downloaded_size: 0 }
+      if (cmd === 'updater_read_cached_bytes') return [1, 2, 3]
+      if (cmd === 'updater_download') {
+        downloadedVersions.push(args?.version ?? '')
+        if (args?.version === '0.5.32') throw new Error('first attempt failed')
+        return undefined
+      }
+      if (cmd === 'updater_clear_cache') return undefined
+      throw new Error('unexpected: ' + cmd)
+    })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('failed')
+    })
+
+    await useUpdaterStore.getState().startDownload()
+
+    expect(useUpdaterStore.getState().phase).toBe('ready')
+    expect(useUpdaterStore.getState().version).toBe('0.5.33')
+    expect(downloadedVersions).toEqual(['0.5.32', '0.5.33'])
   })
 })
 
@@ -185,6 +281,37 @@ describe('updaterStore.retryDownload', () => {
     expect(useUpdaterStore.getState().phase).toBe('ready')
     expect(downloadAttempts).toBe(2)
   })
+
+  it('refreshes stale failed candidate before retrying download', async () => {
+    checkMock
+      .mockResolvedValueOnce(fakeUpdate('0.5.32'))
+      .mockResolvedValueOnce(fakeUpdate('0.5.33'))
+    getVersionMock.mockResolvedValue('0.5.31')
+    const downloadedVersions: string[] = []
+    invokeMock.mockImplementation(async (cmd: string, args?: { version?: string }) => {
+      if (cmd === 'updater_platform_key') return 'darwin-aarch64'
+      if (cmd === 'updater_check_cache') return { status: 'none', downloaded_size: 0 }
+      if (cmd === 'updater_read_cached_bytes') return [1, 2, 3]
+      if (cmd === 'updater_download') {
+        downloadedVersions.push(args?.version ?? '')
+        if (args?.version === '0.5.32') throw new Error('first attempt failed')
+        return undefined
+      }
+      if (cmd === 'updater_clear_cache') return undefined
+      throw new Error('unexpected: ' + cmd)
+    })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('failed')
+    })
+
+    await useUpdaterStore.getState().retryDownload()
+
+    expect(useUpdaterStore.getState().phase).toBe('ready')
+    expect(useUpdaterStore.getState().version).toBe('0.5.33')
+    expect(downloadedVersions).toEqual(['0.5.32', '0.5.33'])
+  })
 })
 
 describe('updaterStore.installNow', () => {
@@ -204,6 +331,44 @@ describe('updaterStore.installNow', () => {
     expect(installCalls.length).toBe(1)
     expect(installCalls[0][1]).toEqual({ version: '0.5.30' })
     expect(relaunchMock).toHaveBeenCalled()
+  })
+
+  it('refreshes stale ready candidate before installing', async () => {
+    checkMock
+      .mockResolvedValueOnce(fakeUpdate('0.5.32'))
+      .mockResolvedValueOnce(fakeUpdate('0.5.33'))
+    getVersionMock.mockResolvedValue('0.5.31')
+    const downloadedVersions: string[] = []
+    invokeMock.mockImplementation(async (cmd: string, args?: { version?: string }) => {
+      if (cmd === 'updater_platform_key') return 'darwin-aarch64'
+      if (cmd === 'updater_check_cache') {
+        return {
+          status: args?.version === '0.5.32' ? 'complete' : 'none',
+          downloaded_size: args?.version === '0.5.32' ? 3 : 0,
+        }
+      }
+      if (cmd === 'updater_read_cached_bytes') return [1, 2, 3]
+      if (cmd === 'updater_download') {
+        downloadedVersions.push(args?.version ?? '')
+        return undefined
+      }
+      if (cmd === 'updater_clear_cache') return undefined
+      if (cmd === 'updater_install_cached') return undefined
+      throw new Error('unexpected: ' + cmd)
+    })
+    relaunchMock.mockResolvedValue(undefined)
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    expect(useUpdaterStore.getState().phase).toBe('ready')
+
+    await useUpdaterStore.getState().installNow()
+
+    const installCalls = invokeMock.mock.calls.filter((c) => c[0] === 'updater_install_cached')
+    expect(installCalls).toEqual([])
+    expect(downloadedVersions).toEqual(['0.5.33'])
+    expect(useUpdaterStore.getState().version).toBe('0.5.33')
+    expect(useUpdaterStore.getState().phase).toBe('ready')
+    expect(relaunchMock).not.toHaveBeenCalled()
   })
 
   it('shows error toast when not ready', async () => {

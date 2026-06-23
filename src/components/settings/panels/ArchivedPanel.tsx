@@ -11,8 +11,8 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import type { Conversation } from '@/types/message'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 interface ArchivedConversation {
   id: string
@@ -237,7 +237,7 @@ export function ArchivedPanel() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2">
+      <div className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-2">
         <div className="flex items-center gap-3">
           <CheckSquare
             checked={allSelected}
@@ -273,7 +273,7 @@ export function ArchivedPanel() {
         return (
           <div
             key={item.id}
-            className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+            className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3"
           >
             <div className="flex items-center gap-3">
               <CheckSquare checked={checked} onClick={() => toggleSelected(item.id)} />
@@ -347,19 +347,19 @@ interface CheckSquareProps {
 function CheckSquare({ checked, indeterminate, onClick }: CheckSquareProps) {
   const active = checked || indeterminate
   return (
-    <button
+    <Button unstyled
       type="button"
       role="checkbox"
       aria-checked={indeterminate ? 'mixed' : checked}
       onClick={onClick}
       className={cn(
-        'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+        'flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors',
         active
           ? 'border-primary bg-primary text-primary-foreground'
           : 'border-input bg-background hover:border-primary',
       )}
     >
       {active ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-    </button>
+    </Button>
   )
 }

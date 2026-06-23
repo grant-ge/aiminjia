@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::llm::context_decay::{resolve_context_window, CONTEXT_OVERFLOW_THRESHOLD};
@@ -30,7 +30,7 @@ use crate::runtime::chat::tool_result_artifact::{
 };
 use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
-use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
+use crate::runtime::chat::tool_round_types::{RuntimeToolCallOutcome, RuntimeToolCallRequest};
 use crate::runtime::chat::turn_config::{
     LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnConfigOverrides, TurnError,
     TurnIterationState, MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
@@ -41,6 +41,7 @@ use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RunningTool, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::hooks::config::{HookEvent, HookRegistry};
 use crate::runtime::hooks::HookRunner;
+use crate::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::interaction::{
     InteractionId, InteractionResolution, PendingInteractionControlPlane,
@@ -65,6 +66,452 @@ fn push_unique_system_segment(
     }
 }
 
+const TEAM_DELETE_TURN_STOP_NOTICE: &str =
+    "团队已解散，未收到可交付的专家回复。本轮已停止继续编排，避免生成不来自团队成员的模拟内容。";
+const TEAM_DELETE_AFTER_DELIVERABLE_NOTICE: &str = "团队已解散。";
+const TEAMMATE_SPAWN_TURN_STOP_NOTICE: &str =
+    "专家已入场，正在等待成员发言。本轮先暂停主持，避免在真实专家回复前生成模拟内容。";
+const TEAMMATE_TASK_OUTPUT_TURN_STOP_NOTICE: &str =
+    "专家发言会通过团队消息进入主对话。本轮已停止读取成员私有过程，继续等待真实专家消息。";
+
+fn round_has_successful_team_delete(round_results: &[ToolRoundResult]) -> bool {
+    round_results.iter().any(|round_result| {
+        matches!(
+            round_result,
+            ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                tool_name,
+                is_error: false,
+                ..
+            }) if tool_name == "TeamDelete"
+        )
+    })
+}
+
+fn round_has_successful_teammate_spawn(round_results: &[ToolRoundResult]) -> bool {
+    round_results.iter().any(|round_result| {
+        let ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_name,
+            content,
+            is_error: false,
+            ..
+        }) = round_result
+        else {
+            return false;
+        };
+        if tool_name != "Agent" {
+            return false;
+        }
+        serde_json::from_str::<serde_json::Value>(content)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("status")
+                    .and_then(|status| status.as_str())
+                    .map(str::to_string)
+            })
+            .as_deref()
+            == Some("teammate_spawned")
+    })
+}
+
+fn extract_name_markers(text: &str) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut rest = text;
+    const PREFIX: &str = "[name=\"";
+    while let Some(start) = rest.find(PREFIX) {
+        let after_prefix = &rest[start + PREFIX.len()..];
+        let Some(end) = after_prefix.find("\"]") else {
+            break;
+        };
+        let name = after_prefix[..end].trim();
+        if !name.is_empty() && name != "..." {
+            names.insert(name.to_string());
+        }
+        rest = &after_prefix[end + 2..];
+    }
+    names
+}
+
+fn message_content_text(message: &serde_json::Value) -> Option<&str> {
+    let content = message.get("content")?;
+    content
+        .get("text")
+        .and_then(|text| text.as_str())
+        .or_else(|| content.as_str())
+}
+
+fn is_ignored_teammate_name(name: &str) -> bool {
+    matches!(name, "moderator" | "team-lead" | "lead" | "system")
+}
+
+fn is_expert_team_director_conversation(messages: &[serde_json::Value]) -> bool {
+    messages
+        .iter()
+        .filter_map(message_content_text)
+        .any(|text| {
+            text.contains("# 本地运行约束")
+                || text.contains("# Local runtime constraints")
+                || text.contains("你现在的任务是为用户主持一场")
+                || text.contains("Your task is to host")
+        })
+}
+
+fn declared_teammate_names_from_messages(messages: &[serde_json::Value]) -> HashSet<String> {
+    messages
+        .iter()
+        .filter(|message| message.get("role").and_then(|role| role.as_str()) == Some("user"))
+        .filter_map(message_content_text)
+        .filter(|text| text.contains("# 团队成员") || text.contains("# Team members"))
+        .flat_map(|text| extract_name_markers(text).into_iter())
+        .filter(|name| !is_ignored_teammate_name(name))
+        .collect()
+}
+
+fn expected_teammate_names_from_messages(messages: &[serde_json::Value]) -> HashSet<String> {
+    let declared_names = declared_teammate_names_from_messages(messages);
+    if !declared_names.is_empty() {
+        return declared_names;
+    }
+    if is_expert_team_director_conversation(messages) {
+        return spawned_teammate_names_from_messages(messages);
+    }
+    HashSet::new()
+}
+
+fn peer_message_sender_names_from_messages(messages: &[serde_json::Value]) -> HashSet<String> {
+    const PREFIX: &str = "<peer-message from=\"";
+    messages
+        .iter()
+        .filter(|message| message.get("role").and_then(|role| role.as_str()) == Some("user"))
+        .filter_map(message_content_text)
+        .flat_map(|text| {
+            let mut senders = Vec::new();
+            let mut rest = text;
+            while let Some(start) = rest.find(PREFIX) {
+                let after_prefix = &rest[start + PREFIX.len()..];
+                let Some(end) = after_prefix.find('"') else {
+                    break;
+                };
+                let sender = after_prefix[..end].trim();
+                if !sender.is_empty() && sender != "team-lead" && sender != "system" {
+                    senders.push(sender.to_string());
+                }
+                rest = &after_prefix[end + 1..];
+            }
+            senders
+        })
+        .collect()
+}
+
+fn missing_teammate_peer_names(messages: &[serde_json::Value]) -> Vec<String> {
+    let expected_names = expected_teammate_names_from_messages(messages);
+    if expected_names.is_empty() {
+        return Vec::new();
+    }
+    let delivered_names = peer_message_sender_names_from_messages(messages);
+    let mut missing = expected_names
+        .difference(&delivered_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    missing.sort();
+    missing
+}
+
+fn spawned_teammate_names_from_messages(messages: &[serde_json::Value]) -> HashSet<String> {
+    messages
+        .iter()
+        .filter(|message| {
+            message.get("role").and_then(|role| role.as_str()) == Some("tool")
+                && message.get("name").and_then(|name| name.as_str()) == Some("Agent")
+        })
+        .filter_map(message_content_text)
+        .filter_map(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+        .filter(|value| {
+            value.get("status").and_then(|status| status.as_str()) == Some("teammate_spawned")
+        })
+        .filter_map(|value| {
+            value
+                .get("name")
+                .and_then(|name| name.as_str())
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+fn agent_spawn_hit_teammate_limit(messages: &[serde_json::Value]) -> bool {
+    messages
+        .iter()
+        .filter(|message| {
+            message.get("role").and_then(|role| role.as_str()) == Some("tool")
+                && message.get("name").and_then(|name| name.as_str()) == Some("Agent")
+        })
+        .filter_map(message_content_text)
+        .any(|text| text.contains("max teammate limit reached"))
+}
+
+fn should_stop_after_teammate_spawns(messages: &[serde_json::Value]) -> bool {
+    let expected_names = expected_teammate_names_from_messages(messages);
+    if expected_names.is_empty() {
+        return false;
+    }
+    let spawned_names = spawned_teammate_names_from_messages(messages);
+    expected_names.is_subset(&spawned_names)
+}
+
+fn should_enforce_chinese_expert_team_output(messages: &[serde_json::Value]) -> bool {
+    messages
+        .iter()
+        .filter_map(message_content_text)
+        .any(|text| {
+            text.contains("必须全程使用中文")
+                || (text.contains("# 团队成员") && text.contains("[name=\""))
+                || text.contains("你现在的任务是为用户主持一场")
+        })
+}
+
+fn is_english_team_status_line(line: &str) -> bool {
+    let lower = line.trim().to_ascii_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    if line.contains("消息格式需要调整") || line.contains("重新发送") {
+        return true;
+    }
+    [
+        "let me ",
+        "i've ",
+        "i have ",
+        "i need ",
+        "i will ",
+        "i keep ",
+        "i haven't ",
+        "i still ",
+        "now waiting",
+        "waiting for",
+        "haven't received",
+        "all four",
+        "fix the message format",
+        "unavailable",
+        "retry",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+fn sanitize_chinese_expert_team_assistant_content(
+    messages: &[serde_json::Value],
+    content: &str,
+) -> String {
+    if !should_enforce_chinese_expert_team_output(messages) {
+        return content.to_string();
+    }
+
+    content
+        .lines()
+        .filter(|line| !is_english_team_status_line(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn looks_like_expert_team_finalization(content: &str) -> bool {
+    [
+        "最终报告",
+        "最终总结",
+        "最终决策",
+        "总结报告",
+        "圆桌讨论总结",
+        "完整报告",
+        "形成最终",
+        "最终裁决",
+        "主持人裁决",
+        "辩论团终局",
+        "最终结论",
+        "以下是完整",
+        "共识",
+    ]
+    .iter()
+    .any(|needle| content.contains(needle))
+}
+
+fn has_substantial_expert_team_deliverable(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.chars().count() < 500 {
+        return false;
+    }
+    looks_like_expert_team_finalization(trimmed)
+        || ["最终建议", "决策建议", "组合策略", "执行方案", "落地方案"]
+            .iter()
+            .any(|needle| trimmed.contains(needle))
+}
+
+fn is_expert_team_director_allowed_runtime_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "TeamCreate" | "TeamDelete" | "Agent" | "SendMessage"
+    )
+}
+
+fn strip_expert_team_disallowed_tool_calls(tool_calls: &mut Vec<RuntimeToolCallRequest>) -> bool {
+    let before = tool_calls.len();
+    tool_calls.retain(|call| is_expert_team_director_allowed_runtime_tool(&call.tool_name));
+    before != tool_calls.len()
+}
+
+fn strip_premature_expert_team_delete(
+    tool_calls: &mut Vec<RuntimeToolCallRequest>,
+    assistant_content: &str,
+    prior_content: &str,
+) -> bool {
+    if has_substantial_expert_team_deliverable(assistant_content)
+        || has_substantial_expert_team_deliverable(prior_content)
+    {
+        return false;
+    }
+    let before = tool_calls.len();
+    tool_calls.retain(|call| call.tool_name != "TeamDelete");
+    before != tool_calls.len()
+}
+
+fn strip_expert_team_delete_while_waiting_for_peers(
+    tool_calls: &mut Vec<RuntimeToolCallRequest>,
+    messages: &[serde_json::Value],
+) -> bool {
+    if missing_teammate_peer_names(messages).is_empty() {
+        return false;
+    }
+    let before = tool_calls.len();
+    tool_calls.retain(|call| call.tool_name != "TeamDelete");
+    before != tool_calls.len()
+}
+
+fn expert_team_tool_guard_reminder(reason: &str) -> serde_json::Value {
+    serde_json::json!({
+        "role": "user",
+        "isMeta": true,
+        "content": format!(
+            "<system-reminder>\n{reason} 请基于已收到的真实 peer-messages 继续推进：如果还有成员没发言，就只等待或最多用 SendMessage 提醒一次；如果所有声明成员都已发言，必须先直接输出中文最终决策建议正文，再调用 TeamDelete。不要使用 TaskOutput/Task 系列工具，不要只说“正在整理”。\n</system-reminder>"
+        ),
+    })
+}
+
+fn final_report_without_team_delete_reminder() -> serde_json::Value {
+    serde_json::json!({
+        "role": "user",
+        "isMeta": true,
+        "content": "<system-reminder>\n你已经输出了实质最终报告，且所有声明专家都已发言。现在不要再补充正文，不要再发送专家消息；请只调用 TeamDelete 解散当前团队，完成本轮专家团收口。\n</system-reminder>",
+    })
+}
+
+fn should_request_team_delete_after_final_report(
+    messages: &[serde_json::Value],
+    content: &str,
+) -> bool {
+    if expected_teammate_names_from_messages(messages).is_empty() {
+        return false;
+    }
+    if !missing_teammate_peer_names(messages).is_empty() {
+        return false;
+    }
+    has_substantial_expert_team_deliverable(content)
+}
+
+fn looks_like_waiting_for_teammates(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.is_empty() || has_substantial_expert_team_deliverable(trimmed) {
+        return false;
+    }
+    [
+        "等待",
+        "继续等",
+        "继续静待",
+        "只差",
+        "稍候",
+        "未收到",
+        "还没收到",
+    ]
+    .iter()
+    .any(|needle| trimmed.contains(needle))
+}
+
+fn should_request_final_report_after_spawn_limit(
+    messages: &[serde_json::Value],
+    content: &str,
+) -> bool {
+    if !is_expert_team_director_conversation(messages) || !agent_spawn_hit_teammate_limit(messages)
+    {
+        return false;
+    }
+    if spawned_teammate_names_from_messages(messages).is_empty() {
+        return false;
+    }
+    if !missing_teammate_peer_names(messages).is_empty() {
+        return false;
+    }
+    looks_like_waiting_for_teammates(content)
+}
+
+fn final_report_after_spawn_limit_reminder() -> serde_json::Value {
+    serde_json::json!({
+        "role": "user",
+        "isMeta": true,
+        "content": "<system-reminder>\n有专家因本地 4 人上限创建失败；不要继续等待未成功创建的专家。已成功创建的专家都已经发言，请基于现有真实 peer-messages 直接输出中文最终报告正文，然后调用 TeamDelete 解散当前团队。\n</system-reminder>",
+    })
+}
+
+fn hold_notice_for_missing_teammate_peers(
+    messages: &[serde_json::Value],
+    content: &str,
+) -> Option<String> {
+    if !looks_like_expert_team_finalization(content) {
+        return None;
+    }
+    let missing = missing_teammate_peer_names(messages);
+    if missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "仍在等待 {} 的发言。本轮先暂停，避免在真实专家回复前生成模拟内容。",
+        missing.join("、")
+    ))
+}
+
+fn lead_peer_messages_followup_reminder() -> serde_json::Value {
+    serde_json::json!({
+        "role": "user",
+        "isMeta": true,
+        "content": "<system-reminder>\n你刚收到的是团队成员发给 Lead 的 peer-messages。处理这些消息时必须遵守：\n- 如果原会话是中文专家团，全程只用中文串场和总结，不要输出英文 waiting/status 句。\n- 等待其他成员时不要输出英文等待说明；确需提示进度时只用一句简短中文。\n- 不要对同一个未回复成员反复 SendMessage 催促；已有一条待回复消息时，先暂停本轮。\n- 不要用普通 Agent 模拟未回复的专家；只基于真实 peer-messages 继续推进。\n- 声明的团队成员没有全部发来 peer-message 前，不要生成最终报告、最终总结或共识结论。\n</system-reminder>",
+    })
+}
+
+fn round_has_teammate_task_output_hidden(round_results: &[ToolRoundResult]) -> bool {
+    round_results.iter().any(|round_result| {
+        let ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_name,
+            content,
+            is_error: false,
+            ..
+        }) = round_result
+        else {
+            return false;
+        };
+        if tool_name != "TaskOutput" {
+            return false;
+        }
+        serde_json::from_str::<serde_json::Value>(content)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("status")
+                    .and_then(|status| status.as_str())
+                    .map(str::to_string)
+            })
+            .as_deref()
+            == Some("teammate_output_hidden")
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatAttachmentRef {
@@ -85,10 +532,26 @@ pub struct SkillCommandRef {
     pub command: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReasoningMode {
+    Auto,
+    Deep,
+}
+
 pub fn build_user_content_json_with_skill(
     content: &str,
     attachments: &[ChatAttachmentRef],
     skill_command: Option<&SkillCommandRef>,
+) -> serde_json::Value {
+    build_user_content_json_with_skill_and_reasoning(content, attachments, skill_command, None)
+}
+
+pub fn build_user_content_json_with_skill_and_reasoning(
+    content: &str,
+    attachments: &[ChatAttachmentRef],
+    skill_command: Option<&SkillCommandRef>,
+    reasoning_mode: Option<ReasoningMode>,
 ) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
     if let Some(skill) = skill_command {
@@ -102,6 +565,12 @@ pub fn build_user_content_json_with_skill(
             "id": skill.id,
             "label": label,
             "command": command,
+        });
+    }
+    if let Some(mode) = reasoning_mode {
+        value["reasoningMode"] = serde_json::Value::String(match mode {
+            ReasoningMode::Auto => "auto".to_string(),
+            ReasoningMode::Deep => "deep".to_string(),
         });
     }
     if !attachments.is_empty() {
@@ -155,10 +624,13 @@ pub struct ChatTurnRequest {
     pub content: String,
     pub attachments: Vec<ChatAttachmentRef>,
     pub skill_command: Option<SkillCommandRef>,
+    pub reasoning_mode: Option<ReasoningMode>,
     /// Optional per-turn channel context from transports such as IM connectors.
     /// This is injected into dynamic context only; it must not be persisted as
     /// user-visible message content.
     pub channel_context: Option<String>,
+    pub turn_origin: TurnOrigin,
+    pub output_binding: OutputBinding,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
     /// The authoritative run_id for this turn.
@@ -215,7 +687,10 @@ impl ChatTurnRequest {
             content: content.into(),
             attachments,
             skill_command: None,
+            reasoning_mode: None,
             channel_context: None,
+            turn_origin: TurnOrigin::App,
+            output_binding: OutputBinding::AppOnly,
             agent_name: None,
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
@@ -255,7 +730,7 @@ fn should_build_image_blocks_for_turn(
         return true;
     }
 
-    crate::llm::vision_support::supports_lotus_anthropic_vision(&llm_settings.cloud_model)
+    crate::llm::vision_support::supports_gateway_vision(&llm_settings.cloud_model)
 }
 
 /// S4 新 trait：executor 只做 provider streaming adapter。
@@ -310,6 +785,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _content: &str,
         _attachments: &[ChatAttachmentRef],
         _skill_command: Option<&SkillCommandRef>,
+        _reasoning_mode: Option<ReasoningMode>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
@@ -409,6 +885,10 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     }
 
     /// 加载 turn 对应的 workspace 路径。
+    async fn is_skill_enabled_for_context(&self, _skill_id: &str) -> bool {
+        true
+    }
+
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(PathBuf::new())
     }
@@ -583,6 +1063,22 @@ fn attach_persisted_user_id_to_pending_message(
 /// from `CurrentUserStorage`.  Tests can leave it unset for pure in-memory.
 pub type TurnStagePathResolver = Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>;
 
+#[async_trait]
+pub trait RunActivityController: Send + Sync {
+    async fn suspend_for_user_interaction(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+    ) -> Result<()>;
+
+    async fn resume_after_user_interaction(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+        cancel: &CancellationToken,
+    ) -> Result<()>;
+}
+
 #[derive(Clone)]
 pub struct RuntimeChatTurnDriver {
     query_engine: QueryEngine,
@@ -597,6 +1093,7 @@ pub struct RuntimeChatTurnDriver {
     /// User-scoped resolver for `turn_stage.json` write path.  None ⇒ emitter
     /// runs in-memory only (no persistence).  Spec §5.
     turn_stage_path_resolver: Option<TurnStagePathResolver>,
+    run_activity_controller: Option<Arc<dyn RunActivityController>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -718,6 +1215,7 @@ async fn drain_and_inject_lead_inbox_messages(
         "role": "user",
         "content": xml.clone(),
     }));
+    messages.push(lead_peer_messages_followup_reminder());
 
     let count = drained.len();
     log::info!(
@@ -742,9 +1240,22 @@ async fn drain_and_inject_lead_inbox_messages(
 fn render_peer_messages_xml(items: &[crate::runtime::agent::inbox::InboxItem]) -> String {
     use crate::runtime::agent::inbox::{InboxItem, MessageSource};
 
+    let mut last_index_by_sender: HashMap<String, usize> = HashMap::new();
+    for (index, item) in items.iter().enumerate() {
+        let InboxItem::ChatMessage { source, .. } = item else {
+            continue;
+        };
+        let from = match source {
+            MessageSource::Lead => "team-lead".to_string(),
+            MessageSource::Teammate(name) => name.clone(),
+            MessageSource::System => "system".to_string(),
+        };
+        last_index_by_sender.insert(from, index);
+    }
+
     let mut s = String::new();
     s.push_str("<peer-messages>\n");
-    for item in items {
+    for (index, item) in items.iter().enumerate() {
         let InboxItem::ChatMessage { message, source } = item else {
             // Shutdown / TaskNotification are routed elsewhere; ignore here.
             continue;
@@ -754,6 +1265,9 @@ fn render_peer_messages_xml(items: &[crate::runtime::agent::inbox::InboxItem]) -
             MessageSource::Teammate(name) => name.clone(),
             MessageSource::System => "system".to_string(),
         };
+        if last_index_by_sender.get(&from).copied() != Some(index) {
+            continue;
+        }
         let variant = message.variant_name();
         let body =
             message.as_text().map(|t| escape_xml(t)).unwrap_or_else(
@@ -920,6 +1434,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -937,6 +1452,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -955,6 +1471,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -974,6 +1491,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -995,6 +1513,44 @@ impl RuntimeChatTurnDriver {
     pub fn with_turn_stage_path_resolver(mut self, resolver: TurnStagePathResolver) -> Self {
         self.turn_stage_path_resolver = Some(resolver);
         self
+    }
+
+    pub fn with_run_activity_controller(
+        mut self,
+        controller: Arc<dyn RunActivityController>,
+    ) -> Self {
+        self.run_activity_controller = Some(controller);
+        self
+    }
+
+    async fn suspend_run_for_user_interaction(&self, turn: &TurnState) {
+        let Some(controller) = self.run_activity_controller.as_ref() else {
+            return;
+        };
+        if let Err(err) = controller
+            .suspend_for_user_interaction(turn.session_id(), turn.run_id())
+            .await
+        {
+            log::warn!(
+                "[chat_turn_driver] failed to suspend active run for user interaction session={} run={}: {:#}",
+                turn.session_id().as_str(),
+                turn.run_id().as_str(),
+                err
+            );
+        }
+    }
+
+    async fn resume_run_after_user_interaction(
+        &self,
+        turn: &TurnState,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let Some(controller) = self.run_activity_controller.as_ref() else {
+            return Ok(());
+        };
+        controller
+            .resume_after_user_interaction(turn.session_id(), turn.run_id(), cancel)
+            .await
     }
 
     async fn await_permission_resolution(
@@ -1059,8 +1615,25 @@ impl RuntimeChatTurnDriver {
         turn: &TurnState,
         cancel: &CancellationToken,
         round_results: Vec<ToolRoundResult>,
+        stage_emitter: Option<&TurnStageEmitter>,
     ) -> Result<Vec<ToolRoundResult>> {
+        struct PendingAskSlot {
+            tool_call_id: String,
+            tool_name: String,
+            original_request: RuntimeToolCallRequest,
+            path_auth_scope: Option<String>,
+            resolution_rx: Option<tokio::sync::oneshot::Receiver<PendingPermissionResolution>>,
+            resolution: Option<PendingPermissionResolution>,
+        }
+
+        enum PermissionSlot {
+            Original(ToolRoundResult),
+            Pending(PendingAskSlot),
+        }
+
+        let mut slots = Vec::with_capacity(round_results.len());
         let mut resolved_results = Vec::with_capacity(round_results.len());
+        let mut first_pending_stage: Option<(String, String)> = None;
 
         for round_result in round_results {
             let ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
@@ -1069,9 +1642,9 @@ impl RuntimeChatTurnDriver {
                 capability_scopes,
                 original_request,
                 decision,
-            }) = &round_result
+            }) = round_result
             else {
-                resolved_results.push(round_result);
+                slots.push(PermissionSlot::Original(round_result));
                 continue;
             };
             let Some(control_plane) = self.pending_permission_control_plane.as_ref() else {
@@ -1089,7 +1662,15 @@ impl RuntimeChatTurnDriver {
                 ..
             } = decision
             else {
-                resolved_results.push(round_result);
+                slots.push(PermissionSlot::Original(ToolRoundResult::Ok(
+                    RuntimeToolCallOutcome::AskRequired {
+                        tool_call_id,
+                        tool_name,
+                        capability_scopes,
+                        original_request,
+                        decision,
+                    },
+                )));
                 continue;
             };
             let mode = turn.permission_mode();
@@ -1098,13 +1679,15 @@ impl RuntimeChatTurnDriver {
                 session_id: turn.session_id().clone(),
                 run_id: turn.run_id().clone(),
                 tool_name: tool_name.clone(),
-                capability_scopes: capability_scopes.clone(),
+                capability_scopes,
                 message: message.clone(),
                 suggestions: suggestions.clone(),
                 mode,
                 remember_options: remember_options.clone(),
-                default_destination: *default_destination,
+                default_destination,
                 original_request: original_request.clone(),
+                turn_origin: TurnOrigin::App,
+                output_binding: OutputBinding::AppOnly,
                 path_auth_scope: path_auth_scope.clone(),
             };
             let resolution_rx = control_plane.insert_pending_request(pending_request)?;
@@ -1120,32 +1703,95 @@ impl RuntimeChatTurnDriver {
                         suggestions: suggestions.clone(),
                         mode,
                         remember_options: remember_options.clone(),
-                        default_destination: *default_destination,
+                        default_destination,
+                        path_auth_scope: path_auth_scope.clone(),
                         primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
 
+            if first_pending_stage.is_none() {
+                first_pending_stage = Some((tool_name.clone(), tool_call_id.clone()));
+            }
+
+            slots.push(PermissionSlot::Pending(PendingAskSlot {
+                tool_call_id,
+                tool_name,
+                original_request,
+                path_auth_scope,
+                resolution_rx: Some(resolution_rx),
+                resolution: None,
+            }));
+        }
+
+        if let Some((tool_name, tool_call_id)) = first_pending_stage {
             // Stage: WaitingPermission — UI shows "等待你审批：<tool>" until the
             // user resolves the ask.  The next stage transition (Tools resume
             // or WaitingLlm continuation) is emitted by the main loop.
-            self.emit_stage_oneshot(
-                turn.session_id().clone(),
-                turn.run_id().clone(),
-                crate::runtime::events::TurnStage::WaitingPermission {
-                    tool_name: tool_name.clone(),
-                    tool_call_id: tool_call_id.clone(),
-                },
-            )
-            .await;
-
-            let resolution = self
-                .await_permission_resolution(cancel, tool_call_id, resolution_rx)
+            if let Some(stage_emitter) = stage_emitter {
+                stage_emitter
+                    .waiting_permission(tool_name.clone(), tool_call_id.clone())
+                    .await;
+            } else {
+                self.emit_stage_oneshot(
+                    turn.session_id().clone(),
+                    turn.run_id().clone(),
+                    crate::runtime::events::TurnStage::WaitingPermission {
+                        tool_name: tool_name.clone(),
+                        tool_call_id: tool_call_id.clone(),
+                    },
+                )
                 .await;
+            }
 
+            self.suspend_run_for_user_interaction(turn).await;
+
+            for slot in &mut slots {
+                let PermissionSlot::Pending(pending) = slot else {
+                    continue;
+                };
+                let resolution_rx = pending
+                    .resolution_rx
+                    .take()
+                    .expect("pending permission slot should retain its receiver");
+                pending.resolution = Some(
+                    self.await_permission_resolution(
+                        cancel,
+                        pending.tool_call_id.as_str(),
+                        resolution_rx,
+                    )
+                    .await,
+                );
+            }
+
+            self.resume_run_after_user_interaction(turn, cancel).await?;
+        }
+
+        for slot in slots {
+            let PendingAskSlot {
+                tool_call_id,
+                tool_name,
+                original_request,
+                path_auth_scope,
+                resolution,
+                ..
+            } = match slot {
+                PermissionSlot::Original(result) => {
+                    resolved_results.push(result);
+                    continue;
+                }
+                PermissionSlot::Pending(pending) => pending,
+            };
+            let resolution =
+                resolution.expect("pending permission slot should be resolved before replay");
             let resolved = match resolution {
-                PendingPermissionResolution::Allow { updated_input, .. } => ToolRoundResult::Ok(
-                    self.query_engine
+                PendingPermissionResolution::Allow {
+                    updated_input,
+                    message,
+                    ..
+                } => {
+                    let mut outcome = self
+                        .query_engine
                         .replay_tool_call_with_bus(
                             turn,
                             &self.event_bus,
@@ -1155,9 +1801,34 @@ impl RuntimeChatTurnDriver {
                         .await
                         .map_err(|err| {
                             anyhow::anyhow!("failed to replay approved tool call: {err}")
-                        })?,
-                ),
-                PendingPermissionResolution::Deny { message, .. } => {
+                        })?;
+                    if let (
+                        Some(message),
+                        RuntimeToolCallOutcome::Completed {
+                            context_modifier_message,
+                            ..
+                        },
+                    ) = (message, &mut outcome)
+                    {
+                        *context_modifier_message = Some(serde_json::json!({
+                            "role": "user",
+                            "content": message,
+                        }));
+                    }
+                    ToolRoundResult::Ok(outcome)
+                }
+                PendingPermissionResolution::Deny {
+                    message,
+                    path_auth_scope_override,
+                    ..
+                } => {
+                    let deny_scope = path_auth_scope_override
+                        .as_deref()
+                        .or(path_auth_scope.as_deref());
+                    if let Some(scope) = deny_scope {
+                        self.query_engine
+                            .record_run_path_deny_for_scope(turn.run_id(), scope);
+                    }
                     record_turn_diagnostic(
                         &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
@@ -1330,6 +2001,7 @@ impl RuntimeChatTurnDriver {
             )
             .await;
 
+            self.suspend_run_for_user_interaction(turn).await;
             let resolution = self
                 .await_interaction_resolution(
                     cancel,
@@ -1337,6 +2009,7 @@ impl RuntimeChatTurnDriver {
                     resolution_rx,
                 )
                 .await;
+            self.resume_run_after_user_interaction(turn, cancel).await?;
 
             let resolved = match resolution {
                 InteractionResolution::Submit { value } => {
@@ -1432,6 +2105,10 @@ impl RuntimeChatTurnDriver {
         turn: &mut TurnState,
         request: &ChatTurnRequest,
     ) -> Result<()> {
+        *turn = turn.clone().with_human_interaction_metadata(
+            request.turn_origin.clone(),
+            request.output_binding.clone(),
+        );
         // Merge this turn's attachment-derived directories into the session-scoped
         // accumulator so they remain available for all subsequent tool calls.
         // This must happen before any tool dispatching (both S4 and legacy paths).
@@ -1536,7 +2213,7 @@ impl RuntimeChatTurnDriver {
                 .and_then(|v| v.get("description").and_then(|d| d.as_str()))
                 .map(|d| d.contains("<available_subagent_types>"))
                 .unwrap_or(false);
-            log::info!(
+            log::debug!(
                 "[tool-desc-trace] get_tool_defs returned: count={} agent_desc_has_emp_section={}",
                 tool_defs.len(),
                 agent_has_emp,
@@ -1574,7 +2251,7 @@ impl RuntimeChatTurnDriver {
         {
             let default_count = tool_defs.len();
             let overrides_has = overrides.tool_defs.is_some();
-            log::info!(
+            log::debug!(
                 "[tool-desc-trace] merge: overrides.tool_defs.is_some={} default_count={}",
                 overrides_has,
                 default_count,
@@ -1588,7 +2265,7 @@ impl RuntimeChatTurnDriver {
                 .and_then(|v| v.get("description").and_then(|d| d.as_str()))
                 .map(|d| d.contains("<available_subagent_types>"))
                 .unwrap_or(false);
-            log::info!(
+            log::debug!(
                 "[tool-desc-trace] final tool_defs: count={} agent_desc_has_emp_section={}",
                 final_tool_defs.len(),
                 agent_has_emp,
@@ -1600,12 +2277,11 @@ impl RuntimeChatTurnDriver {
             tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(120),
-            // All chat routes through the lotus gateway now: ask for an
-            // aspirational ceiling and let the gateway clamp to the real
+            // All chat routes through AIjia Gateway V2: ask for an aspirational
+            // ceiling and let the gateway clamp to the real
             // per-upstream-model cap (Step 1).
             token_budget: overrides.token_budget.unwrap_or(1_000_000),
             chunk_timeout_secs: 90,
-            masking_level: llm_settings.masking_level.clone(),
             workspace_path: workspace_path.clone(),
             authorized_workspace: overrides.authorized_workspace,
             llm_settings,
@@ -1646,11 +2322,20 @@ impl RuntimeChatTurnDriver {
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
         // messages 顺序：[system-reminder, agents-md-meta?, ...history, current-user-content]
+        use chrono::Datelike;
+
         let now = chrono::Local::now();
         let today = now.format("%Y年%m月%d日").to_string();
         let today_iso = now.format("%Y-%m-%d").to_string();
+        let weekday_cn = crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(now.weekday());
+        let today_with_weekday = format!("{today} {weekday_cn}");
+        let local_time_hms = now.format("%H:%M:%S").to_string();
         let system_reminder_message =
-            crate::runtime::chat::prompt::ReminderBuilder::date_message(&today, &today_iso);
+            crate::runtime::chat::prompt::ReminderBuilder::date_time_message(
+                &today_with_weekday,
+                &today_iso,
+                &local_time_hms,
+            );
         let agents_md_files = executor
             .load_agents_md(config.authorized_workspace.as_ref())
             .await
@@ -1766,6 +2451,7 @@ impl RuntimeChatTurnDriver {
                     &[],
                     None,
                     None,
+                    None,
                 )
                 .await
             {
@@ -1814,7 +2500,14 @@ impl RuntimeChatTurnDriver {
         // persist peer messages XML as user message (best-effort)
         if let Some(xml) = peer_xml {
             match executor
-                .persist_user_message(request.conversation_id.as_str(), &xml, &[], None, None)
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &xml,
+                    &[],
+                    None,
+                    None,
+                    None,
+                )
                 .await
             {
                 Ok(msg_id) => {
@@ -1898,6 +2591,7 @@ impl RuntimeChatTurnDriver {
                     &request.content,
                     &request.attachments,
                     request.skill_command.as_ref(),
+                    request.reasoning_mode,
                     request.client_message_id.as_deref(),
                 )
                 .await
@@ -1924,10 +2618,11 @@ impl RuntimeChatTurnDriver {
                 RuntimeEventKind::StreamStarted,
             ))
             .await?;
-        let pending_user_content = build_user_content_json_with_skill(
+        let pending_user_content = build_user_content_json_with_skill_and_reasoning(
             &request.content,
             &request.attachments,
             request.skill_command.as_ref(),
+            request.reasoning_mode,
         );
         // Skip emitting MessagePersisted for the resume-sentinel: it's an
         // internal wake signal, not a user-visible turn. Emitting it would
@@ -1970,7 +2665,20 @@ impl RuntimeChatTurnDriver {
                 String::new()
             });
         let skill_catalog = executor.get_skill_catalog(None).await;
-        let skill_context = match selected_skill_instruction(request.skill_command.as_ref()) {
+        let selected_instruction = match request.skill_command.as_ref() {
+            Some(skill) if executor.is_skill_enabled_for_context(&skill.id).await => {
+                selected_skill_instruction(Some(skill))
+            }
+            Some(skill) => {
+                log::warn!(
+                    "[skill-command] skip disabled or unknown selected skill: {}",
+                    skill.id
+                );
+                None
+            }
+            None => None,
+        };
+        let skill_context = match selected_instruction {
             Some(instruction) if !skill_catalog.is_empty() => {
                 format!("{skill_catalog}{instruction}")
             }
@@ -2273,7 +2981,6 @@ impl RuntimeChatTurnDriver {
                 tool_defs: &config.tool_defs,
                 token_budget: config.token_budget,
                 chunk_timeout_secs: config.chunk_timeout_secs,
-                masking_level: &config.masking_level,
                 force_no_tools: state.force_no_tools,
                 llm_settings: &config.llm_settings,
                 conversation_id: config.conversation_id.as_str(),
@@ -2498,6 +3205,12 @@ impl RuntimeChatTurnDriver {
                             RuntimeEventKind::StreamError {
                                 error: message.clone(),
                                 raw_error: Some("prompt_too_long".to_string()),
+                                code: None,
+                                retryable: None,
+                                handling: None,
+                                request_phase: None,
+                                current_route: None,
+                                alternatives: None,
                             },
                         ))
                         .await?;
@@ -2586,6 +3299,13 @@ impl RuntimeChatTurnDriver {
                     cache_read_input_tokens,
                     stop_reason,
                 } => {
+                    let mut content =
+                        sanitize_chinese_expert_team_assistant_content(&state.messages, &content);
+                    if let Some(hold_notice) =
+                        hold_notice_for_missing_teammate_peers(&state.messages, &content)
+                    {
+                        content = hold_notice;
+                    }
                     if !thinking_blocks.is_empty() {
                         state.last_thinking_blocks = thinking_blocks.clone();
                         state.final_thinking_blocks = thinking_blocks.clone();
@@ -2600,6 +3320,30 @@ impl RuntimeChatTurnDriver {
                     state.step_cache_creation_input_tokens += cache_creation_input_tokens;
                     state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
+                    if should_request_team_delete_after_final_report(&state.messages, &content) {
+                        state.final_only_content = content.clone();
+                        state.messages.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": content,
+                        }));
+                        state
+                            .messages
+                            .push(final_report_without_team_delete_reminder());
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+                    if should_request_final_report_after_spawn_limit(&state.messages, &content) {
+                        state.final_only_content = content.clone();
+                        state.messages.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": content,
+                        }));
+                        state
+                            .messages
+                            .push(final_report_after_spawn_limit_reminder());
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
 
                     if stop_reason.as_deref() == Some("max_tokens") {
                         if state.max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT
@@ -2619,11 +3363,10 @@ impl RuntimeChatTurnDriver {
                             continue 'turn;
                         }
 
-                        state.full_content.push_str(
-                            "
-
-[输出 token 上限已达到，系统已停止自动续写；以上为当前已生成内容。]",
-                        );
+                        let max_tokens_notice =
+                            "\n\n[输出 token 上限已达到，系统已停止自动续写；以上为当前已生成内容。]";
+                        state.full_content.push_str(max_tokens_notice);
+                        state.final_only_content.push_str(max_tokens_notice);
                         turn_completed_normally = true;
                         break 'turn;
                     }
@@ -2697,6 +3440,47 @@ impl RuntimeChatTurnDriver {
                     cache_creation_input_tokens,
                     cache_read_input_tokens,
                 } => {
+                    let mut tool_calls = tool_calls;
+                    let mut assistant_content = sanitize_chinese_expert_team_assistant_content(
+                        &state.messages,
+                        &assistant_content,
+                    );
+                    if should_enforce_chinese_expert_team_output(&state.messages)
+                        || !expected_teammate_names_from_messages(&state.messages).is_empty()
+                    {
+                        let removed_task_tools =
+                            strip_expert_team_disallowed_tool_calls(&mut tool_calls);
+                        let removed_premature_delete = strip_premature_expert_team_delete(
+                            &mut tool_calls,
+                            &assistant_content,
+                            &state.full_content,
+                        );
+                        let removed_waiting_delete =
+                            strip_expert_team_delete_while_waiting_for_peers(
+                                &mut tool_calls,
+                                &state.messages,
+                            );
+                        if removed_task_tools || removed_premature_delete || removed_waiting_delete
+                        {
+                            let reason = if removed_premature_delete {
+                                "你刚才准备在输出实质最终报告前调用 TeamDelete，已被拦截。"
+                            } else if removed_waiting_delete {
+                                "你刚才准备在仍有专家未发言时调用 TeamDelete，已被拦截。"
+                            } else {
+                                "你刚才准备调用专家团 Lead 不应使用的工具，已被拦截。"
+                            };
+                            state.messages.push(expert_team_tool_guard_reminder(reason));
+                            pending_task_notifications.clear();
+                            if tool_calls.is_empty() {
+                                continue 'turn;
+                            }
+                        }
+                    }
+                    if let Some(hold_notice) =
+                        hold_notice_for_missing_teammate_peers(&state.messages, &assistant_content)
+                    {
+                        assistant_content = hold_notice;
+                    }
                     if !thinking_blocks.is_empty() {
                         state.last_thinking_blocks = thinking_blocks.clone();
                     }
@@ -2827,11 +3611,16 @@ impl RuntimeChatTurnDriver {
                     }
 
                     let round_results = self
-                        .resolve_permission_asks(turn, &cancel, round_results)
+                        .resolve_permission_asks(turn, &cancel, round_results, Some(&stage_emitter))
                         .await?;
                     let round_results = self
                         .resolve_interaction_requests(turn, &cancel, round_results)
                         .await?;
+                    let team_deleted_this_round = round_has_successful_team_delete(&round_results);
+                    let teammate_spawned_this_round =
+                        round_has_successful_teammate_spawn(&round_results);
+                    let teammate_task_output_hidden_this_round =
+                        round_has_teammate_task_output_hidden(&round_results);
 
                     let artifact_replacements = executor
                         .conversation_dir(config.conversation_id.as_str())
@@ -2889,6 +3678,42 @@ impl RuntimeChatTurnDriver {
                         {
                             log::warn!("[chat_turn_driver] Failed to persist tool messages: {}", e);
                         }
+                    }
+                    if team_deleted_this_round {
+                        if should_enforce_chinese_expert_team_output(&state.messages)
+                            && !has_substantial_expert_team_deliverable(&state.full_content)
+                        {
+                            state.messages.push(serde_json::json!({
+                                "role": "user",
+                                "isMeta": true,
+                                "content": "<system-reminder>\n团队成员发言已经进入主对话，但你还没有输出实质性的最终报告。请基于已收到的真实 peer-messages，直接用中文输出最终决策建议正文；不要再调用工具，不要只说“正在整理”。\n</system-reminder>",
+                            }));
+                            pending_task_notifications.clear();
+                            continue 'turn;
+                        }
+                        state.final_only_content =
+                            if has_substantial_expert_team_deliverable(&state.final_only_content) {
+                                state.final_only_content.clone()
+                            } else if state.full_content.trim().is_empty() {
+                                TEAM_DELETE_TURN_STOP_NOTICE.to_string()
+                            } else {
+                                TEAM_DELETE_AFTER_DELIVERABLE_NOTICE.to_string()
+                            };
+                        turn_completed_normally = true;
+                        break 'turn;
+                    }
+                    if teammate_spawned_this_round
+                        && should_stop_after_teammate_spawns(&state.messages)
+                    {
+                        state.final_only_content = TEAMMATE_SPAWN_TURN_STOP_NOTICE.to_string();
+                        turn_completed_normally = true;
+                        break 'turn;
+                    }
+                    if teammate_task_output_hidden_this_round {
+                        state.final_only_content =
+                            TEAMMATE_TASK_OUTPUT_TURN_STOP_NOTICE.to_string();
+                        turn_completed_normally = true;
+                        break 'turn;
                     }
                     state.all_file_metas.extend(results.new_file_metas);
                     state
@@ -3578,6 +4403,29 @@ mod tests {
     use crate::runtime::identity::IdentityMapping;
     use crate::runtime::ids::{RunId, ToolCallId};
 
+    fn completed_tool_result(tool_name: &str, is_error: bool) -> ToolRoundResult {
+        completed_tool_result_with_content(tool_name, is_error, "ok")
+    }
+
+    fn completed_tool_result_with_content(
+        tool_name: &str,
+        is_error: bool,
+        content: &str,
+    ) -> ToolRoundResult {
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_call_id: format!("tc-{tool_name}"),
+            tool_name: tool_name.to_string(),
+            content: content.to_string(),
+            is_error,
+            msg_id: format!("tool-{tool_name}"),
+            file_meta: None,
+            is_degraded: false,
+            degradation_notice: None,
+            max_result_size_chars: 8_000,
+            context_modifier_message: None,
+        })
+    }
+
     #[test]
     fn chat_turn_request_pre_persisted_defaults_false() {
         let req = ChatTurnRequest::new("conv-x", "hello", vec![]);
@@ -3634,6 +4482,508 @@ mod tests {
     }
 
     #[test]
+    fn successful_team_delete_is_terminal_for_current_turn() {
+        let round_results = vec![completed_tool_result("TeamDelete", false)];
+
+        assert!(
+            round_has_successful_team_delete(&round_results),
+            "TeamDelete success should stop the current Lead turn before it can synthesize fake team output"
+        );
+    }
+
+    #[test]
+    fn failed_or_other_tools_do_not_trigger_team_delete_terminal_stop() {
+        let failed_team_delete = vec![completed_tool_result("TeamDelete", true)];
+        let other_tool = vec![completed_tool_result("TaskOutput", false)];
+
+        assert!(!round_has_successful_team_delete(&failed_team_delete));
+        assert!(!round_has_successful_team_delete(&other_tool));
+    }
+
+    #[test]
+    fn successful_teammate_spawn_is_detected_in_tool_round() {
+        let round_results = vec![completed_tool_result_with_content(
+            "Agent",
+            false,
+            r#"{"status":"teammate_spawned","agent_id":"agent-1","name":"hrbp"}"#,
+        )];
+
+        assert!(
+            round_has_successful_teammate_spawn(&round_results),
+            "teammate spawn should be detected before deciding whether the declared roster is complete"
+        );
+    }
+
+    #[test]
+    fn failed_or_non_teammate_agent_results_do_not_trigger_spawn_stop() {
+        let failed_spawn = vec![completed_tool_result_with_content(
+            "Agent",
+            true,
+            r#"{"status":"teammate_spawned"}"#,
+        )];
+        let ordinary_agent = vec![completed_tool_result_with_content(
+            "Agent",
+            false,
+            r#"{"status":"async_launched","agent_id":"agent-2"}"#,
+        )];
+        let plain_agent = vec![completed_tool_result("Agent", false)];
+        let other_tool = vec![completed_tool_result_with_content(
+            "TaskOutput",
+            false,
+            r#"{"status":"teammate_spawned"}"#,
+        )];
+
+        assert!(!round_has_successful_teammate_spawn(&failed_spawn));
+        assert!(!round_has_successful_teammate_spawn(&ordinary_agent));
+        assert!(!round_has_successful_teammate_spawn(&plain_agent));
+        assert!(!round_has_successful_teammate_spawn(&other_tool));
+    }
+
+    #[test]
+    fn teammate_spawn_stop_waits_until_declared_roster_is_complete() {
+        let mut messages = vec![serde_json::json!({
+            "role": "user",
+            "content": {
+                "text": r#"# 团队成员
+- 💰 方予衡 [name="compensation-expert"]：关注薪酬结构
+- 📐 秦砚知 [name="performance-advisor"]：关注绩效校准
+- 🤝 温嘉言 [name="hrbp"]：关注落地阻力
+- ⚖️ 陈景律 [name="legal-advisor"]：关注劳动合规
+
+规则示例：必须严格使用 `[name="..."]` 中给定的值。"#
+            }
+        })];
+
+        messages.push(serde_json::json!({
+            "role": "tool",
+            "name": "Agent",
+            "content": {
+                "text": r#"{"status":"teammate_spawned","agent_id":"agent-1","name":"compensation-expert"}"#
+            }
+        }));
+
+        assert!(
+            !should_stop_after_teammate_spawns(&messages),
+            "one spawned expert is not enough when the director prompt declared a four-person roster"
+        );
+
+        for name in ["performance-advisor", "hrbp", "legal-advisor"] {
+            messages.push(serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": {
+                    "text": serde_json::json!({
+                        "status": "teammate_spawned",
+                        "agent_id": format!("agent-{name}"),
+                        "name": name,
+                    })
+                    .to_string()
+                }
+            }));
+        }
+
+        assert!(
+            should_stop_after_teammate_spawns(&messages),
+            "Lead should pause only after every declared expert has been spawned"
+        );
+    }
+
+    #[test]
+    fn teammate_spawn_stop_is_not_for_undeclared_rosters() {
+        let messages = vec![serde_json::json!({
+            "role": "tool",
+            "name": "Agent",
+            "content": {
+                "text": r#"{"status":"teammate_spawned","agent_id":"agent-1","name":"ceo"}"#
+            }
+        })];
+
+        assert!(!should_stop_after_teammate_spawns(&messages));
+    }
+
+    #[test]
+    fn debate_moderator_is_the_lead_not_a_waited_teammate() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": r#"你现在的任务是为用户主持一场「辩论团」结构化辩论。
+
+# 团队成员
+- 正方 [name="pro"]
+- 反方 [name="con"]
+- 主持人 [name="moderator"]
+- 观察员 [name="observer"]"#
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": r#"<peer-messages>
+  <peer-message from="pro" variant="text">正方观点</peer-message>
+  <peer-message from="con" variant="text">反方观点</peer-message>
+  <peer-message from="observer" variant="text">观察员点评</peer-message>
+</peer-messages>"#
+            }),
+        ];
+
+        assert!(missing_teammate_peer_names(&messages).is_empty());
+    }
+
+    #[test]
+    fn dynamic_expert_team_waits_for_spawned_teammates() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": "你现在的任务是为用户主持一场「圆桌讨论团」开放圆桌讨论。\n\n# 本地运行约束"
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": {
+                    "text": r#"{"status":"teammate_spawned","agent_id":"agent-1","name":"org-advisor"}"#
+                }
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": {
+                    "text": r#"{"status":"teammate_spawned","agent_id":"agent-2","name":"ai-ops"}"#
+                }
+            }),
+        ];
+
+        assert!(should_stop_after_teammate_spawns(&messages));
+        assert_eq!(
+            missing_teammate_peer_names(&messages),
+            vec!["ai-ops".to_string(), "org-advisor".to_string()]
+        );
+    }
+
+    #[test]
+    fn dynamic_team_spawn_limit_waiting_is_converted_to_final_report_request() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": "你现在的任务是为用户主持一场「圆桌讨论团」开放圆桌讨论。\n\n# 本地运行约束"
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": r#"{"status":"teammate_spawned","agent_id":"agent-1","name":"futurist"}"# }
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": r#"{"status":"teammate_spawned","agent_id":"agent-2","name":"od-expert"}"# }
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": r#"{"status":"teammate_spawned","agent_id":"agent-3","name":"hr-strategist"}"# }
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": r#"{"status":"teammate_spawned","agent_id":"agent-4","name":"tech-expert"}"# }
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": "tool execution failed: Failed to join team as Teammate: max teammate limit reached (4)" }
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": r#"<peer-messages>
+  <peer-message from="futurist" variant="text">未来趋势观点</peer-message>
+  <peer-message from="od-expert" variant="text">组织发展观点</peer-message>
+  <peer-message from="hr-strategist" variant="text">人力战略观点</peer-message>
+  <peer-message from="tech-expert" variant="text">技术观点</peer-message>
+</peer-messages>"#
+            }),
+        ];
+
+        assert!(should_request_final_report_after_spawn_limit(
+            &messages,
+            "已收到 4/5 位专家发言。只差 strategy-advisor 的首轮观点，再稍候片刻。",
+        ));
+    }
+
+    #[test]
+    fn dynamic_team_spawn_limit_still_waits_for_spawned_peer_messages() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": "你现在的任务是为用户主持一场「圆桌讨论团」开放圆桌讨论。\n\n# 本地运行约束"
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": r#"{"status":"teammate_spawned","agent_id":"agent-1","name":"futurist"}"# }
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": r#"{"status":"teammate_spawned","agent_id":"agent-2","name":"od-expert"}"# }
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": { "text": "tool execution failed: Failed to join team as Teammate: max teammate limit reached (4)" }
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": r#"<peer-messages>
+  <peer-message from="futurist" variant="text">未来趋势观点</peer-message>
+</peer-messages>"#
+            }),
+        ];
+
+        assert!(!should_request_final_report_after_spawn_limit(
+            &messages,
+            "继续等待 od-expert 的观点。",
+        ));
+    }
+
+    #[test]
+    fn team_delete_is_stripped_while_waiting_for_peer_messages() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": "你现在的任务是为用户主持一场「圆桌讨论团」开放圆桌讨论。\n\n# 本地运行约束"
+            }),
+            serde_json::json!({
+                "role": "tool",
+                "name": "Agent",
+                "content": {
+                    "text": r#"{"status":"teammate_spawned","agent_id":"agent-1","name":"org-advisor"}"#
+                }
+            }),
+        ];
+        let mut calls = vec![RuntimeToolCallRequest {
+            tool_call_id: "call-1".into(),
+            tool_name: "TeamDelete".into(),
+            args: serde_json::json!({ "team_name": "expert-team-roundtable" }),
+            purpose: None,
+        }];
+
+        assert!(strip_expert_team_delete_while_waiting_for_peers(
+            &mut calls, &messages
+        ));
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn chinese_expert_team_sanitizer_removes_english_status_but_keeps_terms() {
+        let messages = vec![serde_json::json!({
+            "role": "user",
+            "content": "你现在的任务是为用户主持一场「薪酬绩效评审团」圆桌讨论。\n必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文"
+        })];
+        let content = "已向四位专家发出第二轮互评问题。\n\nI've sent cross-evaluation questions to all four experts. Now waiting for their responses.\n\nHRBP 建议保留 Merit Matrix 培训。";
+
+        let out = sanitize_chinese_expert_team_assistant_content(&messages, content);
+
+        assert!(out.contains("已向四位专家发出第二轮互评问题"));
+        assert!(out.contains("HRBP 建议保留 Merit Matrix 培训"));
+        assert!(!out.contains("I've sent"));
+        assert!(!out.contains("Now waiting"));
+    }
+
+    #[test]
+    fn chinese_expert_team_sanitizer_triggers_from_roster_prompt_shape() {
+        let messages = vec![serde_json::json!({
+            "role": "user",
+            "content": r#"# 团队成员
+- 增长黑客 [name="growth-hacker"]
+- 渠道经理 [name="channel-manager"]"#
+        })];
+        let content = "I keep sending messages to the growth hacker.\n\n渠道经理建议做分渠道预算。";
+
+        let out = sanitize_chinese_expert_team_assistant_content(&messages, content);
+
+        assert_eq!(out, "渠道经理建议做分渠道预算。");
+    }
+
+    #[test]
+    fn chinese_expert_team_sanitizer_removes_internal_retry_status() {
+        let messages = vec![serde_json::json!({
+            "role": "user",
+            "content": r#"# 团队成员
+        - 增长黑客 [name="growth-hacker"]"#
+        })];
+        let content = "消息格式需要调整，让我重新发送。\n\n增长黑客的观点已收到。";
+
+        let out = sanitize_chinese_expert_team_assistant_content(&messages, content);
+
+        assert_eq!(out, "增长黑客的观点已收到。");
+    }
+
+    #[test]
+    fn finalization_is_held_until_all_declared_peers_respond() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": r#"# 团队成员
+- 增长黑客 [name="growth-hacker"]
+- 渠道经理 [name="channel-manager"]
+- 品牌负责人 [name="brand-lead"]"#
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": r#"<peer-messages>
+  <peer-message from="channel-manager" variant="text">渠道建议</peer-message>
+  <peer-message from="brand-lead" variant="text">品牌建议</peer-message>
+</peer-messages>"#
+            }),
+        ];
+
+        let notice = hold_notice_for_missing_teammate_peers(
+            &messages,
+            "以下是完整报告和最终总结：渠道与品牌意见如下。",
+        )
+        .expect("missing growth-hacker should block finalization");
+
+        assert!(notice.contains("growth-hacker"));
+        assert!(notice.contains("真实专家回复前"));
+    }
+
+    #[test]
+    fn finalization_allowed_after_all_declared_peers_respond() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": r#"# 团队成员
+- 增长黑客 [name="growth-hacker"]
+- 渠道经理 [name="channel-manager"]"#
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": r#"<peer-messages>
+  <peer-message from="channel-manager" variant="text">渠道建议</peer-message>
+  <peer-message from="growth-hacker" variant="text">增长建议</peer-message>
+</peer-messages>"#
+            }),
+        ];
+
+        assert!(
+            hold_notice_for_missing_teammate_peers(&messages, "最终总结：两位都已发言。").is_none()
+        );
+    }
+
+    #[test]
+    fn team_delete_requires_substantial_final_deliverable() {
+        assert!(!has_substantial_expert_team_deliverable(
+            "四位专家全部发言完毕。现在整理最终决策建议并解散团队。"
+        ));
+
+        let report = format!(
+            "## 市场营销策划团最终报告\n\n### 最终建议\n{}\n\n### 执行方案\n{}",
+            "品牌、内容、渠道、增长四方观点已经汇总。".repeat(12),
+            "蓄水期先种草，爆发期集中转化，返场期用私域和站内追投收口。".repeat(12),
+        );
+        assert!(has_substantial_expert_team_deliverable(&report));
+    }
+
+    #[test]
+    fn final_report_after_all_peers_requires_team_delete_followup() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": r#"你现在的任务是为用户主持一场「招聘评审团」圆桌讨论。
+
+# 团队成员
+- 宋知澜 [name="recruiting-lead"]
+- 陆承川 [name="hiring-manager"]"#
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": r#"<peer-messages>
+  <peer-message from="recruiting-lead" variant="text">招聘观点</peer-message>
+  <peer-message from="hiring-manager" variant="text">用人观点</peer-message>
+</peer-messages>"#
+            }),
+        ];
+        let report = format!(
+            "# 招聘评审团 · 圆桌会议纪要\n\n## 共识\n{}\n\n## 最终建议\n{}",
+            "两位专家已经完成第一轮观点，并形成候选人复核建议。".repeat(18),
+            "建议先补充岗位预算、候选人薪酬结构和二轮追问结果，再做最终录用判断。".repeat(18),
+        );
+
+        assert!(should_request_team_delete_after_final_report(
+            &messages, &report
+        ));
+    }
+
+    #[test]
+    fn debate_final_ruling_after_all_peers_requires_team_delete_followup() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "user",
+                "content": r#"你现在的任务是为用户主持一场「辩论团」圆桌讨论。
+
+# 团队成员
+- 正方辩手 [name="pro"]
+- 反方辩手 [name="con"]
+- 中立观察员 [name="observer"]"#
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": r#"<peer-messages>
+  <peer-message from="pro" variant="text">正方立论</peer-message>
+  <peer-message from="con" variant="text">反方立论</peer-message>
+  <peer-message from="observer" variant="text">观察员点评</peer-message>
+</peer-messages>"#
+            }),
+        ];
+        let ruling = format!(
+            "# 辩论团终局：主持人裁决\n\n## 辩论回顾\n{}\n\n## 主持人裁决\n{}\n\n## 最终结论\n{}",
+            "正方、反方和观察员都已经完成观点表达。".repeat(12),
+            "本轮应采取有边界的低价版试点，而不是全面发布。".repeat(12),
+            "先限定客户分层、功能边界、升级路径和退出机制，再进入小范围验证。".repeat(12),
+        );
+
+        assert!(should_request_team_delete_after_final_report(
+            &messages, &ruling
+        ));
+    }
+
+    #[test]
+    fn hidden_teammate_task_output_is_terminal_for_current_turn() {
+        let round_results = vec![completed_tool_result_with_content(
+            "TaskOutput",
+            false,
+            r#"{"status":"teammate_output_hidden","lines":[],"new_offset":7}"#,
+        )];
+
+        assert!(
+            round_has_teammate_task_output_hidden(&round_results),
+            "private teammate transcript reads should stop the Lead instead of letting it poll and narrate"
+        );
+    }
+
+    #[test]
+    fn ordinary_task_output_does_not_trigger_teammate_hidden_stop() {
+        let ordinary_task_output = vec![completed_tool_result_with_content(
+            "TaskOutput",
+            false,
+            r#"{"lines":["real async output"],"new_offset":1}"#,
+        )];
+        let failed_hidden = vec![completed_tool_result_with_content(
+            "TaskOutput",
+            true,
+            r#"{"status":"teammate_output_hidden"}"#,
+        )];
+        let other_tool = vec![completed_tool_result_with_content(
+            "Agent",
+            false,
+            r#"{"status":"teammate_output_hidden"}"#,
+        )];
+
+        assert!(!round_has_teammate_task_output_hidden(
+            &ordinary_task_output
+        ));
+        assert!(!round_has_teammate_task_output_hidden(&failed_hidden));
+        assert!(!round_has_teammate_task_output_hidden(&other_tool));
+    }
+
+    #[test]
     fn chat_turn_request_pre_persisted_round_trips() {
         let mut req = ChatTurnRequest::new("conv-y", "dispatch prompt body", vec![]);
         req.pre_persisted = true;
@@ -3653,6 +5003,10 @@ mod tests {
             Some("dingtalk-workspace")
         );
     }
+    use crate::runtime::interaction::{
+        InteractionId, InteractionKind, InteractionRequest, InteractionResolution,
+        PendingInteractionControlPlane,
+    };
     use crate::runtime::store::{
         PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
     };
@@ -3691,6 +5045,33 @@ mod tests {
     }
 
     #[test]
+    fn render_peer_messages_xml_keeps_latest_message_per_sender() {
+        use crate::runtime::agent::inbox::{InboxItem, MessageSource};
+        use crate::runtime::messaging::StructuredMessage;
+
+        let items = vec![
+            InboxItem::ChatMessage {
+                message: StructuredMessage::text("旧观点"),
+                source: MessageSource::Teammate("growth-hacker".into()),
+            },
+            InboxItem::ChatMessage {
+                message: StructuredMessage::text("渠道观点"),
+                source: MessageSource::Teammate("channel-manager".into()),
+            },
+            InboxItem::ChatMessage {
+                message: StructuredMessage::text("新观点"),
+                source: MessageSource::Teammate("growth-hacker".into()),
+            },
+        ];
+
+        let xml = render_peer_messages_xml(&items);
+
+        assert!(!xml.contains("旧观点"));
+        assert!(xml.contains("新观点"));
+        assert!(xml.contains("渠道观点"));
+    }
+
+    #[test]
     fn render_peer_messages_xml_skips_non_chat_items() {
         use crate::runtime::agent::inbox::{InboxItem, ShutdownRequest};
 
@@ -3708,6 +5089,117 @@ mod tests {
         resolution: PendingPermissionResolution,
     }
 
+    struct BlockingPermissionControlPlane {
+        inserted: Mutex<Vec<PendingPermissionRequest>>,
+        senders: Mutex<Vec<oneshot::Sender<PendingPermissionResolution>>>,
+        notify: tokio::sync::Notify,
+    }
+
+    struct RecordingInteractionControlPlane {
+        inserted: Mutex<Vec<InteractionRequest>>,
+        resolution: InteractionResolution,
+    }
+
+    impl RecordingInteractionControlPlane {
+        fn new(resolution: InteractionResolution) -> Self {
+            Self {
+                inserted: Mutex::new(Vec::new()),
+                resolution,
+            }
+        }
+    }
+
+    impl PendingInteractionControlPlane for RecordingInteractionControlPlane {
+        fn insert_pending(
+            &self,
+            request: InteractionRequest,
+        ) -> anyhow::Result<oneshot::Receiver<InteractionResolution>> {
+            self.inserted.lock().unwrap().push(request);
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(self.resolution.clone());
+            Ok(rx)
+        }
+
+        fn resolve(
+            &self,
+            _interaction_id: &InteractionId,
+            _resolution: InteractionResolution,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn cancel_for_session(&self, _session_id: &str, _message: &str) -> usize {
+            0
+        }
+
+        fn pending_count_for_session(&self, _session_id: &str) -> usize {
+            0
+        }
+
+        fn pending_for_session(&self, _session_id: &str) -> Vec<InteractionRequest> {
+            Vec::new()
+        }
+
+        fn get_pending(&self, interaction_id: &InteractionId) -> Option<InteractionRequest> {
+            self.inserted
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|request| request.interaction_id == *interaction_id)
+                .cloned()
+        }
+
+        fn is_pending(&self, _interaction_id: &InteractionId) -> bool {
+            false
+        }
+    }
+
+    struct RecordingRunActivityController {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl RecordingRunActivityController {
+        fn new() -> Self {
+            Self {
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl RunActivityController for RecordingRunActivityController {
+        async fn suspend_for_user_interaction(
+            &self,
+            session_id: &SessionId,
+            run_id: &RunId,
+        ) -> anyhow::Result<()> {
+            self.calls.lock().unwrap().push(format!(
+                "suspend:{}:{}",
+                session_id.as_str(),
+                run_id.as_str()
+            ));
+            Ok(())
+        }
+
+        async fn resume_after_user_interaction(
+            &self,
+            session_id: &SessionId,
+            run_id: &RunId,
+            _cancel: &CancellationToken,
+        ) -> anyhow::Result<()> {
+            self.calls.lock().unwrap().push(format!(
+                "resume:{}:{}",
+                session_id.as_str(),
+                run_id.as_str()
+            ));
+            Ok(())
+        }
+    }
+
     impl RecordingPermissionControlPlane {
         fn new(resolution: PendingPermissionResolution) -> Self {
             Self {
@@ -3718,6 +5210,35 @@ mod tests {
 
         fn inserted_requests(&self) -> Vec<PendingPermissionRequest> {
             self.inserted.lock().unwrap().clone()
+        }
+    }
+
+    impl BlockingPermissionControlPlane {
+        fn new() -> Self {
+            Self {
+                inserted: Mutex::new(Vec::new()),
+                senders: Mutex::new(Vec::new()),
+                notify: tokio::sync::Notify::new(),
+            }
+        }
+
+        fn inserted_requests(&self) -> Vec<PendingPermissionRequest> {
+            self.inserted.lock().unwrap().clone()
+        }
+
+        async fn wait_for_inserted_count(&self, expected: usize) {
+            loop {
+                if self.inserted.lock().unwrap().len() >= expected {
+                    return;
+                }
+                self.notify.notified().await;
+            }
+        }
+
+        fn resolve_all(&self, resolution: PendingPermissionResolution) {
+            for sender in self.senders.lock().unwrap().drain(..) {
+                let _ = sender.send(resolution.clone());
+            }
         }
     }
 
@@ -3757,11 +5278,49 @@ mod tests {
         }
     }
 
+    impl PendingPermissionControlPlane for BlockingPermissionControlPlane {
+        fn insert_pending_request(
+            &self,
+            request: PendingPermissionRequest,
+        ) -> anyhow::Result<oneshot::Receiver<PendingPermissionResolution>> {
+            self.inserted.lock().unwrap().push(request);
+            let (tx, rx) = oneshot::channel();
+            self.senders.lock().unwrap().push(tx);
+            self.notify.notify_waiters();
+            Ok(rx)
+        }
+
+        fn resolve_pending_request(
+            &self,
+            _tool_call_id: &ToolCallId,
+            _resolution: PendingPermissionResolution,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn cancel_for_session(
+            &self,
+            _session_id: &crate::runtime::ids::SessionId,
+            _message: &str,
+        ) -> usize {
+            0
+        }
+
+        fn pending_count_for_session(&self, _session_id: &crate::runtime::ids::SessionId) -> usize {
+            self.inserted.lock().unwrap().len()
+        }
+
+        fn is_pending(&self, _tool_call_id: &ToolCallId) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn chat_turn_request_new_defaults_permission_mode() {
         let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
 
         assert_eq!(request.permission_mode, PermissionMode::Default);
+        assert_eq!(request.reasoning_mode, None);
     }
 
     #[test]
@@ -3823,6 +5382,21 @@ mod tests {
     }
 
     #[test]
+    fn build_user_content_json_includes_reasoning_mode() {
+        let content = build_user_content_json_with_skill_and_reasoning(
+            "做复杂分析",
+            &[],
+            None,
+            Some(ReasoningMode::Deep),
+        );
+
+        assert_eq!(
+            content.get("reasoningMode").and_then(|v| v.as_str()),
+            Some("deep")
+        );
+    }
+
+    #[test]
     fn selected_skill_instruction_mentions_skill_tool_and_id() {
         let skill = SkillCommandRef {
             id: "dingtalk-workspace".to_string(),
@@ -3847,6 +5421,7 @@ mod tests {
                 message: "Denied by test".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         ));
         let driver = RuntimeChatTurnDriver {
@@ -3858,6 +5433,7 @@ mod tests {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
@@ -3886,7 +5462,7 @@ mod tests {
         })];
 
         let _resolved = driver
-            .resolve_permission_asks(&turn, &turn.cancellation(), round_results)
+            .resolve_permission_asks(&turn, &turn.cancellation(), round_results, None)
             .await
             .expect("ask resolution should succeed");
 
@@ -3903,6 +5479,299 @@ mod tests {
             })
             .expect("permission ask event should be recorded");
         assert_eq!(ask_mode, PermissionMode::Plan);
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_asks_registers_same_round_asks_before_waiting() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(BlockingPermissionControlPlane::new());
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus.clone(),
+            llm_executor: None,
+            pending_permission_control_plane: Some(control_plane.clone()),
+            pending_interaction_control_plane: None,
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: None,
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-batch-ask".to_string()),
+            RunId::new("run-batch-ask"),
+            "hello".to_string(),
+        );
+        let make_ask = |tool_call_id: &str, pattern: &str| {
+            ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+                tool_call_id: tool_call_id.to_string(),
+                tool_name: "Glob".to_string(),
+                capability_scopes: vec!["fs:read".to_string()],
+                original_request: RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.to_string(),
+                    tool_name: "Glob".to_string(),
+                    args: json!({"path":"/tmp", "pattern": pattern}),
+                    purpose: None,
+                },
+                decision: PermissionDecision::Ask {
+                    message: "该路径未授权，需要用户确认：路径=/private/tmp".to_string(),
+                    suggestions: vec!["仅本次允许".to_string(), "拒绝".to_string()],
+                    remember_options: vec![],
+                    default_destination: None,
+                    reason: PermissionReason::Other("test".to_string()),
+                    path_auth_scope: Some("/private/tmp".to_string()),
+                },
+            })
+        };
+        let round_results = vec![
+            make_ask("tc-batch-1", "*claw"),
+            make_ask("tc-batch-2", "*opan"),
+        ];
+
+        let task = tokio::spawn(async move {
+            driver
+                .resolve_permission_asks(&turn, &turn.cancellation(), round_results, None)
+                .await
+        });
+
+        tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            control_plane.wait_for_inserted_count(2),
+        )
+        .await
+        .expect("all same-round permission asks should be registered before waiting for a reply");
+
+        let inserted = control_plane.inserted_requests();
+        assert_eq!(inserted.len(), 2);
+        let ask_events = bus
+            .recorded()
+            .into_iter()
+            .filter(|event| matches!(event.kind, RuntimeEventKind::PermissionAskRequired { .. }))
+            .count();
+        assert_eq!(ask_events, 2);
+
+        control_plane.resolve_all(PendingPermissionResolution::Deny {
+            message: "Denied by test".to_string(),
+            remember: false,
+            destination: None,
+            path_auth_scope_override: None,
+        });
+        let _ = task.await.expect("permission task should join");
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_asks_suspends_active_run_while_waiting_for_user() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(RecordingPermissionControlPlane::new(
+            PendingPermissionResolution::Deny {
+                message: "Denied by test".to_string(),
+                remember: false,
+                destination: None,
+                path_auth_scope_override: None,
+            },
+        ));
+        let activity = Arc::new(RecordingRunActivityController::new());
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus,
+            llm_executor: None,
+            pending_permission_control_plane: Some(control_plane),
+            pending_interaction_control_plane: None,
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: Some(activity.clone()),
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-wait".to_string()),
+            RunId::new("run-wait"),
+            "hello".to_string(),
+        );
+        let round_results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+            tool_call_id: "tc-wait".to_string(),
+            tool_name: "Read".to_string(),
+            capability_scopes: vec!["fs:read".to_string()],
+            original_request: RuntimeToolCallRequest {
+                tool_call_id: "tc-wait".to_string(),
+                tool_name: "Read".to_string(),
+                args: json!({"file_path":"/tmp/secret.txt"}),
+                purpose: None,
+            },
+            decision: PermissionDecision::Ask {
+                message: "need approval".to_string(),
+                suggestions: vec![],
+                remember_options: vec![],
+                default_destination: None,
+                reason: PermissionReason::Other("test".to_string()),
+                path_auth_scope: None,
+            },
+        })];
+
+        let _resolved = driver
+            .resolve_permission_asks(&turn, &turn.cancellation(), round_results, None)
+            .await
+            .expect("permission ask should resolve");
+
+        assert_eq!(
+            activity.calls(),
+            vec![
+                "suspend:conv-wait:run-wait".to_string(),
+                "resume:conv-wait:run-wait".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_interaction_requests_suspends_active_run_while_waiting_for_user() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(RecordingInteractionControlPlane::new(
+            InteractionResolution::Cancel {
+                message: "Cancelled by test".to_string(),
+            },
+        ));
+        let activity = Arc::new(RecordingRunActivityController::new());
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus,
+            llm_executor: None,
+            pending_permission_control_plane: None,
+            pending_interaction_control_plane: Some(control_plane),
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: Some(activity.clone()),
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-question".to_string()),
+            RunId::new("run-question"),
+            "hello".to_string(),
+        );
+        let original_request = RuntimeToolCallRequest {
+            tool_call_id: "tool-question".to_string(),
+            tool_name: "AskUserQuestion".to_string(),
+            args: json!({"questions":[{"question":"看哪个文件？"}]}),
+            purpose: None,
+        };
+        let round_results = vec![ToolRoundResult::Ok(
+            RuntimeToolCallOutcome::InteractionRequired {
+                tool_call_id: "tool-question".to_string(),
+                tool_name: "AskUserQuestion".to_string(),
+                original_request: original_request.clone(),
+                interaction_request: InteractionRequest {
+                    interaction_id: InteractionId::new("ask-question"),
+                    session_id: turn.session_id().clone(),
+                    run_id: turn.run_id().clone(),
+                    tool_call_id: ToolCallId::new("tool-question"),
+                    tool_name: "AskUserQuestion".to_string(),
+                    kind: InteractionKind::AskUserQuestion,
+                    payload: json!({"questions":[{"question":"看哪个文件？"}]}),
+                    original_request,
+                    turn_origin: turn.turn_origin().clone(),
+                    output_binding: turn.output_binding().clone(),
+                },
+            },
+        )];
+
+        let _resolved = driver
+            .resolve_interaction_requests(&turn, &turn.cancellation(), round_results)
+            .await
+            .expect("interaction should resolve");
+
+        assert_eq!(
+            activity.calls(),
+            vec![
+                "suspend:conv-question:run-question".to_string(),
+                "resume:conv-question:run-question".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_asks_persists_waiting_permission_stage() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(RecordingPermissionControlPlane::new(
+            PendingPermissionResolution::Deny {
+                message: "Denied by test".to_string(),
+                remember: false,
+                destination: None,
+                path_auth_scope_override: None,
+            },
+        ));
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus.clone(),
+            llm_executor: None,
+            pending_permission_control_plane: Some(control_plane),
+            pending_interaction_control_plane: None,
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: None,
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-stage".to_string()),
+            RunId::new("run-stage"),
+            "hello".to_string(),
+        );
+        let tmp = tempfile::tempdir().unwrap();
+        let stage_path = tmp.path().join("turn_stages").join("conv-stage.json");
+        let stage_emitter =
+            TurnStageEmitter::new(bus, turn.session_id().clone(), turn.run_id().clone())
+                .with_enabled(true)
+                .with_persist_path(stage_path.clone());
+        stage_emitter
+            .tools_started(
+                0,
+                vec![RunningTool {
+                    tool_name: "Read".to_string(),
+                    tool_call_id: "tc-stage".to_string(),
+                    started_at_ms: 1,
+                }],
+            )
+            .await;
+
+        let round_results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+            tool_call_id: "tc-stage".to_string(),
+            tool_name: "Read".to_string(),
+            capability_scopes: vec!["fs:read".to_string()],
+            original_request: RuntimeToolCallRequest {
+                tool_call_id: "tc-stage".to_string(),
+                tool_name: "Read".to_string(),
+                args: json!({"file_path":"/tmp/secret.txt"}),
+                purpose: None,
+            },
+            decision: PermissionDecision::Ask {
+                message: "need approval".to_string(),
+                suggestions: vec!["Allow once".to_string()],
+                remember_options: vec![],
+                default_destination: None,
+                reason: PermissionReason::Other("test".to_string()),
+                path_auth_scope: None,
+            },
+        })];
+
+        let _resolved = driver
+            .resolve_permission_asks(
+                &turn,
+                &turn.cancellation(),
+                round_results,
+                Some(&stage_emitter),
+            )
+            .await
+            .expect("ask resolution should succeed");
+
+        let raw = std::fs::read(&stage_path).expect("turn stage should be persisted");
+        let parsed: crate::runtime::chat::turn_stage::PersistedTurnStage =
+            serde_json::from_slice(&raw).expect("parse turn stage");
+        match parsed.stage {
+            crate::runtime::events::TurnStage::WaitingPermission {
+                tool_name,
+                tool_call_id,
+            } => {
+                assert_eq!(tool_name, "Read");
+                assert_eq!(tool_call_id, "tc-stage");
+            }
+            other => panic!("expected persisted waitingPermission, got {other:?}"),
+        }
     }
 
     #[test]
@@ -3976,6 +5845,7 @@ mod tests {
         seen_dynamic_contexts: Mutex<Vec<String>>,
         skill_catalog: Option<String>,
         override_system_prompt: Option<String>,
+        disabled_skill_ids: std::collections::HashSet<String>,
     }
 
     impl SnapshotPromptExecutor {
@@ -3986,6 +5856,7 @@ mod tests {
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: None,
                 override_system_prompt: None,
+                disabled_skill_ids: Default::default(),
             }
         }
 
@@ -3996,11 +5867,17 @@ mod tests {
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: Some(skill_catalog.into()),
                 override_system_prompt: None,
+                disabled_skill_ids: Default::default(),
             }
         }
 
         fn with_override_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
             self.override_system_prompt = Some(system_prompt.into());
+            self
+        }
+
+        fn with_disabled_skill(mut self, skill_id: impl Into<String>) -> Self {
+            self.disabled_skill_ids.insert(skill_id.into());
             self
         }
     }
@@ -4051,6 +5928,7 @@ mod tests {
             _content: &str,
             _attachments: &[ChatAttachmentRef],
             _skill_command: Option<&SkillCommandRef>,
+            _reasoning_mode: Option<ReasoningMode>,
             _client_message_id: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
@@ -4089,6 +5967,10 @@ mod tests {
 
         async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
             self.skill_catalog.clone().unwrap_or_default()
+        }
+
+        async fn is_skill_enabled_for_context(&self, skill_id: &str) -> bool {
+            !self.disabled_skill_ids.contains(skill_id)
         }
 
         async fn load_turn_config_overrides(
@@ -4244,6 +6126,46 @@ mod tests {
     }
 
     // ── LTR (B-gap1) Path A wiring tests ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn driver_skips_selected_skill_instruction_when_skill_disabled() {
+        let executor = Arc::new(
+            SnapshotPromptExecutor::with_skill_catalog(
+                "## available skills\n- `other-skill` - other",
+            )
+            .with_disabled_skill("dingtalk-workspace"),
+        );
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id(
+                "conv-driver-disabled-selected-skill".to_string(),
+            ),
+            RunId::new("run-driver-disabled-selected-skill"),
+            "check schedule".to_string(),
+        );
+        let mut request = ChatTurnRequest::new(
+            "conv-driver-disabled-selected-skill",
+            "check schedule",
+            vec![],
+        );
+        request.skill_command = Some(SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("DingTalk".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        });
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should ignore disabled selected skill");
+
+        let dynamic_contexts = executor.seen_dynamic_contexts.lock().unwrap().clone();
+        assert_eq!(dynamic_contexts.len(), 1);
+        assert!(dynamic_contexts[0].contains("other-skill"));
+        assert!(!dynamic_contexts[0].contains("Skill({ skill_id: \"dingtalk-workspace\" })"));
+    }
 
     use crate::runtime::agent::{AgentNameRegistry, LeadIdleSupervisor};
     use crate::runtime::event_bus::RuntimeEventSubscriber;

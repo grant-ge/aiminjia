@@ -34,6 +34,32 @@
     "loading": "Loading...",
     "openFile": "Open file"
   },
+  "chatHeader": {
+    "more": "More",
+    "exportConversation": "Export conversation",
+    "createSkillFromConversation": "Summarize and create skill",
+    "createScheduleFromConversation": "Summarize and create scheduled task"
+  },
+  "resultCards": {
+    "copyId": "Copy ID",
+    "skill": {
+      "created": "Skill created",
+      "view": "View skill",
+      "nameLabel": "Skill name",
+      "triggerLabel": "Trigger",
+      "descriptionLabel": "Description",
+      "fallbackDescription": "The skill was created and can be opened from skill details."
+    },
+    "schedule": {
+      "created": "Scheduled task created",
+      "edit": "Edit",
+      "view": "View scheduled tasks",
+      "frequency": "Frequency",
+      "nextFire": "Next run",
+      "fallbackPrompt": "The scheduled task was created.",
+      "unavailable": "This scheduled task cannot be loaded. It may have been deleted or is temporarily unavailable."
+    }
+  },
   "sidebar": {
     "archiveChat": "Archive chat",
     "archiveChatTooltip": "Archive conversation",
@@ -46,6 +72,15 @@
     "copyConversationId": "Copy conversation ID",
     "noHistory": "No tasks yet",
     "defaultFolder": "Default project",
+    "conversationLoading": "Conversation running",
+    "status": {
+      "permissionReviewChip": "Review",
+      "permissionReviewTooltip": "Waiting for your permission review",
+      "waitingReplyChip": "Waiting reply",
+      "waitingReplyTooltip": "Waiting for your reply"
+    },
+    "showMoreConversations": "Show {{count}} more",
+    "collapseConversations": "Collapse",
     "project": "Projects",
     "employeeTab": "Staff",
     "expertTeamTab": "Experts",
@@ -88,7 +123,18 @@
   "messageList": {
     "cannotPreview": "Cannot preview this file",
     "cannotOpen": "Cannot open file",
-    "cannotReveal": "Cannot reveal in folder"
+    "cannotDownload": "Cannot download file",
+    "cannotReveal": "Cannot reveal in folder",
+    "fileDownloaded": "File downloaded",
+    "toolReceipt": {
+      "interactionSubmitted": "Recorded your answer",
+      "interactionAsked": "Asked the user {{count}} questions",
+      "interactionReceived": "Received: {{summary}}",
+      "interactionCancelled": "Follow-up question ignored",
+      "permissionApproved": "Permission request approved",
+      "permissionDenied": "Permission request denied",
+      "permissionCancelled": "Permission request cancelled"
+    }
   },
   "subagent": {
     "resultCard": {
@@ -301,6 +347,14 @@
       "chatWidthCentered": "Centered",
       "chatWidthFull": "Full width"
     },
+    "permissions": {
+      "title": "Permissions",
+      "description": "Set the default tool permission mode for new conversations. A session-level choice overrides this global default.",
+      "defaultAccess": "Default access",
+      "defaultAccessDesc": "Home is readable by default, sensitive paths ask; workspace writes are allowed, other writes ask; deletes stay stricter.",
+      "fullAccess": "Full access",
+      "fullAccessDesc": "Ordinary reads, writes, and deletes avoid interruptions; high-risk deletes like system folders or the home root are still blocked."
+    },
     "archived": {
       "newChat": "New chat",
       "noRecords": "No archived records",
@@ -343,6 +397,27 @@
       "minutesAgo": "{{count}}m ago",
       "hoursAgo": "{{count}}h ago"
     },
+    "environment": {
+      "title": "Environment",
+      "env": {
+        "test": "Test",
+        "pre": "Pre-release",
+        "prod": "Production"
+      },
+      "custom": "Custom",
+      "customTitle": "Custom environment hosts",
+      "customHint": "Enter the tenant and ops origins (e.g. https://host:port, no path). Switching logs you out and requires re-login.",
+      "tenantLabel": "Tenant gateway origin",
+      "opsLabel": "Ops portal origin",
+      "tenantPlaceholder": "https://ai-tenant.example.com",
+      "opsPlaceholder": "https://ai-ops.example.com",
+      "invalidHost": "Invalid host. Enter an origin like https://host (no path).",
+      "switchTarget": "Switches to",
+      "switchFailed": "Failed to switch environment",
+      "confirmTitle": "Switch environment",
+      "confirmRelogin": "Switching to \"{{env}}\" will log you out and require re-login. Continue?",
+      "confirmButton": "Switch"
+    },
     "about": {
       "icon": "icon",
       "version": "Version",
@@ -356,22 +431,61 @@
       "logUpload": "Upload logs",
       "logUploadDesc": "When something goes wrong, send local logs to the team for diagnostics.",
       "uploadLogs": "Upload logs",
-      "uploading": "Uploading..."
+      "uploading": "Uploading...",
+      "logLevel": "Log level",
+      "logLevelDesc": "Adjust runtime log verbosity to cut down on noise.",
+      "logLevelError": "Error only",
+      "logLevelWarn": "Warn",
+      "logLevelInfo": "Info",
+      "logLevelDebug": "Debug"
     },
     "billing": {
-      "title": "My Account",
+      "title": "Account & Usage",
       "balance": "Balance",
       "monthCost": "This Month",
       "monthRequests": "Requests",
+      "rangeCost": "Range Cost",
+      "rangeTokens": "Range Tokens",
+      "rangeRequests": "Range Requests",
+      "averageCost": "{{cost}} avg",
       "bonusHint": "Includes ¥10 bonus",
       "records": "Usage Records",
       "empty": "No usage yet",
       "retry": "Retry",
+      "unavailableValue": "Unavailable",
+      "summaryUnavailable": "Balance information is temporarily unavailable; usage records can still be viewed.",
+      "recordsUnavailable": "Usage records are temporarily unavailable. Please retry later or contact an administrator.",
+      "partialSummaryHint": "The service did not return a full summary; totals are aggregated from the current page.",
+      "totalRecords": "{{count}} records",
+      "prevPage": "Previous",
+      "nextPage": "Next",
+      "pageIndicator": "Page {{page}} / {{totalPages}}",
+      "search": {
+        "type": "Request type",
+        "typePlaceholder": "Type",
+        "model": "Model name",
+        "modelPlaceholder": "Model",
+        "apply": "Search",
+        "clear": "Clear"
+      },
+      "range": {
+        "today": "Today",
+        "last7Days": "Last 7 days",
+        "last30Days": "Last 30 days",
+        "thisMonth": "This month",
+        "lastMonth": "Last month",
+        "startDate": "Start date",
+        "endDate": "End date",
+        "to": "to"
+      },
       "cols": {
         "time": "Time",
         "type": "Type",
+        "model": "Model",
         "inputTokens": "Input Tokens",
         "outputTokens": "Output Tokens",
+        "cachedTokens": "Cached Tokens",
+        "totalTokens": "Total Tokens",
         "cost": "Cost"
       }
     },
@@ -416,6 +530,26 @@
     "openSkillPicker": "Pick a skill",
     "openSkillPickerWithSkill": "Current skill: {{name}}",
     "removeSkill": "Remove skill {{name}}",
+    "permissionModeLabel": "Permission mode: {{mode}}",
+    "permissionModeDefault": "Default",
+    "permissionModeFull": "Full",
+    "permissionModeDefaultLong": "Default permissions",
+    "permissionModeFullLong": "Full access permissions",
+    "permissionModeDefaultDesc": "Use the default permission policy from Settings",
+    "permissionModeFullDesc": "Use full access for this conversation; ordinary reads/writes/deletes avoid prompts, high-risk deletes stay blocked",
+    "reasoningModeLabel": "Thinking mode: {{mode}}",
+    "reasoningModeAuto": "Auto",
+    "reasoningModeDeep": "Deep think",
+    "reasoningModeAutoLong": "Auto thinking",
+    "reasoningModeDeepLong": "Deep thinking",
+    "reasoningModeAutoDesc": "Use the default reasoning policy based on task complexity, balancing speed and quality.",
+    "reasoningModeDeepDesc": "Spend more reasoning budget on complex analysis, review, and long tasks; may take longer and use more credits.",
+    "fullAccessRulesTitle": "Full access permissions",
+    "fullAccessRulesIntro": "When enabled, this conversation will:",
+    "fullAccessRuleLessConfirm": "Reduce confirmation steps and let AI execute more operations directly",
+    "fullAccessRuleSensitive": "Interrupt less often for file changes and command execution",
+    "fullAccessRuleTrusted": "Recommended only when you trust the current task",
+    "fullAccessRuleSwitchBack": "You can switch back to default permissions anytime",
     "paste": {
       "cannotPaste": "Cannot paste",
       "clipboardImageFailed": "Failed to read image from clipboard",
@@ -562,6 +696,7 @@
     "dialogTitleDownloading": "Downloading update v{{version}}",
     "dialogTitleReady": "Update downloaded v{{version}}",
     "dialogTitleFailed": "Update failed",
+    "dialogTitleInstalling": "Installing update v{{version}}",
     "versionLine": "{{current}} → {{next}}",
     "releaseNotesHeader": "What's new",
     "updateAvailableDesc": "A new version is available. Would you like to update now?",
@@ -571,6 +706,12 @@
     "downloadComplete": "Download complete · {{size}}",
     "installAndRestart": "Install & Restart",
     "installing": "Installing...",
+    "installStage": {
+      "preparing": "Preparing update package...",
+      "verifying": "Verifying update version...",
+      "installing": "Installing update...",
+      "finishing": "Finishing installation..."
+    },
     "retry": "Retry",
     "downloadFailedMessage": "Download failed: {{error}}",
     "installFailedTitle": "Update install failed",
@@ -612,8 +753,59 @@
     "collapse": "Collapse"
   },
   "userMessage": {
+    "copy": "Copy user message",
     "expandAll": "Expand all",
     "collapse": "Collapse"
+  },
+  "pendingAction": {
+    "permission": {
+      "title": "I need your permission to use elevated access for a read-only check of whether {{target}} is accessible.",
+      "allowOnce": "Yes",
+      "allowRemember": "Yes, and do not ask again for similar operations",
+      "deny": "No, explain how to adjust",
+      "denyPlaceholder": "For example: do not read this directory; use the summary file in the workspace instead.",
+      "skip": "Reject",
+      "submit": "Submit",
+      "allowedFeedback": "The user approved this permission request ({{scope}}).",
+      "allowScopeSession": "this time only",
+      "allowScopeWorkspace": "do not ask again for similar operations in this workspace",
+      "allowScopeUser": "do not ask again for similar operations for this user",
+      "deniedFeedback": "The user denied this permission request.",
+      "deniedFeedbackWithUserInput": "The user denied this permission request and provided adjustment guidance: {{feedback}}",
+      "skippedFeedback": "The user skipped this permission request. The current task has been stopped.",
+      "denyLooksLikeAllow": "This looks like permission approval. Select an allow option above before submitting."
+    },
+    "interaction": {
+      "title": "More information needed",
+      "previous": "Previous question",
+      "next": "Next question",
+      "progress": "{{current}} of {{total}}",
+      "skip": "Ignore",
+      "continue": "Continue",
+      "stop": "Stop task",
+      "custom": "Other",
+      "customPlaceholder": "Enter your adjustment",
+      "validationRequired": "Answer this question first.",
+      "submittedFeedback": "The user answered the follow-up question: {{summary}}",
+      "cancelledFeedback": "The user ignored this follow-up question. Continue with the available information; do not output empty titles, empty quoted names, or empty placeholders. Use a generic name when a required name is missing."
+    },
+    "tabs": {
+      "label": "Pending actions",
+      "permission": "Permission {{name}}",
+      "question": "Question {{index}}"
+    },
+    "stalePermission": {
+      "title": "Task state needs recovery",
+      "messageBefore": "The previous task stopped at permission approval for ",
+      "messageAfter": ". The current runtime cannot find an active permission request to continue. Stop this task and send it again.",
+      "stop": "Stop task"
+    },
+    "staleInteraction": {
+      "title": "Task state needs recovery",
+      "messageBefore": "The previous task stopped at a follow-up question: ",
+      "messageAfter": ". The current runtime cannot find an active question to continue. Stop this task and send it again.",
+      "stop": "Stop task"
+    }
   },
   "toolGroupSummary": {
     "bucket": {
@@ -623,6 +815,8 @@
       "file_read_other": "read {{count}} files",
       "file_edit_one": "edited {{count}} file",
       "file_edit_other": "edited {{count}} files",
+      "interaction_one": "asked the user {{count}} question",
+      "interaction_other": "asked the user {{count}} questions",
       "search_one": "searched {{count}} time",
       "search_other": "searched {{count}} times",
       "mcp_one": "called {{count}} MCP tool",
@@ -818,22 +1012,42 @@
   },
   "ExpertTeams": {
     "pageTitle": "Expert Teams",
-    "syncServer": "Sync server",
-    "syncing": "Syncing...",
-    "syncDone": "Sync complete, updated {{count}} expert team(s)",
+    "syncServer": "Refresh",
+    "syncing": "Refreshing...",
+    "syncDone": "Content refreshed",
     "syncUpToDate": "Up to date",
-    "syncFailed": "Sync failed",
+    "syncFailed": "Refresh failed",
     "conversationTitle": "Expert Team: {{name}}",
     "startFailed": "Could not start expert team",
     "createConversationFailed": "Could not create the conversation. Please try again.",
     "startTeam": "Start {{name}}",
+    "openTeamDetail": "View {{name}} details",
+    "viewDetail": "View details",
+    "summon": "Summon team",
+    "starting": "Starting...",
+    "defaultGroup": "All expert teams",
+    "allCategory": "All",
+    "groupCount": "{{count}} expert team(s)",
+    "directoryEmpty": "No expert teams are available yet. Refresh content and try again.",
+    "directoryLoadError": "Could not load the expert team directory: {{err}}. Refresh again when the network is back.",
+    "directoryPartialError": "Some expert team snapshots are not synced; showing cached content: {{err}}",
     "openTableHint": "Director invites experts by topic",
+    "moreMembers": "More",
     "members": "Members",
-    "directorInvites": "The director will invite 3-5 experts based on the topic",
+    "directorInvites": "The director will invite 3-4 experts based on the topic",
     "pickTopic": "Start with a topic:",
     "startingTopic": "Starting: {{topic}}...",
     "topicQuote": "\"{{topic}}\"",
-    "customTopicHint": "Or enter your own topic below and press Enter."
+    "customTopicHint": "Or enter your own topic below and press Enter.",
+    "detail": {
+      "intro": "Capability overview",
+      "overview": "Basics",
+      "category": "Group",
+      "members": "Members",
+      "memberCount": "{{count}} experts",
+      "mode": "Mode",
+      "examples": "Good topics"
+    }
   },
   "nav": {
     "home": "New Task",
@@ -879,8 +1093,40 @@
     "reportCount": "{{count}} report(s)",
     "allIdle": "All employees idle",
     "myEmployees": "My Employees",
-    "syncServer": "Sync server",
-    "syncing": "Syncing...",
+    "employeeDirectory": "Digital Employees",
+    "allCategory": "All",
+    "uncategorized": "Other employees",
+    "groupCount": "{{count}} employee(s)",
+    "summon": "Summon",
+    "assignWork": "Assign",
+    "enterRunning": "Open chat",
+    "summoning": "Summoning...",
+    "summonEmployee": "Summon {{name}} and assign work",
+    "openEmployeeDetail": "View {{name}} details",
+    "viewDetail": "View details",
+    "directoryEmpty": "No digital employees are available yet. Refresh content and try again.",
+    "directoryLoadError": "Could not load the employee directory: {{err}}. Refresh again when the network is back.",
+    "directoryPartialError": "Directory refresh failed; showing local cache: {{err}}",
+    "startFailed": "Failed to assign work",
+    "detail": {
+      "category": "Group",
+      "version": "Template version",
+      "latest": "Latest",
+      "trigger": "Trigger",
+      "skills": "Platform skills",
+      "dialogFirst": "Dialog first",
+      "contextAware": "Fills gaps from context",
+      "resultOriented": "Delivers concrete output",
+      "intro": "Capability overview",
+      "overview": "Template details",
+      "strengths": "Strengths",
+      "examples": "Good assignments",
+      "skillSet": "Callable skills"
+    },
+    "refreshDone": "Content refreshed",
+    "refreshFailed": "Refresh failed",
+    "syncServer": "Refresh",
+    "syncing": "Refreshing...",
     "templateMarket": "Employee Market",
     "todayFeed": "Today's Activity",
     "viewAll": "View all",
@@ -911,15 +1157,7 @@
     "cronEveryDay": "Daily {{time}}",
     "cronWeekdays": "Weekdays {{time}}",
     "cronWeekly": "Weekly {{days}} {{time}}",
-    "dayNames": [
-      "Sun",
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat"
-    ],
+    "dayNames": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
     "responsibility": "Responsibility",
     "templateVersion": "Template version",
     "triggerMethod": "Trigger",
@@ -966,10 +1204,12 @@
     "previewInside": "Preview in sidebar",
     "previewUnavailable": "Preview not available",
     "openExternal": "Open with default app",
+    "download": "Download...",
     "reveal": "Show in folder"
   },
   "filePreview": {
     "openWithDefault": "Open with default app",
+    "download": "Download...",
     "selectArtifact": "Select a file to preview",
     "loadingPreview": "Loading preview...",
     "cannotPreview": "Cannot preview this file",
@@ -992,11 +1232,11 @@
     "title": "Skill Center",
     "installedCount": "{{count}} skills installed",
     "searchPlaceholder": "Search skills by name or scenario",
-    "syncBuiltin": "Sync built-in skills",
-    "syncLocal": "Sync local skills",
+    "syncBuiltin": "Refresh official skills",
+    "syncLocal": "Check local skills",
     "syncSkills": "Sync skills",
     "syncing": "Syncing...",
-    "syncLocalDone": "Local skills refreshed",
+    "syncLocalDone": "Local skills updated",
     "importSkill": "+ Import Skill",
     "importDirectory": "Import skill directory",
     "importArchive": "Import archive (.zip)",
@@ -1030,7 +1270,7 @@
     "loadFailed": "Failed to load skills",
     "retry": "Retry",
     "noLocalSkills": "No local skills yet",
-    "noLocalSkillsDesc": "Chat with the \"XiaoCheng\" employee to turn your workflow into a reusable skill, or click \"+ Import Skill\" to upload a local skill directory.",
+    "noLocalSkillsDesc": "Click \"+ Import Skill\" to upload a local skill directory.",
     "noMatch": "No matching skills",
     "noMatchDesc": "No skills found for \"{{query}}\". Try switching to \"All\" or using a different keyword.",
     "noSkillsInCategory": "No skills in this category",
@@ -1085,6 +1325,11 @@
       "received": "Received",
       "receivedFrom": "Received from {{name}}",
       "sentTo": "Sent to {{name}}",
+      "timeline": {
+        "systemReminder": "Role instructions",
+        "received": "Received message",
+        "turn": "Thinking and actions"
+      },
       "parseHint": "Parse note",
       "rawData": "Raw data",
       "parseWarnings": {
@@ -1114,13 +1359,22 @@
         "planApprove": "{{from}} approved the plan",
         "planReject": "{{from}} suggested changes: {{feedback}}",
         "planRejectNoFeedback": "{{from}} rejected the plan"
+      },
+      "facilitation": {
+        "assignment": "Lead asked {{count}} experts for first-round views",
+        "cross_review": "Lead started cross-review",
+        "debate": "Lead advanced the debate round",
+        "instruction": "Lead sent a facilitation instruction",
+        "hiddenLowSignal": "Lead progress updates ({{count}})",
+        "expand": "Expand",
+        "collapse": "Collapse"
       }
     }
   },
   "channel": {
     "title": "IM Channels",
     "heroTitle": "IM Channels",
-    "heroDesc": "Configure IM channels so AI Home can receive and reply to messages from various platforms.",
+    "heroDesc": "Configure IM channels so {{productName}} can receive and reply to messages from various platforms.",
     "heroPrivacy": "Channel credentials are stored locally and never uploaded.",
     "status": {
       "unconfigured": "Not configured",
@@ -1154,7 +1408,10 @@
       "addNumber": "Add number",
       "deleteRow": "Delete this row",
       "removeChannel": "Remove entire channel",
-      "saveManualConfig": "Save manual configuration"
+      "saveManualConfig": "Save manual configuration",
+      "sendGreeting": "Wake bot",
+      "sendingGreeting": "Waking…",
+      "sendDingtalkGreetingAria": "Wake DingTalk bot"
     },
     "chat": {
       "groupChat": "Group",
@@ -1266,6 +1523,12 @@
         "errorBeginFailed": "Failed to start DingTalk scan flow. Please retry.",
         "errorNoConfig": "DingTalk authorized, but no channel configuration was returned.",
         "errorScanFailed": "DingTalk scan registration failed"
+      },
+      "greeting": {
+        "sentTitle": "Bot awakened",
+        "sentMessage": "Open DingTalk and check the conversation list for an unread badge; once the bot replies, you can find the conversation there.",
+        "failedTitle": "Failed to wake bot",
+        "failedMessage": "Please try again later."
       },
       "inactive": "This conversation belongs to a retired bot and cannot accept new messages."
     },
@@ -1530,6 +1793,25 @@
   },
   "schedules": {
     "pageTitle": "Scheduled Tasks",
+    "console": {
+      "kicker": "Automation console",
+      "title": "Scheduled task console",
+      "desc": "Track task health, next run times, and common operations in one place so recurring work stays under control.",
+      "active": "Active",
+      "paused": "Paused",
+      "next24h": "Next 24h",
+      "needsCare": "Needs care",
+      "cancelledHint": "Manage tasks that no longer trigger.",
+      "listHint": "Review tasks by next run time and operating state.",
+      "nextUp": "Next run",
+      "nextUpTask": "Up next: {{title}}",
+      "noNext": "No upcoming runs",
+      "health": "Task health"
+    },
+    "quickCreate": "Quick create",
+    "quickCreateDesc": "Start from a common scenario, then tune the cadence.",
+    "templatesTitle": "Common templates",
+    "templatesDesc": "Starting points for recurring routine work.",
     "newTaskAria": "New scheduled task",
     "taskList": "Task list",
     "cancelled": "Cancelled",

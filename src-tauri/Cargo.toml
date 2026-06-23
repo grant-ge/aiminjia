@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.5.33"
+version = "0.5.36-1"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
@@ -20,10 +20,12 @@ tauri-build = { version = "2.5.4", features = [] }
 
 [dependencies]
 # Tauri core
-tauri = { version = "2.10.0", features = ["devtools"] }
+tauri = { version = "2.10.0", features = ["devtools", "tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tauri-plugin-log = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["registry", "fmt", "env-filter"] }
+tracing-appender = "0.2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -57,6 +59,7 @@ ecb = { version = "0.1", features = ["std"] }
 
 # Logging
 log = "0.4"
+reqwest-middleware = { version = "0.4", features = ["json"] }
 
 # Home directory resolution
 dirs = "6"
@@ -146,6 +149,11 @@ tempfile = "3"
 wiremock = "0.6"
 tokio = { version = "1", features = ["test-util"] }
 mockito = "1"
+
+[[test]]
+name = "network_probe_integration_test"
+path = "tests/network_probe_integration_test.rs"
+required-features = ["test-support"]
 
 [features]
 default = []

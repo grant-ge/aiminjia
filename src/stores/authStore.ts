@@ -62,6 +62,10 @@ function translatePostLoginError(raw: string): { title: string; message: string 
   }
 }
 
+function isAuthExpiredError(raw: string): boolean {
+  return raw.includes('登录已过期') || raw.includes('请重新登录') || raw.includes('未登录')
+}
+
 interface AuthState {
   isLoggedIn: boolean
   user: CloudAuthInfo['user']
@@ -184,6 +188,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         models = await getCloudModels()
       } catch (err) {
         restoreError = err instanceof Error ? err.message : String(err)
+      }
+      if (restoreError && isAuthExpiredError(restoreError)) {
+        resetUserScopedFrontendState()
+        useBrandingStore.getState().reset()
+        set({ ...EMPTY_AUTH_STATE, isAuthPending: false })
+        return
       }
       set({ ...mapAuthState(info, models), isAuthPending: false })
       if (restoreError) {

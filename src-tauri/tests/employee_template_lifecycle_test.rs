@@ -1,17 +1,16 @@
 //! Integration tests for the digital-employee template lifecycle:
 //!
-//!   1. **First-load**: hire a new employee referencing a builtin template
-//!      → backend stamps `template/template.json` from the embedded
-//!      bootstrap registry, populates `template_ref`. No network needed.
+//!   1. **First-load without cache**: hire a new employee referencing a
+//!      template id that is not present in cache → backend skips stamping and
+//!      keeps the employee usable.
 //!
 //!   2. **Legacy migration**: plant a pre-PR2 `employee.json` (no
-//!      `templateRef`, no `template/` subdir) → `EmployeeStore::list/get`
-//!      auto-stamps the snapshot and back-fills `template_ref`.
+//!      `templateRef`, no `template/` subdir) without a cached template →
+//!      `EmployeeStore::list/get` leaves it unstamped.
 //!
 //!   3. **Upgrade**: write an existing-instance snapshot at v1.0, then
-//!      drop a v2.0 snapshot of the same `template_id` into the global
-//!      cache → `merge_catalog(bootstrap, cache)` returns the cached
-//!      v2.0 (newer wins).
+//!      drop a v2.0 snapshot of the same `template_id` into a temp cache →
+//!      `merge_catalog(base, cache)` returns the cached v2.0 (newer wins).
 //!
 //! These tests cover the snapshot-on-disk / merge-priority logic that
 //! desktop relies on. They do NOT exercise the HTTP loader because that
@@ -29,7 +28,7 @@ use app_lib::runtime::employee::template_store::{
     ensure_instance_snapshot, merge_catalog, read_instance_snapshot, write_cache, TemplateSnapshot,
 };
 
-/// Helper: produce a stand-in snapshot for tests not relying on bootstrap.
+/// Helper: produce a stand-in snapshot for cache-only template tests.
 fn synthetic_snap(template_id: &str, version: &str, name: &str) -> TemplateSnapshot {
     TemplateSnapshot {
         template_id: template_id.into(),
@@ -54,25 +53,10 @@ fn synthetic_snap(template_id: &str, version: &str, name: &str) -> TemplateSnaps
     }
 }
 
-/// Local stand-in for historical bootstrap fixtures.
-///
-/// Product code no longer exposes embedded bootstrap templates; these tests keep
-/// the old merge-catalog scenarios compileable without reintroducing bootstrap
-/// fallback into `template_store`.
-fn bootstrap_template(template_id: &str) -> anyhow::Result<Option<TemplateSnapshot>> {
-    Ok(match template_id {
-        "builtin:xiaoyuan" => Some(TemplateSnapshot {
-            system_prompt_extra: "调研员，负责竞品调研".into(),
-            ..synthetic_snap("builtin:xiaoyuan", "1.0", "小研")
-        }),
-        _ => None,
-    })
-}
-
-// ─── Scenario 1: first-load hire stamps snapshot from bootstrap ──────────
+// ─── Scenario 1: first-load hire without cached snapshot ─────────────────
 
 #[test]
-fn first_load_hire_stamps_bootstrap_snapshot() {
+fn first_load_hire_without_cached_template_skips_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
     let employees_dir = tmp.path().to_path_buf();
     fs::create_dir_all(&employees_dir).unwrap();
@@ -80,7 +64,7 @@ fn first_load_hire_stamps_bootstrap_snapshot() {
     let store = EmployeeStore::new(employees_dir.clone());
     let rec = store
         .create(CreateEmployeeRequest {
-            template_id: Some("builtin:xiaoyuan".into()),
+            template_id: Some("test:no-cache-first-load".into()),
             avatar: "🔍".into(),
             name: "小研".into(),
             role: "调研员".into(),
@@ -97,27 +81,15 @@ fn first_load_hire_stamps_bootstrap_snapshot() {
         })
         .expect("create succeeds");
 
-    // 1. template_ref populated on the returned record.
-    let tref = rec.template_ref.as_ref().expect("template_ref stamped");
-    assert_eq!(tref.template_id, "builtin:xiaoyuan");
-    assert_eq!(tref.version, "1.0");
-    assert_eq!(tref.source, "bootstrap");
-    assert!(!tref.sha256.is_empty(), "sha256 computed");
-
-    // 2. Snapshot file written to disk.
+    // No cached template → no snapshot metadata, but the employee is still
+    // created and usable.
+    assert!(rec.template_ref.is_none(), "no ref without cached template");
     let inst = employees_dir.join(&rec.id);
-    let snap = read_instance_snapshot(&inst)
-        .expect("read")
-        .expect("snapshot exists");
-    assert_eq!(snap.template_id, "builtin:xiaoyuan");
-    assert_eq!(snap.version, "1.0");
-    // System prompt comes from bootstrap, not the empty record field.
     assert!(
-        snap.system_prompt_extra.contains("调研员") || snap.system_prompt_extra.contains("竞品")
+        read_instance_snapshot(&inst).expect("read").is_none(),
+        "snapshot should not exist"
     );
-
-    // 3. Manifest file also written.
-    assert!(inst.join("template/manifest.json").exists());
+    assert!(!inst.join("template/manifest.json").exists());
 }
 
 #[test]
@@ -128,7 +100,7 @@ fn first_load_hire_with_unknown_template_id_skips_stamping() {
     let store = EmployeeStore::new(employees_dir.clone());
     let rec = store
         .create(CreateEmployeeRequest {
-            template_id: Some("org:custom-not-in-bootstrap".into()),
+            template_id: Some("org:custom-not-in-cache".into()),
             avatar: "🤖".into(),
             name: "Custom".into(),
             role: "x".into(),
@@ -145,7 +117,7 @@ fn first_load_hire_with_unknown_template_id_skips_stamping() {
         })
         .unwrap();
 
-    // Unknown template_id (not in bootstrap) → no stamping, no template/ dir.
+    // Unknown template_id (not in cache) → no stamping, no template/ dir.
     assert!(rec.template_ref.is_none(), "no ref for unknown id");
     assert!(!employees_dir.join(&rec.id).join("template").exists());
 }
@@ -153,7 +125,7 @@ fn first_load_hire_with_unknown_template_id_skips_stamping() {
 // ─── Scenario 2: legacy migration ────────────────────────────────────────
 
 #[test]
-fn legacy_record_without_template_ref_is_backfilled_on_get() {
+fn legacy_record_without_cached_template_remains_unstamped_on_get() {
     let tmp = tempfile::tempdir().unwrap();
     let employees_dir = tmp.path().to_path_buf();
 
@@ -169,7 +141,7 @@ fn legacy_record_without_template_ref_is_backfilled_on_get() {
         "role": "调研员",
         "description": "old hire",
         "avatar": "🔍",
-        "templateId": "builtin:xiaoyuan",
+        "templateId": "test:no-cache-legacy-get",
         "toolWhitelist": ["WebSearch"],
         "cron": null,
         "timezone": "Asia/Shanghai",
@@ -190,45 +162,42 @@ fn legacy_record_without_template_ref_is_backfilled_on_get() {
     .unwrap();
     assert!(!inst_dir.join("template").exists(), "no snapshot before");
 
-    // First read → migration runs.
+    // First read → no matching cached snapshot, so no migration is possible.
     let store = EmployeeStore::new(employees_dir.clone());
     let rec = store.get(id).expect("legacy record loads");
 
-    let tref = rec
-        .template_ref
-        .as_ref()
-        .expect("legacy record back-filled");
-    assert_eq!(tref.template_id, "builtin:xiaoyuan");
-    assert_eq!(tref.version, "1.0");
     assert!(
-        inst_dir.join("template/template.json").exists(),
-        "snapshot file written"
+        rec.template_ref.is_none(),
+        "legacy record stays unstamped without cache"
+    );
+    assert!(
+        !inst_dir.join("template/template.json").exists(),
+        "snapshot file should not be written"
     );
 
-    // Idempotency: second read sees a record with `templateRef` already set
-    // and doesn't churn (no exception, sha256 same).
+    // Idempotency: second read still loads cleanly and does not create metadata.
     let rec2 = store.get(id).expect("idempotent");
-    assert_eq!(
-        rec.template_ref.as_ref().unwrap().sha256,
-        rec2.template_ref.as_ref().unwrap().sha256,
+    assert!(
+        rec2.template_ref.is_none(),
+        "second read stays unstamped without cache"
     );
 
-    // employee.json on disk now has `templateRef` persisted.
+    // employee.json on disk still has no `templateRef` persisted.
     let raw = fs::read_to_string(inst_dir.join("employee.json")).unwrap();
     assert!(
-        raw.contains("\"templateRef\""),
-        "templateRef persisted: {raw}"
+        !raw.contains("\"templateRef\""),
+        "templateRef should not be persisted: {raw}"
     );
 }
 
 #[test]
-fn legacy_record_list_also_triggers_migration() {
-    // Same fixture but verify list() walks all records and migrates.
+fn legacy_record_list_also_leaves_uncached_records_unstamped() {
+    // Same fixture but verify list() walks all records without requiring cache.
     let tmp = tempfile::tempdir().unwrap();
     let employees_dir = tmp.path().to_path_buf();
     for (id, tid) in [
-        ("emp-legacy-a", "builtin:xiaoyuan"),
-        ("emp-legacy-b", "builtin:xiaofa"),
+        ("emp-legacy-a", "test:no-cache-list-a"),
+        ("emp-legacy-b", "test:no-cache-list-b"),
     ] {
         let dir = employees_dir.join(id);
         fs::create_dir_all(&dir).unwrap();
@@ -262,12 +231,12 @@ fn legacy_record_list_also_triggers_migration() {
     let list = store.list().expect("list ok");
     assert_eq!(list.len(), 2);
     for r in &list {
-        let tref = r
-            .template_ref
-            .as_ref()
-            .unwrap_or_else(|| panic!("record {} not back-filled", r.id));
-        assert_eq!(tref.version, "1.0");
-        assert!(employees_dir
+        assert!(
+            r.template_ref.is_none(),
+            "record {} should remain unstamped without cache",
+            r.id
+        );
+        assert!(!employees_dir
             .join(&r.id)
             .join("template/template.json")
             .exists());
@@ -277,15 +246,12 @@ fn legacy_record_list_also_triggers_migration() {
 // ─── Scenario 3: upgrade via cache ───────────────────────────────────────
 
 #[test]
-fn merge_catalog_picks_cache_over_bootstrap_when_newer() {
+fn merge_catalog_picks_cache_over_base_when_newer() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_dir = tmp.path();
 
-    // 1. Bootstrap has builtin:xiaoyuan@1.0
-    let boot_xiaoyuan = bootstrap_template("builtin:xiaoyuan")
-        .expect("ok")
-        .expect("present");
-    assert_eq!(boot_xiaoyuan.version, "1.0");
+    // 1. Existing catalog has builtin:xiaoyuan@1.0
+    let base_xiaoyuan = synthetic_snap("builtin:xiaoyuan", "1.0", "小研 v1");
 
     // 2. Drop a v2.0 snapshot for the same template into the cache
     //    (simulates `employee_template_refresh` having downloaded a newer
@@ -294,7 +260,7 @@ fn merge_catalog_picks_cache_over_bootstrap_when_newer() {
     write_cache(cache_dir, &upgraded).unwrap();
 
     // 3. merge_catalog: cache wins.
-    let merged = merge_catalog(vec![boot_xiaoyuan], cache_dir);
+    let merged = merge_catalog(vec![base_xiaoyuan], cache_dir);
     let xiaoyuan = merged
         .iter()
         .find(|t| t.template_id == "builtin:xiaoyuan")
@@ -304,21 +270,21 @@ fn merge_catalog_picks_cache_over_bootstrap_when_newer() {
 }
 
 #[test]
-fn merge_catalog_keeps_bootstrap_when_cache_is_older_or_missing() {
+fn merge_catalog_keeps_base_when_cache_is_older_or_missing() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_dir = tmp.path();
 
-    let boot = bootstrap_template("builtin:xiaoyuan").unwrap().unwrap();
-    // Cache has older v0.9 — bootstrap wins.
+    let base = synthetic_snap("builtin:xiaoyuan", "1.0", "小研 v1");
+    // Cache has older v0.9 — base wins.
     let older = synthetic_snap("builtin:xiaoyuan", "0.9", "stale");
     write_cache(cache_dir, &older).unwrap();
 
-    let merged = merge_catalog(vec![boot.clone()], cache_dir);
+    let merged = merge_catalog(vec![base.clone()], cache_dir);
     let xiaoyuan = merged
         .iter()
         .find(|t| t.template_id == "builtin:xiaoyuan")
         .expect("present");
-    assert_eq!(xiaoyuan.version, "1.0", "bootstrap wins over older cache");
+    assert_eq!(xiaoyuan.version, "1.0", "base wins over older cache");
 }
 
 #[test]
@@ -326,12 +292,12 @@ fn merge_catalog_includes_cache_only_org_templates() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_dir = tmp.path();
 
-    // Cache has a custom org template that bootstrap doesn't know about.
+    // Cache has a custom org template that the base catalog doesn't know about.
     let custom = synthetic_snap("org:acme-recruiter", "1.0", "Acme Recruiter");
     write_cache(cache_dir, &custom).unwrap();
 
     let merged = merge_catalog(
-        vec![bootstrap_template("builtin:xiaoyuan").unwrap().unwrap()],
+        vec![synthetic_snap("builtin:xiaoyuan", "1.0", "小研 v1")],
         cache_dir,
     );
     let acme = merged
@@ -341,7 +307,7 @@ fn merge_catalog_includes_cache_only_org_templates() {
     assert_eq!(acme.version, "1.0");
     assert_eq!(acme.name, "Acme Recruiter");
 
-    // Bootstrap entries still present.
+    // Base entries still present.
     assert!(merged.iter().any(|t| t.template_id == "builtin:xiaoyuan"));
 }
 

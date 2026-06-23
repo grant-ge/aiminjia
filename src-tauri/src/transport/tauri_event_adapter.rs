@@ -42,15 +42,45 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "reason": reason,
             }),
         }),
+        RuntimeEventKind::StreamNotice {
+            level,
+            code,
+            message,
+            from_route,
+            to_route,
+        } => Some(LegacyEvent {
+            name: "streaming:notice".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "level": level,
+                "code": code,
+                "message": message,
+                "fromRoute": from_route,
+                "toRoute": to_route,
+            }),
+        }),
         RuntimeEventKind::StreamError {
             ref error,
             ref raw_error,
+            ref code,
+            ref retryable,
+            ref handling,
+            ref request_phase,
+            ref current_route,
+            ref alternatives,
         } => Some(LegacyEvent {
             name: "streaming:error".to_string(),
             payload: serde_json::json!({
                 "conversationId": conversation_id,
                 "error": error,
                 "rawError": raw_error,
+                "code": code,
+                "retryable": retryable,
+                "handling": handling,
+                "requestPhase": request_phase,
+                "currentRoute": current_route,
+                "alternatives": alternatives,
                 "runId": event.run_id.as_str(),
             }),
         }),
@@ -132,6 +162,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                     crate::runtime::tools::permission::PermissionMode::Plan => "plan",
                     crate::runtime::tools::permission::PermissionMode::DontAsk => "dontAsk",
                     crate::runtime::tools::permission::PermissionMode::AcceptEdits => "acceptEdits",
+                    crate::runtime::tools::permission::PermissionMode::FullAccess => "fullAccess",
                 },
                 "rememberOptions": remember_options.iter().map(|destination| match destination {
                     crate::runtime::tools::permission::PermissionDestination::Session => "session",
@@ -162,6 +193,14 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "toolName": tool_name,
                 "kind": kind,
                 "payload": payload,
+            }),
+        }),
+        RuntimeEventKind::PermissionAskResolved { tool_call_id } => Some(LegacyEvent {
+            name: "permission:resolved".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "toolCallId": tool_call_id.as_str(),
             }),
         }),
         RuntimeEventKind::UserInteractionResolved { interaction_id } => Some(LegacyEvent {
@@ -397,49 +436,31 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
 
 pub struct TauriEventAdapter {
     host: Arc<dyn RuntimeHost>,
-    /// When set, ask-style events for sessions registered in this registry are
-    /// silently dropped — IMAskCoordinator owns those events for IM sessions.
-    /// App-internal sessions (not in the registry) still flow through as before.
-    channel_sessions: Option<Arc<dyn ChannelSessionRegistry>>,
 }
 
 impl TauriEventAdapter {
     pub fn new(host: Arc<dyn RuntimeHost>) -> Self {
-        Self {
-            host,
-            channel_sessions: None,
-        }
+        Self { host }
     }
 
     /// Constructor variant that wires up the shared channel-session registry.
-    /// Use this in production (lib.rs) so that ask-style events for IM sessions
-    /// are not forwarded to the desktop UI.
+    ///
+    /// IMAskCoordinator and the desktop UI both consume ask-style events: the
+    /// coordinator renders channel-side prompts, while the desktop needs the
+    /// same event to render the in-app approval/interruption control. Keep the
+    /// signature for production wiring compatibility, but do not filter events
+    /// here.
     pub fn with_channel_sessions(
         host: Arc<dyn RuntimeHost>,
-        channel_sessions: Arc<dyn ChannelSessionRegistry>,
+        _channel_sessions: Arc<dyn ChannelSessionRegistry>,
     ) -> Self {
-        Self {
-            host,
-            channel_sessions: Some(channel_sessions),
-        }
+        Self { host }
     }
 }
 
 #[async_trait]
 impl RuntimeEventSubscriber for TauriEventAdapter {
     async fn on_event(&self, event: &RuntimeEvent) -> Result<()> {
-        // Drop ask-style events for IM channel sessions — IMAskCoordinator owns those.
-        // App-internal sessions still flow through to the desktop UI as before.
-        if let (
-            Some(registry),
-            RuntimeEventKind::PermissionAskRequired { .. }
-            | RuntimeEventKind::UserInteractionRequired { .. },
-        ) = (self.channel_sessions.as_ref(), &event.kind)
-        {
-            if registry.is_channel_session(&event.session_id) {
-                return Ok(());
-            }
-        }
         if let Some(mapped) = map_runtime_event(event) {
             self.host.emit_legacy_event(&mapped.name, mapped.payload)?;
         }
@@ -475,7 +496,10 @@ mod pending_event_tests {
             sender_nick: None,
             attachments: vec![],
             skill_command: None,
+            reasoning_mode: None,
             received_at: "2026-05-11T03:21:00Z".into(),
+            origin: Default::default(),
+            output_binding: Default::default(),
         };
         let e = evt(RuntimeEventKind::PendingQueued { item });
         let m = map_runtime_event(&e).unwrap();

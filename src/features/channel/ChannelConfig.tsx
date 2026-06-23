@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { CheckCircle2 } from 'lucide-react'
 import { type ChannelConfigView, type ChannelRegistrationBeginResult } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
-import { Button } from '@/components/ui/button'
 import {
   RegistrationModal,
   type RegistrationPollState,
 } from '@/components/registration/RegistrationModal'
+import { Button } from '@/components/ui/button'
 
 interface ChannelConfigProps {
   onSaved?: () => void
@@ -20,7 +20,7 @@ interface RegisteredCredentials {
 
 function CredentialRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/25 px-4 py-3">
+    <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
@@ -93,16 +93,16 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     return (
       <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
         <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.dingtalk.config.title')}</h2>
+          <h2 className="text-2xl font-bold text-foreground">{t('channel.dingtalk.config.title')}</h2>
         </div>
         <div className="flex-1 overflow-y-auto px-10 pb-6">
           <div className="flex w-full flex-col items-center gap-5">
-            <div className="flex w-64 flex-col items-center rounded-xl bg-emerald-50 px-8 py-5 text-emerald-500">
+            <div className="flex w-64 flex-col items-center rounded-md bg-emerald-50 px-8 py-5 text-emerald-500">
               <CheckCircle2 className="h-8 w-8" />
               <div className="mt-3 text-xl font-bold">{t('channel.dingtalk.config.scanSuccess')}</div>
               <div className="mt-1 text-sm font-semibold">{t('channel.dingtalk.config.appCreated')}</div>
             </div>
-            <div className="grid w-full gap-3 rounded-xl border border-border bg-card p-4 text-left">
+            <div className="grid w-full gap-3 rounded-md border border-border bg-card p-4 text-left">
               <CredentialRow label="AppKey" value={credentials.config.appKey} />
               <CredentialRow label="AppSecret" value={credentials.config.appSecretMasked} />
               <CredentialRow label="RobotCode" value={credentials.config.robotCode} />
@@ -114,7 +114,8 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
         </div>
         <div className="border-t border-border bg-background px-10 py-4">
           <Button
-            className="h-10 w-full rounded-full"
+            size="lg"
+            block
             onClick={() => {
               onSaved?.()
               onClose?.()
@@ -131,7 +132,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     return (
       <div className="flex max-h-[78vh] w-full flex-col items-center justify-center bg-background p-10">
         <p className="text-sm text-red-500">{error}</p>
-        <Button className="mt-4 h-10 w-64 rounded-full" onClick={handleRetry}>
+        <Button size="lg" className="mt-4 w-64" onClick={handleRetry}>
           {t('channel.dingtalk.config.retryQr')}
         </Button>
       </div>

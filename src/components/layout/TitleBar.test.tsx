@@ -1,13 +1,17 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { getDevBadgeLabel, TitleBar } from './TitleBar'
+import { useBrandingStore } from '@/stores/brandingStore'
+import { useUiStore } from '@/stores/uiStore'
 
 // Shared spies so window-control / drag wiring can be asserted. The inner
 // closure dereferences these lazily (on getCurrentWindow() call), so they are
 // already initialized by the time a test fires an event.
 const startDragging = vi.fn()
 const toggleMaximize = vi.fn()
+const isFullscreen = vi.fn()
+const onResized = vi.fn()
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
@@ -15,6 +19,8 @@ vi.mock('@tauri-apps/api/window', () => ({
     toggleMaximize,
     close: vi.fn(),
     startDragging,
+    isFullscreen,
+    onResized,
   }),
 }))
 
@@ -25,8 +31,16 @@ describe('TitleBar', () => {
 
   beforeEach(() => {
     vi.stubEnv('DEV', false)
+    localStorage.removeItem('aijia-sidebar-hidden')
+    useBrandingStore.setState({
+      productName: 'AI 猫',
+      logoUrl: '/app-icon.png',
+    })
+    useUiStore.setState({ sidebarHidden: false })
     startDragging.mockClear()
     toggleMaximize.mockClear()
+    isFullscreen.mockReset().mockResolvedValue(false)
+    onResized.mockReset().mockResolvedValue(vi.fn())
   })
 
   afterEach(() => {
@@ -34,10 +48,11 @@ describe('TitleBar', () => {
     vi.unstubAllEnvs()
   })
 
-  it('renders accent strip on macOS', () => {
+  it('renders sidebar-colored strip on macOS', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     const { container } = render(<TitleBar />)
-    expect(container.firstChild).toHaveClass('bg-primary')
+    expect(container.firstChild).toHaveStyle({ backgroundColor: 'var(--sidebar)' })
+    expect(container.firstChild).toHaveClass('text-sidebar-foreground')
   })
 
   it('renders window controls on Windows', () => {
@@ -48,10 +63,11 @@ describe('TitleBar', () => {
     expect(screen.getByLabelText('Close')).toBeInTheDocument()
   })
 
-  it('has a bottom border on Windows in production', () => {
+  it('does not add a bottom border on Windows in production', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
     const { container } = render(<TitleBar />)
-    expect(container.firstChild).toHaveClass('border-b')
+    expect(container.firstChild).not.toHaveClass('border-b')
+    expect(container.firstChild).not.toHaveClass('border-sidebar-border')
   })
 
   it('shows DEV badge when import.meta.env.DEV is true', () => {
@@ -59,6 +75,82 @@ describe('TitleBar', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     render(<TitleBar />)
     expect(screen.getByText(getDevBadgeLabel())).toBeInTheDocument()
+  })
+
+  it('places sidebar toggle on the left side of the macOS title bar', () => {
+    vi.stubEnv('DEV', true)
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+
+    const titleBar = container.firstElementChild as HTMLElement
+    const leftGroup = titleBar.firstElementChild as HTMLElement
+    const toggle = screen.getByLabelText('隐藏侧栏')
+
+    expect(leftGroup).toContainElement(toggle)
+    expect(leftGroup).toHaveClass('pl-20')
+    expect(toggle).toHaveAttribute('data-aijia-sidebar-toggle', 'true')
+    expect(container.querySelector('.lucide-panel-left')).toBeInTheDocument()
+    expect(titleBar.lastElementChild).toHaveTextContent(getDevBadgeLabel())
+  })
+
+  it('removes the macOS traffic-light padding while fullscreen', async () => {
+    isFullscreen.mockResolvedValue(true)
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+
+    const titleBar = container.firstElementChild as HTMLElement
+    const leftGroup = titleBar.firstElementChild as HTMLElement
+
+    await waitFor(() => {
+      expect(leftGroup).not.toHaveClass('pl-20')
+    })
+    expect(leftGroup).toContainElement(screen.getByLabelText('隐藏侧栏'))
+  })
+
+  it('renders route back and forward buttons in the macOS title bar', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    useUiStore.setState({
+      route: { kind: 'skill-detail', skillId: 'sales-followup' },
+      backStack: [{ kind: 'chat', conversationId: 'conv-1' }],
+      forwardStack: [],
+    })
+
+    render(<TitleBar />)
+
+    const back = screen.getByRole('button', { name: '后退' })
+    const forward = screen.getByRole('button', { name: '前进' })
+    expect(back).toBeEnabled()
+    expect(forward).toBeDisabled()
+
+    fireEvent.click(back)
+    expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'conv-1' })
+    expect(screen.getByRole('button', { name: '前进' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: '前进' }))
+    expect(useUiStore.getState().route).toEqual({
+      kind: 'skill-detail',
+      skillId: 'sales-followup',
+    })
+  })
+
+  it('switches to the collapsed sidebar icon after clicking the toggle', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+
+    fireEvent.click(screen.getByLabelText('隐藏侧栏'))
+
+    expect(screen.getByLabelText('显示侧栏')).toBeInTheDocument()
+    expect(useUiStore.getState().sidebarHidden).toBe(true)
+    expect(container.querySelector('.lucide-panel-right')).toBeInTheDocument()
+  })
+
+  it('does not render the old diagonal stripe background in DEV', () => {
+    vi.stubEnv('DEV', true)
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+    const style = (container.firstChild as HTMLElement).style
+    expect(style.backgroundColor).toBe('var(--sidebar)')
+    expect(style.backgroundImage).toBe('')
   })
 
   it('formats current dev server port in DEV badge', () => {
@@ -95,6 +187,30 @@ describe('TitleBar', () => {
       render(<TitleBar />)
       fireEvent.mouseDown(screen.getByLabelText('Close'), { buttons: 1, detail: 1 })
       expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('shows sidebar toggle from the visible left edge without starting drag', () => {
+      const { container } = render(<TitleBar />)
+      const titleBar = container.firstElementChild as HTMLElement
+      const toggle = screen.getByLabelText('隐藏侧栏')
+
+      expect(titleBar.children[1]).toBe(toggle)
+      expect(toggle).toHaveClass('ml-2')
+
+      fireEvent.mouseDown(toggle, { buttons: 1, detail: 1 })
+      expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('shows a compact tenant brand before the sidebar toggle on Windows', () => {
+      const { container } = render(<TitleBar />)
+      const titleBar = container.firstElementChild as HTMLElement
+      const brand = screen.getByTestId('titlebar-tenant-brand')
+      const toggle = screen.getByLabelText('隐藏侧栏')
+
+      expect(titleBar.firstElementChild).toBe(brand)
+      expect(titleBar.children[1]).toBe(toggle)
+      expect(screen.getByText('AI 猫')).toBeInTheDocument()
+      expect(within(brand).getByRole('img', { name: /brand logo/i })).toHaveAttribute('src', '/app-icon.png')
     })
   })
 })

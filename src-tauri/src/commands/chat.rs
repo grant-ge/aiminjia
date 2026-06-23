@@ -52,6 +52,7 @@ pub async fn send_message(
     agent_name: Option<String>,
     client_message_id: Option<String>,
     skill_command: Option<crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
+    reasoning_mode: Option<crate::runtime::chat::chat_turn_driver::ReasoningMode>,
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
     // .send_message(conversation_id, content, attachments, permission_mode, agent_name)
@@ -72,6 +73,7 @@ pub async fn send_message(
             agent_name,
             client_message_id,
             skill_command,
+            reasoning_mode,
         )
         .await;
     match &result {
@@ -172,9 +174,10 @@ pub async fn approve_permission_request(
     updated_input: Option<serde_json::Value>,
     remember: Option<bool>,
     destination: Option<crate::runtime::tools::permission::PermissionDestination>,
+    message: Option<String>,
 ) -> Result<(), String> {
     let result = adapter
-        .approve_permission_request(tool_call_id, updated_input, remember, destination)
+        .approve_permission_request(tool_call_id, updated_input, remember, destination, message)
         .await;
     match &result {
         Ok(()) => record_command_event(
@@ -253,6 +256,26 @@ pub async fn cancel_permission_request(
         ),
     }
     result
+}
+
+#[tauri::command]
+pub async fn pending_permission_snapshot_for_session(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    session_id: String,
+) -> Result<Vec<crate::transport::tauri_commands::chat::PermissionAskSnapshot>, String> {
+    adapter
+        .pending_permission_snapshot_for_session(session_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn pending_interaction_snapshot_for_session(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    session_id: String,
+) -> Result<Vec<crate::transport::tauri_commands::chat::InteractionRequiredSnapshot>, String> {
+    adapter
+        .pending_interaction_snapshot_for_session(session_id)
+        .await
 }
 
 #[tauri::command]

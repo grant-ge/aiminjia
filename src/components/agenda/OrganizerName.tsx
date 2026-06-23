@@ -7,14 +7,20 @@ interface OrganizerNameProps {
 }
 
 export function OrganizerName({ employeeId }: OrganizerNameProps) {
+  const normalizedEmployeeId = employeeId.trim()
   const [name, setName] = useState<string | null>(null)
   const [resolved, setResolved] = useState(false)
 
   useEffect(() => {
+    if (!normalizedEmployeeId || normalizedEmployeeId === 'default') {
+      setName(null)
+      setResolved(true)
+      return
+    }
     let cancelled = false
     setName(null)
     setResolved(false)
-    void employeeGet(employeeId)
+    void employeeGet(normalizedEmployeeId)
       .then((emp) => {
         if (cancelled) return
         if (emp?.name) setName(emp.name)
@@ -26,13 +32,17 @@ export function OrganizerName({ employeeId }: OrganizerNameProps) {
     return () => {
       cancelled = true
     }
-  }, [employeeId])
+  }, [normalizedEmployeeId])
 
-  const displayed = name ?? (resolved ? '未知员工' : employeeId)
+  if (!normalizedEmployeeId || normalizedEmployeeId === 'default') {
+    return null
+  }
+
+  const displayed = name ?? (resolved ? '未知员工' : normalizedEmployeeId)
   return (
     <span
       className={`text-xs ${name ? 'text-muted-foreground' : 'text-muted-foreground/60'}`}
-      title={`员工 ID：${employeeId}`}
+      title={`员工 ID：${normalizedEmployeeId}`}
     >
       @{displayed}
     </span>

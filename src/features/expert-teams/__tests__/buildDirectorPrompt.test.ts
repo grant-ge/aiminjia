@@ -3,6 +3,56 @@ import { EXPERT_TEAMS, getExpertTeam } from '../teams'
 import { buildDirectorPrompt } from '../buildDirectorPrompt'
 
 describe('buildDirectorPrompt', () => {
+  it('renders server-authored director prompt templates when provided', () => {
+    const prompt = buildDirectorPrompt({
+      id: 'talent-acquisition',
+      name: '招聘评审团',
+      emoji: '🎯',
+      tagline: '岗位画像 / 候选人评审 / 面试设计',
+      experts: [
+        {
+          name: '招聘负责人',
+          agentName: 'recruiting-lead',
+          persona: '关注招聘漏斗',
+          emoji: '🎯',
+        },
+      ],
+      examples: [],
+      composerPlaceholder: '',
+      facilitationStyle: 'rounds',
+      directorPromptTemplate: '团队={{teamName}}\n运行名={{runtimeTeamName}}\n成员={{roster}}\n议题={{topic}}\n规则={{spawnNameRule}}',
+    }, '设计销售总监岗位面试方案', 'zh-CN')
+
+    expect(prompt).toContain('团队=招聘评审团')
+    expect(prompt).toContain('运行名=expert-team-talent-acquisition')
+    expect(prompt).toContain('招聘负责人 [name="recruiting-lead"]')
+    expect(prompt).toContain('议题=设计销售总监岗位面试方案')
+    expect(prompt).toContain('spawn 子代理时')
+    expect(prompt).toContain('本地运行约束')
+    expect(prompt).toContain('TeamCreate 必须使用 team_name = "expert-team-talent-acquisition"')
+  })
+
+  it('adds a single-round override after server-authored templates', () => {
+    const prompt = buildDirectorPrompt({
+      id: 'marketing',
+      name: '市场营销策划团',
+      emoji: '📣',
+      tagline: '营销',
+      experts: [
+        { name: '增长黑客', agentName: 'growth-hacker', persona: '关注增长', emoji: '📈' },
+        { name: '渠道经理', agentName: 'channel-manager', persona: '关注渠道', emoji: '📡' },
+      ],
+      examples: [],
+      composerPlaceholder: '',
+      facilitationStyle: 'rounds',
+      directorPromptTemplate: '远端模板说：互相点评后给出共识。议题={{topic}}',
+    }, '618 大促营销节奏怎么排，只要一轮专家观点和最后共识', 'zh-CN')
+
+    expect(prompt).toContain('远端模板说：互相点评后给出共识')
+    expect(prompt).toContain('当前议题已经明确只要一轮')
+    expect(prompt).toContain('不要进入互评、交叉点评或第二轮')
+  })
+
   it.each(EXPERT_TEAMS.map((t) => [t.id, t]))('renders %s prompt', (_id, team) => {
     const prompt = buildDirectorPrompt(team, '示例议题：是否拓展东南亚市场')
     expect(prompt).toMatchSnapshot()
@@ -21,6 +71,8 @@ describe('buildDirectorPrompt', () => {
     expect(prompt).toMatch(/正方/)
     expect(prompt).toMatch(/反方/)
     expect(prompt).toMatch(/裁决|裁定/)
+    expect(prompt).not.toContain('[name="moderator"]')
+    expect(prompt).toContain('"moderator" 代表 Lead 自己')
   })
 
   it('rounds branch lists每位专家发表一轮观点', () => {

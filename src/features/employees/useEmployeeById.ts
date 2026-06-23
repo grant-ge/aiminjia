@@ -15,8 +15,8 @@ import { employeeList, type EmployeeRecord } from '@/lib/tauri'
 const cache = new Map<string, EmployeeRecord | null>()
 let inflight: Promise<void> | null = null
 
-async function ensureList() {
-  if (cache.size > 0) return
+async function ensureList(id?: string) {
+  if (id ? cache.has(id) : cache.size > 0) return
   if (inflight) return inflight
   inflight = (async () => {
     try {
@@ -37,13 +37,14 @@ export function useEmployeeById(id: string | null | undefined): EmployeeRecord |
   )
 
   useEffect(() => {
-    if (!id) {
-      setEmp(null)
-      return
-    }
     let cancelled = false
     ;(async () => {
-      await ensureList()
+      if (!id) {
+        await Promise.resolve()
+        if (!cancelled) setEmp(null)
+        return
+      }
+      await ensureList(id)
       if (!cancelled) setEmp(cache.get(id) ?? null)
     })()
     return () => {

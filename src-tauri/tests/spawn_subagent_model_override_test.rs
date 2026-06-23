@@ -23,11 +23,11 @@ fn model_override_some_replaces_primary_model() {
 #[test]
 fn model_override_none_inherits_parent_model() {
     let base = AppSettings {
-        primary_model: "claude".to_string(),
+        primary_model: "custom".to_string(),
         ..AppSettings::default()
     };
     let effective = effective_settings_for_subagent(&base, None);
-    assert_eq!(effective.primary_model, "claude");
+    assert_eq!(effective.primary_model, "custom");
 }
 
 #[test]
@@ -35,9 +35,9 @@ fn model_override_empty_string_treated_as_inherit() {
     // Defensive: SubAgentConfig.model_override is Option<String>; empty string should
     // be treated as "no override" to avoid breaking gateway routing on bad input.
     let base = AppSettings {
-        primary_model: "claude".to_string(),
+        primary_model: "custom".to_string(),
         ..AppSettings::default()
     };
     let effective = effective_settings_for_subagent(&base, Some(""));
-    assert_eq!(effective.primary_model, "claude");
+    assert_eq!(effective.primary_model, "custom");
 }

@@ -5,13 +5,18 @@ vi.mock('@/lib/tauri', () => ({
   cloudLogout: vi.fn(),
   getCloudAuth: vi.fn(),
   getCloudModels: vi.fn(),
+  getLastBrand: vi.fn().mockResolvedValue(null),
+  saveLastBrand: vi.fn().mockResolvedValue(undefined),
 }))
 
+import { getCloudAuth, getCloudModels } from '@/lib/tauri'
 import { useAuthStore } from './authStore'
 import { useGeneratedFilePreviewStore } from './generatedFilePreviewStore'
 import { useInteractionStore } from './interactionStore'
 import { usePendingStore } from './pendingStore'
 import { useTeamStore } from './teamStore'
+
+const tauriMock = vi.mocked({ getCloudAuth, getCloudModels })
 
 describe('authStore user-scoped reset', () => {
   beforeEach(() => {
@@ -74,5 +79,21 @@ describe('authStore user-scoped reset', () => {
     useAuthStore.getState().clearAndRedirect({ kind: 'skill-center' })
 
     expect(useAuthStore.getState().redirectFrom).toEqual({ kind: 'skill-center' })
+  })
+
+  it('does not restore stale auth when model refresh reports login expired', async () => {
+    tauriMock.getCloudAuth.mockResolvedValueOnce({
+      loggedIn: true,
+      user: { id: 43, name: '孙宏伟', username: 'sunhongwei' },
+      tenant: { id: 17, name: 'Tenant 17', balance: '0', productName: 'AI小家体验中心' },
+      models: [],
+    })
+    tauriMock.getCloudModels.mockRejectedValueOnce(new Error('登录已过期，请重新登录'))
+
+    await useAuthStore.getState().restoreFromStorage()
+
+    expect(useAuthStore.getState().isLoggedIn).toBe(false)
+    expect(useAuthStore.getState().user).toBeNull()
+    expect(useAuthStore.getState().tenant).toBeNull()
   })
 })

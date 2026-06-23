@@ -258,10 +258,17 @@ fn build_default_catalog() -> ToolCatalog {
             "PowerShell",
             "在授权工作目录中执行 PowerShell 命令（Windows 平台专用）。\
             优先使用 pwsh.exe（PowerShell 7+，支持 `&&` `||`），否则回退 powershell.exe（5.1，**不支持 `&&`/`||`**，请用 `;` 分隔或显式判断 `$LASTEXITCODE`）。\
+            \n\nPowerShell 语法要点：\
+            \n- 环境变量读取/设置使用 `$env:NAME` / `$env:NAME = \"value\"`，不要使用 bash 的 `export`。\
+            \n- 调用原生 exe/cmd/ps1 或路径含空格的程序时，用 call operator：`& \"C:\\Program Files\\App\\app.exe\" arg1 arg2`。\
+            \n- 已安装的 `.cmd` CLI 直接用 `& \"C:\\path\\tool.cmd\" ...` 调用；除非用户明确需要 cmd.exe 语义，不要包 `cmd /c`。\
+            \n- `command` 默认必须是单行字符串；不要用 CR/LF 换行分隔命令，顺序执行用 `;`。PowerShell 7+ 可用 `&&`/`||`，5.1 用 `A; if ($?) { B }`。\
+            \n- 不要把可执行路径或普通参数拆成多行，绝不要把 `C:\\path\\tool.cmd` 这种路径切到下一行；需要传递多行文本时才使用 here-string（如 `@' ... '@`，结束标记必须顶格）。\
+            \n- 原生命令参数被 PowerShell 误解析时，可使用 stop-parsing token `--%`。\
             \n\n用法说明：\
             \n- 文件操作：`Get-ChildItem`、`Get-Content`、`Remove-Item -Recurse -Force`\
             \n- 文本搜索：`Select-String -Pattern 'foo' -Path *.txt`（grep 等价）\
-            \n- 调用 .exe：直接写程序名即可，如 `python script.py`、`node app.js`\
+            \n- 调用 .exe/.cmd：优先用上面的 PowerShell call operator 格式，尤其是绝对路径或路径含空格时\
             \n- **不要**使用 Unix 专属命令（grep/find/rm/cat/ls -la 等不存在或行为不同）\
             \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
@@ -276,7 +283,7 @@ fn build_default_catalog() -> ToolCatalog {
             "type": "object",
             "required": ["command"],
             "properties": {
-                "command": { "type": "string", "description": "要执行的 PowerShell 命令" },
+                "command": { "type": "string", "description": "要执行的 PowerShell 命令；默认必须是单行字符串，顺序执行用 ;，不要把可执行路径或普通参数拆成多行" },
                 "timeout": {
                     "type": "integer",
                     "description": "超时毫秒数，默认 120000（120 秒），最大 600000（10 分钟）",
@@ -348,12 +355,115 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "ImageTask",
+            "创建或编辑图片的产品级工具。用于文生图、基于参考图改图、生成变体；输入使用 AIjia 图片任务协议，不暴露 LLM 或上游模型供应商字段。\
+            \n\n使用规则：\
+            \n- 文生图使用 action=image.create，可不传 input_images。\
+            \n- 图生图、参考图编辑、风格迁移或变体使用 action=image.edit 或 image.variation，并传 input_images。\
+            \n- input_images 可使用用户附件中的 filePath/fileId；不要传 provider 字段如 image、response_format、model。\
+            \n- 工具会把生成图片保存为当前会话的 generated file，并返回 fileId。",
+        )
+        .with_kind(ToolKind::Power)
+        .with_destructive(true)
+        .with_default_timeout_secs(180)
+        .with_capability_scope(["network", "workspace:read", "workspace:write"]),
+        json!({
+            "type": "object",
+            "required": ["action", "instruction"],
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["image.create", "image.edit", "image.variation"],
+                    "description": "图片任务类型：文生图、基于输入图编辑、或生成输入图变体"
+                },
+                "instruction": {
+                    "type": "string",
+                    "description": "面向产品能力的图片生成/编辑意图。描述要保留、改变、风格、构图、颜色、文字等要求"
+                },
+                "input_images": {
+                    "type": "array",
+                    "description": "参考图片、源图或蒙版。image.edit/image.variation 必填至少一张",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "图片文件路径。可使用用户附件 files[].filePath，或相对当前授权工作目录的路径"
+                            },
+                            "file_id": {
+                                "type": "string",
+                                "description": "图片文件 ID。可使用用户附件 files[].id 或已生成图片的 fileId"
+                            },
+                            "role": {
+                                "type": "string",
+                                "enum": ["source", "reference", "style_reference", "composition_reference", "mask"],
+                                "description": "图片用途，默认 source"
+                            },
+                            "mime_type": {
+                                "type": "string",
+                                "description": "图片 MIME，如 image/png、image/jpeg、image/webp。通常可由扩展名推断"
+                            },
+                            "weight": {
+                                "type": "number",
+                                "description": "参考权重，按需传递"
+                            }
+                        },
+                        "anyOf": [
+                            { "required": ["file_path"] },
+                            { "required": ["file_id"] }
+                        ]
+                    },
+                    "default": []
+                },
+                "output": {
+                    "type": "object",
+                    "description": "输出要求",
+                    "properties": {
+                        "count": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10,
+                            "description": "生成图片数量，默认 1"
+                        },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"],
+                            "description": "输出比例"
+                        },
+                        "width": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "输出宽度。通常优先使用 aspect_ratio"
+                        },
+                        "height": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "输出高度。通常优先使用 aspect_ratio"
+                        },
+                        "format": {
+                            "type": "string",
+                            "enum": ["png", "jpeg", "jpg", "webp"],
+                            "description": "输出格式，默认 png"
+                        },
+                        "quality": {
+                            "type": "string",
+                            "enum": ["standard", "high"],
+                            "description": "输出质量"
+                        }
+                    }
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "Agent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型或不同模型。`subagent_type` 取值范围在每轮 turn 的工具描述动态列表中给出，包含 builtin 类型、用户自定义 agent、以及当前用户已雇佣的数字员工 ID（`emp-...`）。\
-            \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
-            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
-            \n\nTeammate 派活路径（subagent_type 选数字员工 + team_name + name）：从该 Employee 加载系统提示和工具白名单，加入当前 Session 的 Team 作为 Teammate 运行。`team_name` 非空时 `name` 为必填。",
+            \n\n默认路径（run_in_background=false 或省略）：子 Agent 先以前台方式运行；如果在前台阻塞预算内完成，直接返回最终输出文本；如果超过预算，系统会自动返回 `task_id`（`task_type=local_agent`）并让同一个子 Agent 继续在后台执行。\
+            \n\n异步路径（run_in_background=true）：立即返回 `agent_id/task_id`（`task_type=local_agent`）；子 Agent 从一开始就在后台运行。后台任务都可用 TaskOutput(task_id=..., task_type=\"local_agent\", offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
+            \n\nTeammate 派活路径（显式传 team_name + name）：加入当前 Session 的 Team 作为 Teammate 运行。`subagent_type` 可以是 builtin/通用 Agent，也可以是用户明确要求或确需其专属能力的数字员工 `emp-...`。省略 `team_name` 时即使当前已有 active team，也按普通独立子 Agent 运行。",
         )
         .with_kind(ToolKind::Composite)
         .with_capability_scope(["workspace:write"]),
@@ -388,7 +498,7 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "team_name": {
                     "type": "string",
-                    "description": "目标 Team 名称。非空时将此 Agent 作为 Teammate 加入当前 Session 的 Team（Team 必须已通过 TeamCreate 创建）。此时 name 为必填。"
+                    "description": "目标 Team 名称。非空时将此 Agent 作为 Teammate 加入当前 Session 的 Team（Team 必须已通过 TeamCreate 创建）。此时 name 为必填。省略时始终按普通独立子 Agent 运行，不会因 active team 自动加入团队。"
                 }
             }
         }),
@@ -402,6 +512,7 @@ fn build_default_catalog() -> ToolCatalog {
             Bash/PowerShell({run_in_background: true}) 立即返回 task_id（task_type=local_bash）。\
             子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
             期间或之后用 TaskOutput(task_id=..., offset=N) 读取产出。\
+            \n\n不要用 TaskOutput 读取 Team/Teammate 成员发言；团队成员的对外发言只通过 SendMessage / peer-messages 进入主对话。\
             \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
         )
         .with_kind(ToolKind::Support)
@@ -450,7 +561,8 @@ fn build_default_catalog() -> ToolCatalog {
             "AskUserQuestion",
             "向用户提出结构化多选问题，等待用户回答后继续。\
             \n\n用途：收集用户偏好、澄清歧义、让用户在多个方案中选择。\
-            \n\n每次调用支持 1-4 个问题，每个问题 2-4 个选项，用户始终可以选择 Other 输入自定义回答。",
+            \n\n每次调用支持 1-4 个问题，每个问题 2-4 个选项。\
+            \n\n不要在 options 中添加“其他”“其它”“Other”“Other (please specify)”或任何同义的自定义回答选项；如果现有选项都不合适，用户界面会自己提供自定义输入入口。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true),
@@ -471,6 +583,7 @@ fn build_default_catalog() -> ToolCatalog {
                             "header": { "type": "string" },
                             "options": {
                                 "type": "array",
+                                "description": "只填写具体、互斥的业务选项；不要添加“其他”“其它”“Other”或要求用户说明的兜底选项。",
                                 "minItems": 2,
                                 "maxItems": 4,
                                 "items": {
@@ -623,7 +736,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TeamDelete",
-            "解散一个具名 team：取消该 team 内所有 Teammate 的 cancel token、移除 in-memory entry、删除 teams/{team_name}/ 目录、清理三元 key 注册表。team_name 省略时使用当前 active team；team 不存在静默 noop。一个 conversation 可能有多个 team，删除一个不影响其他。",
+            "解散一个具名 team：取消该 team 内所有 Teammate 的 cancel token、移除 in-memory entry、标记 teams/{team_name}/config.json 为 deleted、清理三元 key 注册表。team_name 省略时使用当前 active team；team 不存在静默 noop。TeamDelete 是本轮 Team 编排的终止信号，成功后当前 Lead turn 会停止；不要在没有收到真实 Teammate 回复时调用它再继续用普通 Agent/Bash/Write 模拟专家讨论。",
         )
         .with_kind(ToolKind::Support),
         json!({
@@ -897,6 +1010,7 @@ fn build_default_catalog() -> ToolCatalog {
         .with_read_only(false),
         json!({
             "type": "object",
+            "required": [],
             "properties": {}
         }),
     ));
@@ -904,13 +1018,15 @@ fn build_default_catalog() -> ToolCatalog {
     c
 }
 
-/// daily 模式允许 LLM 直接调用的工具集（Primitive + 必要 Support 工具）。
+/// daily 模式允许 LLM 直接调用的跨平台逻辑工具集（Primitive + 必要 Support 工具）。
 ///
 /// 对齐原子工具模型；register_runtime 注册的工具默认走 ToolDispatcher。
 /// `Skill` 是例外：它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
+///
+/// 注意：Shell 工具需要按当前平台二次过滤。调用方给 LLM 或执行白名单使用时，
+/// 必须走 [`daily_allowed_tools_for_current_platform`]，不能直接使用本常量。
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
-    // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
-    // Shell：每平台只注册其中一个（Unix=bash, Windows=powershell），过滤层会自动隐藏不可达的那个
+    // Shell：每平台只注册其中一个（Unix=Bash, Windows=PowerShell）。
     "Bash",
     "PowerShell",
     "Read",
@@ -921,6 +1037,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "WriteMemory",
     "SearchMemory",
     "WebSearch",
+    "ImageTask",
     "Agent",
     "TaskOutput",
     "Skill",
@@ -946,6 +1063,41 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "RefreshSkills",
 ];
 
+/// 某个工具在当前编译平台是否可执行。
+pub fn tool_available_on_current_platform(tool_name: &str) -> bool {
+    match tool_name {
+        "Bash" => !cfg!(windows),
+        "PowerShell" => cfg!(windows),
+        _ => true,
+    }
+}
+
+/// daily 模式当前平台真正允许暴露/执行的工具集。
+pub fn daily_allowed_tools_for_current_platform() -> impl Iterator<Item = &'static str> {
+    DAILY_ALLOWED_TOOLS
+        .iter()
+        .copied()
+        .filter(|tool_name| tool_available_on_current_platform(tool_name))
+}
+
 /// 全局默认 catalog（延迟初始化）。
 pub static TOOL_CATALOG: LazyLock<DynamicToolCatalog> =
     LazyLock::new(DynamicToolCatalog::new_with_defaults);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daily_allowed_tools_are_filtered_by_current_platform() {
+        let allowed: Vec<&str> = daily_allowed_tools_for_current_platform().collect();
+
+        if cfg!(windows) {
+            assert!(!allowed.contains(&"Bash"));
+            assert!(allowed.contains(&"PowerShell"));
+        } else {
+            assert!(allowed.contains(&"Bash"));
+            assert!(!allowed.contains(&"PowerShell"));
+        }
+    }
+}

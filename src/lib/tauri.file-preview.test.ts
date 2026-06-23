@@ -5,7 +5,14 @@ const coreMock = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: coreMock.invoke }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }))
 
-import { getFilePreview, type FilePreview } from './tauri'
+import {
+  getFilePreview,
+  isGeneratedFileAvailable,
+  isLocalFileAvailable,
+  saveGeneratedFileAs,
+  saveLocalFileAs,
+  type FilePreview,
+} from './tauri'
 
 describe('tauri file preview command', () => {
   beforeEach(() => { coreMock.invoke.mockReset() })
@@ -37,5 +44,51 @@ describe('tauri file preview command', () => {
     coreMock.invoke.mockResolvedValue(preview)
 
     await expect(getFilePreview('gf-chart', 'conv-1')).resolves.toEqual(preview)
+  })
+
+  it('invokes generated file availability through the conversation file index', async () => {
+    coreMock.invoke.mockResolvedValue(true)
+
+    await expect(isGeneratedFileAvailable('gf-chart', 'conv-1')).resolves.toBe(true)
+
+    expect(coreMock.invoke).toHaveBeenCalledWith('is_generated_file_available', {
+      fileId: 'gf-chart',
+      conversationId: 'conv-1',
+    })
+  })
+
+  it('invokes local file availability for explicit local artifact paths', async () => {
+    coreMock.invoke.mockResolvedValue(false)
+
+    await expect(isLocalFileAvailable('/tmp/missing.png')).resolves.toBe(false)
+
+    expect(coreMock.invoke).toHaveBeenCalledWith('is_local_file_available', {
+      path: '/tmp/missing.png',
+    })
+  })
+
+  it('invokes save_generated_file_as with the selected destination path', async () => {
+    coreMock.invoke.mockResolvedValue('/Users/me/Downloads/chart.png')
+
+    await expect(saveGeneratedFileAs('gf-chart', 'conv-1', '/Users/me/Downloads/chart.png'))
+      .resolves.toBe('/Users/me/Downloads/chart.png')
+
+    expect(coreMock.invoke).toHaveBeenCalledWith('save_generated_file_as', {
+      fileId: 'gf-chart',
+      conversationId: 'conv-1',
+      destinationPath: '/Users/me/Downloads/chart.png',
+    })
+  })
+
+  it('invokes save_local_file_as for local preview targets', async () => {
+    coreMock.invoke.mockResolvedValue('/Users/me/Downloads/source.png')
+
+    await expect(saveLocalFileAs('/tmp/source.png', '/Users/me/Downloads/source.png'))
+      .resolves.toBe('/Users/me/Downloads/source.png')
+
+    expect(coreMock.invoke).toHaveBeenCalledWith('save_local_file_as', {
+      path: '/tmp/source.png',
+      destinationPath: '/Users/me/Downloads/source.png',
+    })
   })
 })

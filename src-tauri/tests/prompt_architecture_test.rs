@@ -209,13 +209,26 @@ fn prompt_assembler_matches_legacy_daily_prompt_parts() {
 
 #[test]
 fn reminder_builder_outputs_system_reminder_user_message() {
-    let message = ReminderBuilder::date_message("2026年04月26日", "2026-04-26");
+    let message = ReminderBuilder::date_message("2026年04月26日", "2026-04-26", "星期日");
 
     assert_eq!(
         message,
         serde_json::json!({
             "role": "user",
-            "content": "<system-reminder>\n今天是 2026年04月26日（2026-04-26）。\n</system-reminder>",
+            "content": "<system-reminder>\n今天是 2026年04月26日 星期日（2026-04-26）。\n</system-reminder>",
+        })
+    );
+}
+
+#[test]
+fn reminder_builder_outputs_date_time_system_reminder_user_message() {
+    let message = ReminderBuilder::date_time_message("2026年04月26日", "2026-04-26", "14:23:45");
+
+    assert_eq!(
+        message,
+        serde_json::json!({
+            "role": "user",
+            "content": "<system-reminder>\n当前本地时间是 2026年04月26日 14:23:45（2026-04-26 14:23:45）。\n</system-reminder>",
         })
     );
 }

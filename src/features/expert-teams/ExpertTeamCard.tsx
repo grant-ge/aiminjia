@@ -1,8 +1,18 @@
 // code/src/features/expert-teams/ExpertTeamCard.tsx
 import { useTranslation } from 'react-i18next'
 import type { ExpertTeam, ExpertTeamId } from './teams'
-import { getExpertAvatarUrl } from './expertAvatar'
-import { getExpertTeamLogo } from './teamLogo'
+import { Button } from '@/components/ui/button'
+import { ExpertTeamAvatarStack } from './ExpertTeamAvatarStack'
+
+const EXPERT_TEAM_CHIP_CLASS =
+  'max-w-full truncate rounded-[2px] bg-muted px-2 py-0.5 text-2xs text-muted-foreground'
+
+function styleLabel(style: ExpertTeam['facilitationStyle'], language: string): string {
+  const en = language.toLowerCase().startsWith('en')
+  if (style === 'debate') return en ? 'Debate' : '辩论推演'
+  if (style === 'open') return en ? 'Dynamic roundtable' : '动态圆桌'
+  return en ? 'Round-robin discussion' : '多角色轮询'
+}
 
 interface ExpertTeamCardProps {
   team: ExpertTeam
@@ -10,79 +20,48 @@ interface ExpertTeamCardProps {
 }
 
 export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
-  const { t } = useTranslation()
-  const logo = getExpertTeamLogo(team.id)
-  const TeamLogo = logo.icon
+  const { t, i18n } = useTranslation()
+  const memberLabel = team.experts.length > 0
+    ? t('ExpertTeams.detail.memberCount', { count: team.experts.length })
+    : t('ExpertTeams.openTableHint')
+  const subtitle = `${memberLabel} / ${styleLabel(team.facilitationStyle, i18n.language)}`
+  const description = team.description?.trim() || team.tagline
 
   return (
-    <button
+    <Button unstyled
       type="button"
       data-aijia-expert-team-card
       data-aijia-expert-team-id={team.id}
       data-aijia-expert-team-name={team.name}
       onClick={() => onStart(team.id)}
-      aria-label={t('ExpertTeams.startTeam', { name: team.name })}
-      className="flex h-full w-full flex-col gap-3 rounded-lg border border-border bg-card p-4 text-left text-card-foreground transition-colors hover:border-primary/50 hover:bg-accent/30"
+      aria-label={t('ExpertTeams.openTeamDetail', { name: team.name })}
+      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-border/50 bg-card p-3 text-left text-card-foreground shadow-[0_1px_3px_rgba(0,0,0,0.035)] transition-all hover:border-border/70 hover:bg-muted/20"
     >
-      <div className="flex items-center gap-2">
-        <span
-          className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg ${logo.className}`}
-          data-testid={`expert-team-logo-${team.id}`}
-          aria-hidden
-        >
-          <TeamLogo className="h-4 w-4" />
-        </span>
-        <span className="text-base font-medium">{team.name}</span>
-      </div>
-      <p className="text-sm text-muted-foreground">{team.tagline}</p>
-
-      {/* Member roster — pre-generated DiceBear "personas" avatars,
-          stored under public/expert-avatars/<teamId>/. Open-table teams
-          have empty experts[] (主持人按议题召集); we show a hint instead. */}
-      {team.experts.length > 0 ? (
-        <div className="flex flex-wrap gap-2.5" data-testid="expert-team-roster">
-          {team.experts.map((expert) => {
-            const avatarUrl = getExpertAvatarUrl(team.id, expert.avatarName ?? expert.name)
-            return (
-              <div
-                key={expert.name}
-                title={`${expert.name} — ${expert.persona}`}
-                className="flex flex-col items-center gap-0.5"
-              >
-                <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <span aria-hidden className="text-lg">
-                      {expert.emoji}
-                    </span>
-                  )}
-                </span>
-                <span className="max-w-[64px] truncate text-[10px] leading-tight text-muted-foreground">
-                  {expert.name}
-                </span>
-              </div>
-            )
-          })}
+      <div className="flex min-w-0 items-start gap-3">
+        <ExpertTeamAvatarStack team={team} />
+        <div className="min-w-0 pt-0.5">
+          <p className="truncate text-sm font-semibold leading-[22px] text-foreground">{team.name}</p>
+          <p className="truncate text-xs leading-4 text-muted-foreground">{subtitle}</p>
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">{t('ExpertTeams.openTableHint')}</p>
-      )}
+      </div>
 
-      <div className="mt-auto flex flex-wrap gap-1.5">
-        {team.examples.map((ex) => (
+      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{description}</p>
+
+      <div className="mt-auto flex max-h-6 flex-wrap gap-1.5 overflow-hidden">
+        {team.workplaceCategoryName && (
+          <span className={EXPERT_TEAM_CHIP_CLASS}>
+            {team.workplaceCategoryName}
+          </span>
+        )}
+        {team.examples.slice(0, 3).map((ex) => (
           <span
             key={ex}
-            className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            className={EXPERT_TEAM_CHIP_CLASS}
           >
             {ex}
           </span>
         ))}
       </div>
-    </button>
+    </Button>
   )
 }

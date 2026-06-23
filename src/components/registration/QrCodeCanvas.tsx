@@ -49,7 +49,7 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
   }, [value])
 
   return (
-    <div className="relative flex h-60 w-60 items-center justify-center rounded-3xl border border-border bg-white p-4">
+    <div className="relative flex h-60 w-60 items-center justify-center rounded-md border border-border bg-white p-4">
       {qrDataUrl ? (
         <img src={qrDataUrl} alt={alt} className="h-full w-full" />
       ) : (
@@ -60,7 +60,7 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
           aria-label={alt}
           aria-busy="true"
           role="status"
-          className="flex h-full w-full flex-col items-center justify-center gap-3 rounded bg-white"
+          className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-md bg-white"
         >
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="text-xs font-medium text-zinc-500">二维码加载中…</p>
@@ -69,7 +69,7 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
       {loading && qrDataUrl && (
         <div
           data-testid="qr-spinner-overlay"
-          className="absolute inset-4 flex items-center justify-center rounded-xl bg-background/75 backdrop-blur-[1px]"
+          className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]"
         >
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>

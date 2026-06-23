@@ -4,6 +4,7 @@ import { Link2, X } from 'lucide-react'
 import { NodeViewWrapper } from '@tiptap/react'
 
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 interface LinkChipViewProps {
   node: { attrs: { url: string } }
@@ -55,7 +56,7 @@ export function LinkChipView({ node, deleteNode }: LinkChipViewProps) {
         <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       )}
       <span className="truncate">{host}</span>
-      <button
+      <Button unstyled
         type="button"
         aria-label="remove link"
         onMouseDown={(e) => e.preventDefault()}
@@ -64,10 +65,10 @@ export function LinkChipView({ node, deleteNode }: LinkChipViewProps) {
           e.stopPropagation()
           deleteNode()
         }}
-        className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-background"
+        className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-md hover:bg-background"
       >
         <X className="h-3 w-3" />
-      </button>
+      </Button>
     </NodeViewWrapper>
   )
 }

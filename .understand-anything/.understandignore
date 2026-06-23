@@ -1,0 +1,75 @@
+# .understandignore - Understand-Anything scan scope for lotus-app
+#
+# Keep the graph focused on current architecture, source, commands, tests, and
+# maintained docs. Exclude generated artifacts, dependencies, archives, and
+# large historical/migration knowledge dumps.
+
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+build/
+build-logs/
+coverage/
+.runtime-cache/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/runtime/
+dist-skills/
+
+# Local scratch and agent state
+.git/
+.codex/
+.superpowers/
+.worktrees/
+.playwright-cli/
+.playwright-mcp/
+.serena/
+output/
+tmp/
+signing-workspace/
+
+# Historical docs and large generated/migration corpora
+docs/archive/
+docs/skills-migration/
+docs/superpowers/prototypes/
+docs/superpowers/specs/assets/
+docs/test-intents/run-reports/
+
+# Binary/media/assets that do not help the architecture graph
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.icns
+*.svg
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.zip
+*.tar
+*.gz
+*.dmg
+*.exe
+*.sig
+*.woff
+*.woff2
+*.ttf
+*.eot
+
+# Lock files and local secrets
+*.lock
+pnpm-lock.yaml
+Cargo.lock
+.env
+.env.*
+*.local
+*.log
+*.snap
+.release-state.json

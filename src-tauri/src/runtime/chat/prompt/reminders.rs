@@ -1,8 +1,32 @@
 pub struct ReminderBuilder;
 
 impl ReminderBuilder {
-    pub fn date_message(today_cn: &str, today_iso: &str) -> serde_json::Value {
-        Self::system_reminder_user_message(format!("今天是 {today_cn}（{today_iso}）。"))
+    pub fn date_message(today_cn: &str, today_iso: &str, weekday_cn: &str) -> serde_json::Value {
+        Self::system_reminder_user_message(format!(
+            "今天是 {today_cn} {weekday_cn}（{today_iso}）。"
+        ))
+    }
+
+    pub fn weekday_cn(weekday: chrono::Weekday) -> &'static str {
+        match weekday {
+            chrono::Weekday::Mon => "星期一",
+            chrono::Weekday::Tue => "星期二",
+            chrono::Weekday::Wed => "星期三",
+            chrono::Weekday::Thu => "星期四",
+            chrono::Weekday::Fri => "星期五",
+            chrono::Weekday::Sat => "星期六",
+            chrono::Weekday::Sun => "星期日",
+        }
+    }
+
+    pub fn date_time_message(
+        today_cn: &str,
+        today_iso: &str,
+        local_time_hms: &str,
+    ) -> serde_json::Value {
+        Self::system_reminder_user_message(format!(
+            "当前本地时间是 {today_cn} {local_time_hms}（{today_iso} {local_time_hms}）。"
+        ))
     }
 
     pub fn system_reminder_user_message(content: impl AsRef<str>) -> serde_json::Value {
@@ -26,5 +50,18 @@ impl ReminderBuilder {
                 "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# {title}\n{body}\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n"
             ),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReminderBuilder;
+
+    #[test]
+    fn date_message_includes_weekday() {
+        let message = ReminderBuilder::date_message("2026年06月09日", "2026-06-09", "星期二");
+        let content = message["content"].as_str().unwrap();
+
+        assert!(content.contains("今天是 2026年06月09日 星期二（2026-06-09）。"));
     }
 }

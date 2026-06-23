@@ -5,10 +5,12 @@ import { useMemo } from 'react'
 import { createMarkdownComponents } from './markdown/markdownComponents'
 import { allowMarkdownUrl } from './markdown/FileLink'
 import { useAuthorizedWorkspace } from '@/hooks/useAuthorizedWorkspace'
+import type { GeneratedFile } from '@/types/message'
 
 interface AssistantMarkdownProps {
   text: string
   conversationId?: string
+  generatedFiles?: GeneratedFile[]
   /**
    * Disable rehype-highlight (syntax highlighting).
    *
@@ -24,20 +26,26 @@ const REHYPE_PLUGINS_WITH_HIGHLIGHT: Parameters<typeof ReactMarkdown>[0]['rehype
 ]
 const REHYPE_PLUGINS_NO_HIGHLIGHT: Parameters<typeof ReactMarkdown>[0]['rehypePlugins'] = []
 
-export function AssistantMarkdown({ text, conversationId, disableCodeHighlight = false }: AssistantMarkdownProps) {
+export function AssistantMarkdown({
+  text,
+  conversationId,
+  generatedFiles,
+  disableCodeHighlight = false,
+}: AssistantMarkdownProps) {
   const { workspace } = useAuthorizedWorkspace(conversationId ?? null)
   const markdownComponents = useMemo(
     () => createMarkdownComponents({
       conversationId,
       workspaceRoot: workspace?.rootPath,
+      generatedFiles,
     }),
-    [conversationId, workspace?.rootPath],
+    [conversationId, workspace?.rootPath, generatedFiles],
   )
 
   if (!text.trim()) return null
 
   return (
-    <div className="assistant-markdown text-[15px] leading-[1.65] tracking-[-0.003em]">
+    <div className="assistant-markdown text-sm leading-[1.58] tracking-normal">
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={

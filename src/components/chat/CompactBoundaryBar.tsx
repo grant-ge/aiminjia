@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Archive, ChevronDown, ChevronRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface CompactBoundaryBarProps {
   preTokens?: number
@@ -32,7 +33,7 @@ export function CompactBoundaryBar({
         className="w-full max-w-xl rounded-md border border-border bg-muted/40 text-muted-foreground"
         data-aijia-compact-boundary
       >
-        <button
+        <Button unstyled
           type="button"
           aria-expanded={open}
           data-aijia-compact-boundary-toggle
@@ -43,7 +44,7 @@ export function CompactBoundaryBar({
           <Archive className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span className="font-medium text-foreground">对话已压缩</span>
           {saved ? <span>节省 {saved} tokens</span> : null}
-        </button>
+        </Button>
         {open ? (
           <div className="grid grid-cols-3 gap-2 border-t border-border px-3 py-2 text-xs">
             <div>

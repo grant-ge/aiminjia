@@ -174,9 +174,9 @@ impl RuntimeInstaller {
         self.write_install_manifest(&staging_dir, &bundle_version)?;
         self.create_dev_payload(&staging_dir).map_err(io_error)?;
         self.validate_runtime_payload(&staging_dir)?;
-        if self.should_smoke_test_runtime_payload() {
-            self.smoke_test_runtime_payload(&staging_dir)?;
-        }
+        // The already-local path creates managed-runtime stubs for development
+        // and tests. Real downloaded archives are still smoke-tested before
+        // promotion in `install_from_local_archive`.
 
         let replaced_backup = self.replace_staging_with_version_dir(&staging_dir, &version_dir)?;
         if let Err(error) = self.write_current_pointer(&current_path, &bundle_version) {

@@ -123,6 +123,8 @@ export function PermissionAskDialog({
     default: '默认模式',
     plan: '计划模式',
     dontAsk: '禁止询问模式',
+    acceptEdits: '自动编辑模式',
+    fullAccess: '完全访问模式',
   }[ask.mode]
 
   return (
@@ -185,7 +187,7 @@ export function PermissionAskDialog({
             {ask.suggestions.map((suggestion) => (
               <span
                 key={suggestion}
-                className="rounded px-2 py-0.5 text-xs"
+                className="rounded-md px-2 py-0.5 text-xs"
                 style={{
                   background: 'var(--color-bg-subtle)',
                   color: 'var(--color-text-muted)',

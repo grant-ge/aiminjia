@@ -4,8 +4,8 @@
  */
 import { useTranslation } from 'react-i18next'
 import type { SettingsModalKey } from '@/stores/uiStore'
-import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 export interface SettingsMenuItem {
   key: SettingsModalKey
@@ -24,7 +24,7 @@ export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', labelKey: 'settings.tabs.general' },
   { key: 'account-billing', labelKey: 'settings.billing.title' },
   { key: 'usage', labelKey: 'settings.tabs.usage', disabled: true },
-  { key: 'permissions', labelKey: 'settings.tabs.permissions', disabled: true },
+  { key: 'permissions', labelKey: 'settings.tabs.permissions' },
   { key: 'mcp', labelKey: 'settings.tabs.mcp', disabled: true },
   { key: 'sso', labelKey: 'settings.tabs.sso', disabled: true },
   { key: 'shortcuts', labelKey: 'settings.tabs.shortcuts', disabled: true },
@@ -40,20 +40,17 @@ interface SettingsMenuProps {
 
 export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
   const { t } = useTranslation()
-  const tenant = useAuthStore((s) => s.tenant)
-  const isPersonal = tenant?.tenantType === 'personal'
   return (
-    <aside className="flex min-h-0 flex-col rounded-l-xl bg-secondary px-4 py-6">
+    <aside className="flex min-h-0 flex-col rounded-l-md bg-secondary px-4 py-6">
       <div className="mb-2 shrink-0 text-lg font-bold text-foreground">{t('settings.tabs.title')}</div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         {SETTINGS_MENU_ITEMS
           .filter((it) => !it.disabled)
-          .filter((it) => it.key !== 'account-billing' || isPersonal)
           .map((it) => {
           const active = it.key === activeKey
           const label = t(it.labelKey)
           return (
-            <button
+            <Button unstyled
               key={it.key}
               type="button"
               data-aijia-settings-panel={it.key}
@@ -69,7 +66,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
               )}
             >
               <span className="min-w-0 flex-1 truncate">{label}</span>
-            </button>
+            </Button>
           )
         })}
       </div>

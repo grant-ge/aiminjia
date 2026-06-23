@@ -3,6 +3,7 @@
  * Based on visual-prototype-zh.html .modal styles.
  */
 import type { ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 type ModalSize = 'sm' | 'md' | 'lg'
 
@@ -37,7 +38,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', dia
       }}
     >
       <div
-        className="flex flex-col rounded-lg border animate-[modalIn_0.2s_ease-out] border-border"
+        className="flex flex-col rounded-md border animate-[modalIn_0.2s_ease-out] border-border"
         style={{
           width: WIDTH_MAP[size],
           height: '70vh',
@@ -53,7 +54,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', dia
           style={{ borderColor: 'var(--color-border)' }}
         >
           <h3 className="text-lg font-semibold">{title}</h3>
-          <button
+          <Button unstyled
             className="cursor-pointer border-none bg-transparent p-1 text-lg leading-none transition-colors duration-150"
             style={{ color: 'var(--color-text-muted)' }}
             onClick={onClose}
@@ -65,7 +66,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', dia
             }}
           >
             &times;
-          </button>
+          </Button>
         </div>
 
         {/* Body — scrollable */}

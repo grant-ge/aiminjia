@@ -11,7 +11,7 @@ interface RootCauseBlockProps {
 export function RootCauseBlock({ rootCause }: RootCauseBlockProps) {
   return (
     <div
-      className="my-3 rounded-lg border p-4 border-border"
+      className="my-3 rounded-md border p-4 border-border"
       style={{
         background: 'var(--color-semantic-red-bg-light)',
         borderColor: 'var(--color-semantic-red-border)',
@@ -39,7 +39,7 @@ export function RootCauseBlock({ rootCause }: RootCauseBlockProps) {
         >
           <div className="mb-1 flex items-center gap-2">
             <span
-              className="rounded-full px-2 py-0.5 text-xs font-bold"
+              className="rounded-md px-2 py-0.5 text-xs font-bold"
               style={{
                 background: 'var(--color-semantic-red-bg)',
                 color: 'var(--color-semantic-red)',

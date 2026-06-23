@@ -129,13 +129,6 @@ pub const ROOT_ENTRY_CONTRACTS: &[RootEntryContract] = &[
         upgrade_policy: "keep migration gate",
     },
     RootEntryContract {
-        name: "playwright-profile",
-        class: RootEntryClass::TransitionalRoot,
-        owner: "browser-automation",
-        target: "users/{scope}/playwright-profile",
-        upgrade_policy: "keep root fallback until user-scoped profile migration is safe",
-    },
-    RootEntryContract {
         name: "screenshots",
         class: RootEntryClass::TransitionalRoot,
         owner: "browser-automation",
@@ -383,10 +376,6 @@ mod tests {
         assert_eq!(classify_root_entry("global"), RootEntryClass::StableRoot);
         assert_eq!(classify_root_entry("logs"), RootEntryClass::StableRoot);
         assert_eq!(
-            classify_root_entry("playwright-profile"),
-            RootEntryClass::TransitionalRoot
-        );
-        assert_eq!(
             classify_root_entry("expert-team-templates"),
             RootEntryClass::DeprecatedArchiveCandidate
         );
@@ -403,14 +392,9 @@ mod tests {
 
     #[test]
     fn runtime_audit_keeps_old_user_unknown_entries_non_blocking() {
-        let report = audit_root_entries([
-            "global",
-            "users",
-            "playwright-profile",
-            "old-dir-from-0-4-x",
-        ]);
+        let report = audit_root_entries(["global", "users", "old-dir-from-0-4-x"]);
 
-        assert_eq!(report.known.len(), 3);
+        assert_eq!(report.known.len(), 2);
         assert_eq!(report.review_only, vec!["old-dir-from-0-4-x"]);
         assert!(!report.has_blocking_violation());
     }
@@ -430,7 +414,6 @@ mod tests {
             "site-profiles",
             "screenshots",
             "subagent_transcripts",
-            "playwright-profile",
             "tmpImage",
             "temp",
             "expert-team-templates",
@@ -448,7 +431,6 @@ mod tests {
         assert!(stable.contains("global"));
         assert!(stable.contains("logs"));
         assert!(stable.contains("users"));
-        assert!(!stable.contains("playwright-profile"));
     }
 
     #[test]

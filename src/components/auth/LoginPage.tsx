@@ -8,15 +8,16 @@ import { LoginLogoStack } from '@/components/auth/LoginLogoStack'
 import { LoginOptionsRow } from '@/components/auth/LoginOptionsRow'
 import { RegisterCard } from '@/components/auth/RegisterCard'
 import { ResetPasswordCard } from '@/components/auth/ResetPasswordCard'
+import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
 import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { TitleBar } from '@/components/layout/TitleBar'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { Button } from '@/components/ui/button'
 
 const REMEMBER_KEY = 'login_remembered_username'
 const PHONE_LIKE_REGEX = /^\+?[1-9]\d{1,14}$/
@@ -143,15 +144,16 @@ export function LoginPage() {
           this the login/register screen has no way to close or minimize. */}
       <TitleBar />
       {/* Pre-auth language toggle: pinned top-right under the title bar so it
-          stays in place for both the login and register cards. */}
+          stays in place for both the login and register cards. The dev-only
+          environment switcher lives in the title bar (TitleBarEnvSwitcher). */}
       <div className="absolute right-4 top-11 z-10">
         <LoginLanguageSwitch />
       </div>
       <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />
-        <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-full opacity-20" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-72) 0%, transparent 70%)', filter: 'blur(100px)' }} />
-        <div className="absolute left-1/3 top-1/2 h-[400px] w-[400px] -translate-y-1/2 rounded-full opacity-15" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-24) 0%, transparent 70%)', filter: 'blur(90px)' }} />
+        <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-md opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />
+        <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-md opacity-20" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-72) 0%, transparent 70%)', filter: 'blur(100px)' }} />
+        <div className="absolute left-1/3 top-1/2 h-[400px] w-[400px] -translate-y-1/2 rounded-md opacity-15" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-24) 0%, transparent 70%)', filter: 'blur(90px)' }} />
       </div>
       <LoginLogoStack logoUrl={logoUrl} brandName={productName} />
       {mode === 'login' ? (
@@ -191,7 +193,7 @@ export function LoginPage() {
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border border-border bg-background transition-colors checked:border-primary checked:bg-primary"
+                    className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded-md border border-border bg-background transition-colors checked:border-primary checked:bg-primary"
                     ref={(el) => {
                       if (!el) return
                       const update = () => {
@@ -243,7 +245,7 @@ export function LoginPage() {
             </Button>
             <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
               <span>{t('login.noAccount')}</span>
-              <button
+              <Button unstyled
                 type="button"
                 className="font-medium text-primary underline-offset-4 hover:underline"
                 onClick={() => {
@@ -253,25 +255,25 @@ export function LoginPage() {
                 }}
               >
                 {t('login.registerNow')}
-              </button>
+              </Button>
             </div>
             <div className="text-center text-xs text-muted-foreground">
               {t('login.agreeByLogin')}
-              <button
+              <Button unstyled
                 type="button"
                 className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
                 onClick={() => setActiveLegalDocument('terms')}
               >
                 {t('login.termsOfService')}
-              </button>
+              </Button>
               {t('login.and')}
-              <button
+              <Button unstyled
                 type="button"
                 className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
                 onClick={() => setActiveLegalDocument('privacy')}
               >
                 {t('login.privacyPolicy')}
-              </button>
+              </Button>
             </div>
           </form>
         </LoginCard>
@@ -304,6 +306,10 @@ export function LoginPage() {
           if (!open) setActiveLegalDocument(null)
         }}
       />
+      {/* Dev-only pre-auth confirm host: AppShell's ConfirmDialogHost isn't
+          mounted yet, so the title-bar environment switcher's requestConfirm()
+          needs its own here. Stripped from production builds. */}
+      {import.meta.env.DEV ? <ConfirmDialogHost /> : null}
     </div>
   )
 }

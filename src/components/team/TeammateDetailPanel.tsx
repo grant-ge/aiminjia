@@ -4,11 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
-import { Button } from '@/components/ui/button'
+import { getExpertDisplayName } from '@/features/expert-teams/teams'
 import { useTeammateTranscript } from '@/hooks/useTeamOverview'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 import { AgentAvatar } from './AgentAvatar'
+import { formatLeadDisplayName, isLeadName } from './agentIdentity'
+import { useTeamVisualContext } from './TeamVisualContext'
+import { Button } from '@/components/ui/button'
 
 interface TeammateDetailPanelProps {
   conversationId: string
@@ -37,6 +40,11 @@ type Group =
   | { kind: 'system-reminder'; text: string }
   | { kind: 'incoming'; text: string; from: string | null; raw: unknown }
   | { kind: 'turn'; thought: string; toolCalls: ToolCallView[] }
+
+function formatAgentDisplayName(teamVisual: ReturnType<typeof useTeamVisualContext>, agentName: string): string {
+  if (isLeadName(agentName)) return formatLeadDisplayName(agentName)
+  return getExpertDisplayName(teamVisual, agentName)
+}
 
 function groupEntries(entries: unknown[]): Group[] {
   const list = entries.map((e) => (e ?? {}) as RawEntry)
@@ -90,19 +98,24 @@ export function TeammateDetailPanel({
   onBack,
 }: TeammateDetailPanelProps) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   const { entries, loading } = useTeammateTranscript(conversationId, agentId)
   const groups = useMemo(() => groupEntries(entries ?? []), [entries])
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
+  const displayName = formatAgentDisplayName(teamVisual, agentName)
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2 text-xs">
+      <div
+        data-testid="teammate-detail-header"
+        className="flex h-12 items-center gap-2 border-b border-border px-4"
+      >
+        <Button variant="ghost" size="sm" onClick={onBack}>
           {t('team.detail.back')}
         </Button>
         <AgentAvatar name={agentName} size="md" />
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium text-foreground">{agentName}</span>
+          <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
           <span className="text-[11px] text-muted-foreground">{t('team.detail.subtitle')}</span>
         </div>
       </div>
@@ -120,13 +133,63 @@ export function TeammateDetailPanel({
             </div>
           )}
           {!loading && groups.length > 0 && (
-            <div className="flex flex-col gap-4">
+            <div
+              data-testid="teammate-detail-timeline"
+              className="flex flex-col"
+            >
               {groups.map((g, i) => (
-                <GroupView key={i} group={g} />
+                <TimelineItem
+                  key={i}
+                  group={g}
+                  isLast={i === groups.length - 1}
+                />
               ))}
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function TimelineItem({ group, isLast }: { group: Group; isLast: boolean }) {
+  const { t } = useTranslation()
+  const label =
+    group.kind === 'system-reminder'
+      ? t('team.detail.timeline.systemReminder')
+      : group.kind === 'incoming'
+        ? t('team.detail.timeline.received')
+        : t('team.detail.timeline.turn')
+  const dotClass =
+    group.kind === 'system-reminder'
+      ? 'border-muted-foreground/25 bg-muted'
+      : group.kind === 'incoming'
+        ? 'border-primary/30 bg-primary/15'
+        : 'border-foreground/20 bg-foreground/10'
+  return (
+    <div
+      data-testid="teammate-detail-timeline-item"
+      className="grid grid-cols-[24px_minmax(0,1fr)] gap-3 pb-4 last:pb-0"
+    >
+      <div className="relative flex justify-center">
+        {!isLast && (
+          <span
+            aria-hidden
+            className="absolute bottom-[-16px] top-5 w-px bg-border"
+          />
+        )}
+        <span
+          aria-hidden
+          className={`relative mt-1 h-2.5 w-2.5 rounded-full border ${dotClass}`}
+        />
+      </div>
+      <div className="min-w-0">
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-foreground">
+            {label}
+          </span>
+        </div>
+        <GroupView group={group} />
       </div>
     </div>
   )
@@ -144,7 +207,7 @@ function SystemReminderBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="rounded-md border border-border bg-muted/40">
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted/60"
@@ -152,7 +215,7 @@ function SystemReminderBlock({ text }: { text: string }) {
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <span>{t('team.detail.systemReminder')}</span>
         <span className="ml-auto opacity-60">system</span>
-      </button>
+      </Button>
       {open && (
         <pre className="whitespace-pre-wrap break-words border-t border-border px-3 py-2 text-[11px] leading-relaxed text-foreground/85">
           {text}
@@ -164,8 +227,9 @@ function SystemReminderBlock({ text }: { text: string }) {
 
 function IncomingBubble({ text, from, raw }: { text: string; from: string | null; raw: unknown }) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   const header = from
-    ? t('team.detail.receivedFrom', { name: from })
+    ? t('team.detail.receivedFrom', { name: formatAgentDisplayName(teamVisual, from) })
     : t('team.detail.received')
   const parsed = parseMessage(text, t)
   return (
@@ -208,7 +272,7 @@ function ToolChip({ call }: { call: ToolCallView }) {
   const summary = summarizeArgs(call.args)
   return (
     <div className="rounded-md border border-border bg-card">
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
@@ -229,19 +293,19 @@ function ToolChip({ call }: { call: ToolCallView }) {
             <span className="text-[10px] text-destructive">✗</span>
           )}
         </span>
-      </button>
+      </Button>
       {open && (
         <div className="space-y-2 border-t border-border px-2.5 py-2">
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">args</div>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
               {prettyJson(call.args)}
             </pre>
           </div>
           {call.result && (
             <div>
               <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">result</div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
                 {stringify(call.result.content)}
               </pre>
             </div>
@@ -254,12 +318,13 @@ function ToolChip({ call }: { call: ToolCallView }) {
 
 function OutgoingBubble({ call }: { call: ToolCallView }) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   const args = (call.args ?? {}) as { to?: unknown; message?: unknown }
   const to = typeof args.to === 'string' ? args.to : '?'
   const parsed = parseMessage(args.message, t)
   return (
     <MessageCard
-      header={t('team.detail.sentTo', { name: to })}
+      header={t('team.detail.sentTo', { name: formatAgentDisplayName(teamVisual, to) })}
       tone="outgoing"
       parsed={parsed}
       raw={args.message}
@@ -322,34 +387,36 @@ interface MessageCardProps {
 function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const bodyClass =
-    tone === 'incoming'
-      ? 'border-border bg-muted/40'
-      : 'border-primary/30 bg-primary/10'
+  const toneAccent = tone === 'incoming' ? 'bg-muted-foreground' : 'bg-primary'
+  const widthClass = tone === 'incoming' ? 'w-full' : 'w-fit max-w-[92%]'
   return (
-    <div className={`w-fit max-w-[85%] overflow-hidden rounded-lg border ${bodyClass}`}>
-      <div className="flex items-center gap-2 border-b border-current/15 bg-foreground/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/80">
-        <span>{header}</span>
+    <div
+      data-teammate-message-card
+      className={`${widthClass} overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-card)]`}
+    >
+      <div className="flex items-center gap-2 border-b border-border bg-muted/35 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneAccent}`} />
+        <span className="text-foreground">{header}</span>
         {parsed.warning && (
           <span
-            className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
+            className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
             title={parsed.warning}
           >
             {t('team.detail.parseHint')}
           </span>
         )}
       </div>
-      <div className="px-3 py-2 text-sm">
+      <div className="px-3 py-2 text-sm leading-6 text-foreground">
         {parsed.empty ? (
           <span className="text-xs italic text-muted-foreground">{t('team.chat.emptyText')}</span>
         ) : (
           <AssistantMarkdown text={parsed.text} />
         )}
       </div>
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 border-t border-current/15 bg-foreground/5 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-foreground/80 hover:bg-foreground/10"
+        className="flex w-full items-center gap-1.5 border-t border-border bg-muted/25 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-muted/45"
       >
         {open ? (
           <ChevronDown className="h-3.5 w-3.5" />
@@ -362,9 +429,9 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
             {parsed.warning}
           </span>
         )}
-      </button>
+      </Button>
       {open && (
-        <pre className="overflow-x-auto whitespace-pre-wrap break-all border-t border-current/10 bg-card/60 px-3 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/85">
+        <pre className="overflow-x-auto whitespace-pre-wrap break-all border-t border-border bg-muted/25 px-3 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/85">
           {prettyJson(raw)}
         </pre>
       )}

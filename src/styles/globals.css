@@ -2,88 +2,90 @@
 
 :root {
   /* === design.pen Light + Neutral + Default 单一皮肤 === */
-  --primary: #D4A843;
-  --primary-foreground: #FFFFFF;
+  --primary: #d4a843;
+  --primary-foreground: #ffffff;
   /* Safari 13 compat: rgba() fallbacks for color-mix() */
   --primary-rgb: 212, 168, 67;
-  --foreground-rgb: 10, 10, 10;
-  --color-bg-base-rgb: 242, 241, 238;
-  --muted-foreground-rgb: 115, 115, 115;
-  --card-rgb: 250, 250, 248;
-  /* Cross-palette defaults: accent=#D4A843, bg=#FAFAF8 (matches brandingStore DEFAULTS).
+  --foreground-rgb: 13, 13, 13;
+  --color-bg-base-rgb: 245, 245, 245;
+  --muted-foreground-rgb: 99, 99, 99;
+  --card-rgb: 255, 255, 255;
+  /* Cross-palette defaults: accent=#D4A843, bg=#FFFFFF (matches brandingStore DEFAULTS).
      Overwritten by applyBranding() at runtime; these only cover cold-start/pre-brand renders. */
-  --primary-on-bg-10: #F6F2E6;
-  --primary-on-bg-24: #F1E6CD;
-  --primary-on-bg-72: #DFBF76;
-  --primary-darken-10: #BF973C;
-  --primary-mix-scrollbar: #DBC9A0;
-  --primary-mix-blockquote: #DBCAA3;
+  --primary-on-bg-10: #fbf6ec;
+  --primary-on-bg-24: #f5ead2;
+  --primary-on-bg-72: #e0c078;
+  --primary-darken-10: #bf973c;
+  --primary-mix-scrollbar: #dccba2;
+  --primary-mix-blockquote: #ddcca6;
   --ring: var(--primary);
   --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-primary-foreground: #ffffff;
 
-  --background: #FAFAF8;
-  --foreground: #0a0a0a;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --card: #FAFAF8;
-  --card-foreground: #0a0a0a;
-  --popover: #FAFAF8;
-  --popover-foreground: #0a0a0a;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #0a0a0a;
-  --accent: #f5f5f5;
-  --accent-foreground: #0a0a0a;
-  --border: #e5e5e5;
-  --input: #e5e5e5;
+  --background: #ffffff;
+  --foreground: #0d0d0d;
+  --muted: #f0f0f0;
+  --muted-foreground: #636363;
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --secondary: #f3f3f3;
+  --secondary-foreground: var(--foreground);
+  --accent: #f3f3f3;
+  --accent-foreground: var(--foreground);
+  --border: #e2e2e2;
+  --input: #e2e2e2;
 
-  --sidebar: #f6f6f2;
+  --sidebar: #fafaf8;
   --sidebar-accent: #ebebeb;
   --sidebar-accent-foreground: #18181b;
-  --sidebar-foreground: #0a0a0a;
+  --sidebar-foreground: var(--foreground);
   --sidebar-border: #ebebeb;
   --sidebar-ring: #71717a;
 
-  --brand-primary-subtle: #F9F3E5;
-  --brand-secondary: #3F3F46;
-  --brand-secondary-subtle: #F3F4F6;
+  --brand-primary-subtle: #f9f3e5;
+  --brand-secondary: #3f3f46;
+  --brand-secondary-subtle: #f3f4f6;
 
   --destructive: #e7000b;
-  --destructive-foreground: #FFFFFF;
-  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Inter, "Segoe UI", system-ui, sans-serif;
+  --destructive-foreground: #ffffff;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Inter,
+    "Segoe UI", system-ui, sans-serif;
   --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, monospace;
-  --radius-sm: 4px;
-  --radius: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 2px;
+  --radius: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
 
   /* Legacy token aliases for incremental migration compatibility */
-  --color-primary-hover: #2C2C2E;
+  --color-primary-hover: #2c2c2e;
   --color-primary-active: #000000;
-  --color-text-on-primary: #FFFFFF;
+  --color-text-on-primary: #ffffff;
   --color-primary-subtle: rgba(29, 29, 31, 0.08);
   --color-primary-muted: rgba(29, 29, 31, 0.15);
 
-  --color-accent-50: #FEF9EC;
-  --color-accent-100: #FBF0D1;
-  --color-accent-200: #F5DDA3;
-  --color-accent-300: #E8C86A;
-  --color-accent-400: #D4A843;
-  --color-accent-500: #C49535;
-  --color-accent-600: #A67C2E;
-  --color-accent-700: #875F1E;
-  --color-accent: #D4A843;
-  --color-accent-hover: #C49535;
-  --color-accent-active: #A67C2E;
-  --color-accent-light: #E8C86A;
+  --color-accent-50: #fef9ec;
+  --color-accent-100: #fbf0d1;
+  --color-accent-200: #f5dda3;
+  --color-accent-300: #e8c86a;
+  --color-accent-400: #d4a843;
+  --color-accent-500: #c49535;
+  --color-accent-600: #a67c2e;
+  --color-accent-700: #875f1e;
+  --color-accent: #d4a843;
+  --color-accent-hover: #c49535;
+  --color-accent-active: #a67c2e;
+  --color-accent-light: #e8c86a;
   --color-accent-subtle: rgba(212, 168, 67, 0.12);
   --color-accent-muted: rgba(212, 168, 67, 0.25);
   --color-accent-bg-light: rgba(212, 168, 67, 0.04);
   --color-accent-border: rgba(212, 168, 67, 0.25);
-  --color-text-on-accent: #1A1A1A;
+  --color-text-on-accent: #1a1a1a;
 
-  --color-bg-base: #F2F1EE;
+  --color-bg-base: #f5f5f5;
   --color-bg-main: var(--background);
   --color-bg-sidebar: var(--sidebar);
   --color-bg-sidebar-hover: #e4e4e4;
@@ -98,23 +100,23 @@
   --color-text-secondary: var(--muted-foreground);
   --color-text-muted: var(--muted-foreground);
   --color-text-code: var(--foreground);
-  --color-text-inverse: #FFFFFF;
+  --color-text-inverse: #ffffff;
   --color-border: var(--border);
   --color-border-light: var(--sidebar-border);
   --color-border-subtle: var(--border);
   --color-bg-code: var(--muted);
   --color-bg-code-header: var(--background);
-  --color-semantic-green: #34C759;
+  --color-semantic-green: #34c759;
   --color-semantic-green-bg: rgba(52, 199, 89, 0.12);
-  --color-semantic-orange: #F5A623;
+  --color-semantic-orange: #f5a623;
   --color-semantic-orange-bg: rgba(245, 166, 35, 0.12);
-  --color-semantic-red: #EF4444;
+  --color-semantic-red: #ef4444;
   --color-semantic-red-bg: rgba(239, 68, 68, 0.12);
-  --color-semantic-blue: #5B9BD5;
+  --color-semantic-blue: #5b9bd5;
   --color-semantic-blue-bg: rgba(91, 155, 213, 0.12);
-  --color-semantic-purple: #9B7ED8;
+  --color-semantic-purple: #9b7ed8;
   --color-semantic-purple-bg: rgba(155, 126, 216, 0.12);
-  --color-semantic-yellow: #E8C86A;
+  --color-semantic-yellow: #e8c86a;
   --color-semantic-yellow-bg: rgba(232, 200, 106, 0.12);
   --color-semantic-red-bg-light: rgba(239, 68, 68, 0.04);
   --color-semantic-red-border: rgba(239, 68, 68, 0.18);
@@ -140,9 +142,9 @@
   --color-bg-primary: var(--color-primary-subtle);
   --color-bg-secondary: var(--color-bg-neutral);
 
-  --color-overlay: rgba(0, 0, 0, 0.5);
-  --color-overlay-light: rgba(0, 0, 0, 0.35);
-  --color-text-disabled: #C0C0C0;
+  --color-overlay: rgba(0, 0, 0, 0.42);
+  --color-overlay-light: rgba(0, 0, 0, 0.28);
+  --color-text-disabled: #c0c0c0;
   --color-user-avatar: #2c2c2c;
 
   /* Missing semantic-color border variants (spec §1.7.2 — every semantic
@@ -151,19 +153,50 @@
   --color-semantic-yellow-border: rgba(232, 200, 106, 0.2);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-input: 0 0 0 1px var(--color-border-subtle), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-input:
+    0 0 0 1px var(--color-border-subtle), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --composer-border: rgba(13, 13, 13, 0.16);
+  --shadow-composer:
+    0 1px 2px rgba(0, 0, 0, 0.04), 0 3px 10px -8px rgba(0, 0, 0, 0.18);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
-  --shadow-popover: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  --shadow-popover:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
   --shadow-card: var(--shadow-md);
+  --shadow-card-hover: 0 6px 18px rgba(0, 0, 0, 0.07);
+  --shadow-channel-item:
+    0 1px 2px rgba(15, 23, 42, 0.035),
+    0 10px 28px -24px rgba(15, 23, 42, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --shadow-channel-item-hover:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 16px 36px -28px rgba(15, 23, 42, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  --shadow-skill-card:
+    0 1px 2px rgba(15, 23, 42, 0.035),
+    0 12px 30px -26px rgba(15, 23, 42, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --shadow-skill-card-hover:
+    0 1px 2px rgba(15, 23, 42, 0.045),
+    0 18px 40px -30px rgba(15, 23, 42, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  --shadow-schedule-panel:
+    0 1px 2px rgba(15, 23, 42, 0.035),
+    0 18px 44px -36px rgba(15, 23, 42, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --shadow-schedule-panel-hover:
+    0 1px 2px rgba(15, 23, 42, 0.045),
+    0 22px 52px -38px rgba(15, 23, 42, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
   --shadow-accent: 0 0 0 3px rgba(212, 168, 67, 0.2);
   --shadow-accent-glow: 0 8px 24px rgba(212, 168, 67, 0.12);
   /* Sidebar → main seam. Inset shadow on the main area's left edge to
      suggest the sidebar sits at slightly higher elevation, sharpening the
      boundary without a hard divider. Pair with bg-sidebar / bg-background
      color contrast — never use alone (a11y: depth alone is not a signal). */
-  --shadow-sidebar-edge: inset 12px 0 16px -16px rgba(0, 0, 0, 0.08);
+  --shadow-sidebar-edge: inset 10px 0 14px -16px rgba(0, 0, 0, 0.08);
 
   /* Motion (spec §6) — components must reference these instead of
      hardcoding `duration-150` etc. */
@@ -177,6 +210,7 @@
      1em. Other tx-* sizes intentionally inherit Tailwind defaults (xs/sm/
      base/lg/xl/2xl). */
   --text-md: 0.9375rem;
+  --text-lg: 1.125rem;
 
   /* ────────────── Table ────────────── */
   /* Font family is intentionally not declared — tables inherit from parent */
@@ -184,7 +218,7 @@
   --table-line-height: 1.5;
 
   --table-bg: var(--color-bg-card);
-  --table-radius: 8px;
+  --table-radius: var(--radius-md);
   --table-border: var(--color-border);
   --table-divider: var(--color-border-subtle);
 
@@ -207,12 +241,12 @@
   --table-tone-success-fg: var(--color-semantic-green);
   --table-tone-warning-bg: var(--color-semantic-orange-bg);
   --table-tone-warning-fg: var(--color-semantic-orange);
-  --table-tone-danger-bg:  var(--color-semantic-red-bg);
-  --table-tone-danger-fg:  var(--color-semantic-red);
-  --table-tone-info-bg:    var(--color-semantic-blue-bg);
-  --table-tone-info-fg:    var(--color-semantic-blue);
-  --table-tone-accent-bg:  var(--color-accent-subtle);
-  --table-tone-accent-fg:  var(--color-accent);
+  --table-tone-danger-bg: var(--color-semantic-red-bg);
+  --table-tone-danger-fg: var(--color-semantic-red);
+  --table-tone-info-bg: var(--color-semantic-blue-bg);
+  --table-tone-info-fg: var(--color-semantic-blue);
+  --table-tone-accent-bg: var(--color-accent-subtle);
+  --table-tone-accent-fg: var(--color-accent);
 }
 
 @theme inline {
@@ -247,9 +281,15 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--color-semantic-orange);
-  --color-warning-foreground: #FFFFFF;
+  --color-warning-foreground: #ffffff;
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --spacing: 0.234375rem;
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.8125rem;
+  --text-lg: var(--text-lg);
   --radius-sm: var(--radius-sm);
   --radius: var(--radius);
   --radius-md: var(--radius-md);
@@ -266,6 +306,7 @@ html {
 
 body {
   font-family: var(--font-sans);
+  font-size: var(--text-base);
   background: var(--background);
   color: var(--foreground);
   height: 100vh;
@@ -309,6 +350,7 @@ body {
 
 /* ===== Scrollbar Styles ===== */
 ::-webkit-scrollbar {
+  height: 6px;
   width: 6px;
 }
 
@@ -318,7 +360,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -332,6 +374,50 @@ body {
 
 button:not(:disabled) {
   cursor: pointer;
+}
+
+.titlebar-window-button {
+  width: 44px;
+  height: 28px;
+  color: color-mix(in srgb, var(--sidebar-foreground) 70%, transparent);
+}
+
+.titlebar-window-button:hover {
+  background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
+  color: var(--sidebar-foreground);
+}
+
+.titlebar-window-button-close:hover {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.titlebar-sidebar-toggle {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--sidebar-foreground) 70%, transparent);
+}
+
+.titlebar-sidebar-toggle:hover {
+  background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
+  color: var(--sidebar-foreground);
+}
+
+.titlebar-navigation-button {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--sidebar-foreground) 46%, transparent);
+}
+
+.titlebar-navigation-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
+  color: color-mix(in srgb, var(--sidebar-foreground) 70%, transparent);
+}
+
+.titlebar-navigation-button:disabled {
+  opacity: 0.45;
 }
 
 /* ===== Assistant Markdown ===== */
@@ -364,8 +450,8 @@ button:not(:disabled) {
 .assistant-markdown pre,
 .assistant-markdown .markdown-table-wrap,
 .assistant-markdown hr {
-  margin-top: 0.875rem;
-  margin-bottom: 0.5rem;
+  margin-top: 0.625rem;
+  margin-bottom: 0.375rem;
 }
 
 .assistant-markdown p,
@@ -376,7 +462,7 @@ button:not(:disabled) {
 }
 
 .assistant-markdown p {
-  line-height: 1.65;
+  line-height: 1.58;
 }
 
 .assistant-markdown h1,
@@ -387,7 +473,7 @@ button:not(:disabled) {
 .assistant-markdown h6 {
   color: var(--color-text-primary);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   line-height: 1.35;
 }
 
@@ -457,10 +543,10 @@ button:not(:disabled) {
 }
 
 .assistant-markdown li {
-  margin-top: 0.2rem;
-  margin-bottom: 0.2rem;
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
   padding-left: 0.12rem;
-  line-height: 1.65;
+  line-height: 1.58;
 }
 
 .assistant-markdown li::marker {
@@ -525,7 +611,6 @@ button:not(:disabled) {
 
 .assistant-markdown blockquote {
   border-left: 3px solid var(--primary-mix-blockquote);
-  border-radius: 0;
   padding: 0.1rem 0 0.1rem 0.75rem;
   background: transparent;
   color: var(--color-text-secondary);
@@ -550,7 +635,7 @@ button:not(:disabled) {
 }
 
 .assistant-markdown :not(pre) > code {
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: 0.1rem 0.3rem;
   background: var(--color-bg-code);
   color: var(--color-text-code);
@@ -575,7 +660,7 @@ button:not(:disabled) {
   height: auto;
   margin: 0.875rem 0;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 
 .assistant-markdown .hljs-keyword,
@@ -629,27 +714,14 @@ button:not(:disabled) {
 }
 
 .assistant-markdown .markdown-table-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  border-radius: 999px;
-  padding: 4px 10px;
-  background: transparent;
-  color: var(--color-text-muted);
   font-size: inherit;
-  line-height: 1;
-  transition: color 120ms ease;
-}
-
-.assistant-markdown .markdown-table-copy:hover {
-  color: var(--primary);
 }
 
 .assistant-markdown .markdown-table-scroll {
   overflow-x: auto;
   overflow-y: hidden;
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 
 .assistant-markdown .markdown-table-scroll > table {
@@ -691,17 +763,29 @@ button:not(:disabled) {
 }
 
 @keyframes blink {
-  0%, 80%, 100% { opacity: 0.3; }
-  40% { opacity: 1; }
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+  }
+  40% {
+    opacity: 1;
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 @keyframes typingIndicatorBreath {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.48;
     transform: scale(0.94);
   }
@@ -712,8 +796,14 @@ button:not(:disabled) {
 }
 
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(0.97) translateY(4px); }
-  to   { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Skill token chip — subtle "active capability" sheen.
@@ -722,14 +812,29 @@ button:not(:disabled) {
    2) gradient sweep on the bg via background-position animation (premium feel)
    Stays accessible: pure CSS, no layout thrash, motion reduced via prefers-reduced-motion. */
 @keyframes skillTokenSheen {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 @keyframes skillTokenGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0), inset 0 0 0 1px rgba(var(--primary-rgb), 0.18); }
-  50%      { box-shadow: 0 0 12px 0 rgba(var(--primary-rgb), 0.28), inset 0 0 0 1px rgba(var(--primary-rgb), 0.35); }
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(var(--primary-rgb), 0),
+      inset 0 0 0 1px rgba(var(--primary-rgb), 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 12px 0 rgba(var(--primary-rgb), 0.28),
+      inset 0 0 0 1px rgba(var(--primary-rgb), 0.35);
+  }
 }
 
 .skill-token-chip {
@@ -741,15 +846,19 @@ button:not(:disabled) {
     rgba(var(--primary-rgb), 0.2) 100%
   );
   background-size: 220% 220%;
-  animation: skillTokenSheen 6s ease-in-out infinite, skillTokenGlow 3s ease-in-out infinite;
+  animation:
+    skillTokenSheen 6s ease-in-out infinite,
+    skillTokenGlow 3s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .skill-token-chip {
     animation: none;
-    background-image: linear-gradient(115deg,
+    background-image: linear-gradient(
+      115deg,
       rgba(var(--primary-rgb), 0.14),
-      rgba(var(--primary-rgb), 0.18));
+      rgba(var(--primary-rgb), 0.18)
+    );
   }
 }
 

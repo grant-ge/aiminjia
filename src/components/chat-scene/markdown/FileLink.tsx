@@ -2,6 +2,8 @@ import { type MouseEvent, type ReactNode, useEffect, useMemo, useState } from 'r
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { getLocalFilePreview, openLocalFile } from '@/lib/tauri'
 import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
+import type { GeneratedFile } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 interface LocalMarkdownTarget {
   path: string
@@ -13,6 +15,7 @@ interface FileLinkProps {
   children?: ReactNode
   conversationId?: string
   workspaceRoot?: string
+  generatedFiles?: GeneratedFile[]
 }
 
 interface FileImageProps {
@@ -20,6 +23,7 @@ interface FileImageProps {
   alt?: string
   conversationId?: string
   workspaceRoot?: string
+  generatedFiles?: GeneratedFile[]
 }
 
 function decodeUrlValue(value: string): string {
@@ -42,6 +46,37 @@ function isAbsoluteLocalPath(value: string): boolean {
   return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
 }
 
+function normalizeComparablePath(value: string): string {
+  return decodeUrlValue(value).replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/')
+}
+
+function resolveGeneratedFileTarget(
+  href: string,
+  generatedFiles: GeneratedFile[] | undefined,
+): LocalMarkdownTarget | null {
+  if (!generatedFiles?.length) return null
+  const decoded = normalizeComparablePath(href.trim())
+  if (!decoded || isExternalHref(decoded) || isAbsoluteLocalPath(decoded) || decoded.startsWith('file://')) {
+    return null
+  }
+  const sourceName = basename(decoded)
+  const isGeneratedReference = decoded.startsWith('generated/') || decoded.includes('/generated/')
+  if (!isGeneratedReference && !sourceName) return null
+
+  for (const file of generatedFiles) {
+    const filePath = file.filePath?.trim()
+    if (!filePath) continue
+    const comparableFilePath = normalizeComparablePath(filePath)
+    const fileName = file.fileName || basename(comparableFilePath)
+    const pathMatches = comparableFilePath.endsWith(`/${decoded}`)
+    const nameMatches = isGeneratedReference && sourceName === fileName
+    if (pathMatches || nameMatches) {
+      return { path: filePath, fileName }
+    }
+  }
+  return null
+}
+
 function joinWorkspacePath(root: string, relativePath: string): string | null {
   const rootValue = root.replace(/\/+$/, '')
   const parts: string[] = []
@@ -60,6 +95,7 @@ function joinWorkspacePath(root: string, relativePath: string): string | null {
 export function resolveMarkdownLocalTarget(
   href: string | undefined,
   workspaceRoot?: string,
+  generatedFiles?: GeneratedFile[],
 ): LocalMarkdownTarget | null {
   if (!href) return null
   const raw = href.trim()
@@ -75,6 +111,9 @@ export function resolveMarkdownLocalTarget(
   if (isAbsoluteLocalPath(decoded)) {
     return { path: decoded, fileName: basename(decoded) }
   }
+
+  const generatedTarget = resolveGeneratedFileTarget(decoded, generatedFiles)
+  if (generatedTarget) return generatedTarget
 
   if (!workspaceRoot) return null
   const path = joinWorkspacePath(workspaceRoot, decoded)
@@ -122,10 +161,11 @@ export function FileLink({
   children,
   conversationId,
   workspaceRoot,
+  generatedFiles,
 }: FileLinkProps) {
   const target = useMemo(
-    () => resolveMarkdownLocalTarget(href, workspaceRoot),
-    [href, workspaceRoot],
+    () => resolveMarkdownLocalTarget(href, workspaceRoot, generatedFiles),
+    [href, workspaceRoot, generatedFiles],
   )
   const openMarkdownFile = useOpenMarkdownFile(conversationId)
 
@@ -154,10 +194,11 @@ export function FileImage({
   alt = '',
   conversationId,
   workspaceRoot,
+  generatedFiles,
 }: FileImageProps) {
   const target = useMemo(
-    () => resolveMarkdownLocalTarget(src, workspaceRoot),
-    [src, workspaceRoot],
+    () => resolveMarkdownLocalTarget(src, workspaceRoot, generatedFiles),
+    [src, workspaceRoot, generatedFiles],
   )
   const openMarkdownFile = useOpenMarkdownFile(conversationId)
   const [dataUrl, setDataUrl] = useState<string | null>(null)
@@ -203,14 +244,14 @@ export function FileImage({
   }
 
   return (
-    <button
+    <Button unstyled
       type="button"
       aria-label={alt || target.fileName}
       title={alt || target.fileName}
       className="my-1 inline-block align-middle"
       onClick={() => openMarkdownFile(target)}
     >
-      <img src={dataUrl} alt={alt} className="h-40 max-w-[240px] rounded-lg object-cover" />
-    </button>
+      <img src={dataUrl} alt={alt} className="h-40 max-w-[240px] rounded-md object-cover" />
+    </Button>
   )
 }

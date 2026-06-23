@@ -6,27 +6,29 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
 
 use crate::runtime::agent::async_task_store::AsyncAgentTaskStore;
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
-use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use crate::runtime::tools::RuntimeTool;
 use crate::storage::process_ext::NoWindowExt;
 
-use super::powershell_detect::{PowerShellLocation, detect};
+use super::powershell_detect::{detect, PowerShellEdition, PowerShellLocation};
 use super::shell_common::{
-    ExitKind, MAX_OUTPUT_BYTES, collect_reader, content_from_output, emit_shell_failure_diagnostic,
-    format_cancel_message, format_command_failure, interpret_command_result,
-    kill_child_process_tree, optional_transcript_path,
-    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes,
+    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
+    format_command_failure, inject_bundled_runtime_path, inject_trace_env,
+    interpret_command_result, kill_child_process_tree, optional_transcript_path,
+    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes, ExitKind,
+    MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -114,6 +116,35 @@ fn resolve_timeout_secs(input: &Value) -> u64 {
     secs.min(MAX_TIMEOUT_SECS)
 }
 
+fn edition_guidance(edition: Option<PowerShellEdition>) -> &'static str {
+    match edition {
+        Some(PowerShellEdition::Desktop) => {
+            "PowerShell edition: Windows PowerShell 5.1 (powershell.exe)\
+            \n- `&&` 和 `||` 不可用，会触发 parser error；B 只在 A 成功后运行请写 `A; if ($?) { B }`，无条件顺序执行请写 `A; B`。\
+            \n- 三元运算符 `?:`、null-coalescing `??`、null-conditional `?.` 不可用；请使用 `if/else` 和显式 `$null -eq` 判断。\
+            \n- 避免在原生 exe/cmd 后追加 `2>&1`。PowerShell 5.1 会把 native stderr 包成 ErrorRecord (NativeCommandError)，即使进程 exit code 为 0 也可能让 `$?` 变成 false；本工具已经捕获 stderr。\
+            \n- `Out-File` / `Set-Content` 默认写 UTF-16 LE (with BOM)；写给其他工具读取的文件时请显式传 `-Encoding utf8`。\
+            \n- `ConvertFrom-Json` 返回 PSCustomObject，不是 hashtable；`-AsHashtable` 不可用。\
+            \n- 本工具使用 `-NonInteractive`，不要使用 `Read-Host`、`pause`、`Get-Credential`、`Out-GridView` 或 `$Host.UI.PromptForChoice`。"
+        }
+        Some(PowerShellEdition::Core) => {
+            "PowerShell edition: PowerShell 7+ (pwsh)\
+            \n- `&&` 和 `||` 可用；当 B 只应在 A 成功后运行时，优先使用 `A && B`。\
+            \n- 三元运算符 `$cond ? $a : $b`、null-coalescing `??`、null-conditional `?.` 可用。\
+            \n- 默认文件编码是 UTF-8 without BOM。\
+            \n- 本工具使用 `-NonInteractive`，不要使用 `Read-Host`、`pause`、`Get-Credential`、`Out-GridView` 或 `$Host.UI.PromptForChoice`。"
+        }
+        None => {
+            "PowerShell edition: unknown — assume Windows PowerShell 5.1 for compatibility\
+            \n- 不要使用 `&&`、`||`、三元运算符 `?:`、null-coalescing `??` 或 null-conditional `?.`。\
+            \n- 条件串联请写 `A; if ($?) { B }`，无条件顺序执行请写 `A; B`。\
+            \n- 避免在原生 exe/cmd 后追加 `2>&1`；本工具已经捕获 stderr。\
+            \n- 写给其他工具读取的文件时请显式传 `-Encoding utf8`。\
+            \n- 本工具使用 `-NonInteractive`，不要使用 `Read-Host`、`pause`、`Get-Credential`、`Out-GridView` 或 `$Host.UI.PromptForChoice`。"
+        }
+    }
+}
+
 fn resolve_auto_background_after_secs(input: &Value, timeout_secs: u64) -> Option<u64> {
     let secs = AUTO_BACKGROUND_AFTER_SECS;
     #[cfg(test)]
@@ -143,6 +174,268 @@ fn tool_result_powershell(content: String, data: Value) -> ToolResult {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShellPathAccess {
+    path: PathBuf,
+    op: crate::runtime::path_auth::PathOp,
+}
+
+fn shell_separator(token: &str) -> bool {
+    matches!(token, ";" | "&&" | "||" | "|")
+}
+
+fn command_name(token: &str) -> String {
+    Path::new(token)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(token)
+        .to_ascii_lowercase()
+}
+
+fn clean_path_token(token: &str) -> Option<String> {
+    let token = token
+        .trim_matches(|ch: char| {
+            ch.is_whitespace()
+                || matches!(
+                    ch,
+                    ';' | ',' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}'
+                )
+        })
+        .trim();
+    if token.is_empty()
+        || token == "-"
+        || token.starts_with('-')
+        || token.contains("://")
+        || token.starts_with("$(")
+    {
+        return None;
+    }
+    Some(token.to_string())
+}
+
+fn resolve_shell_path_token(token: &str, root: &Path) -> Option<PathBuf> {
+    let token = clean_path_token(token)?;
+    let token = token.strip_prefix("file://").unwrap_or(&token);
+    let path = if token == "~" {
+        dirs::home_dir()?
+    } else if let Some(rest) = token
+        .strip_prefix("~/")
+        .or_else(|| token.strip_prefix("~\\"))
+    {
+        dirs::home_dir()?.join(rest)
+    } else if let Some(rest) = token
+        .strip_prefix("$HOME/")
+        .or_else(|| token.strip_prefix("$HOME\\"))
+        .or_else(|| token.strip_prefix("$env:USERPROFILE/"))
+        .or_else(|| token.strip_prefix("$env:USERPROFILE\\"))
+    {
+        dirs::home_dir()?.join(rest)
+    } else {
+        let path = PathBuf::from(token);
+        if path.is_absolute() || token.starts_with("\\\\") {
+            path
+        } else if path.starts_with(".")
+            || path.starts_with("..")
+            || token.contains('\\')
+            || token.contains('/')
+        {
+            root.join(path)
+        } else {
+            return None;
+        }
+    };
+    Some(path)
+}
+
+fn push_access(
+    accesses: &mut Vec<ShellPathAccess>,
+    token: &str,
+    root: &Path,
+    op: crate::runtime::path_auth::PathOp,
+) {
+    if let Some(path) = resolve_shell_path_token(token, root) {
+        accesses.push(ShellPathAccess { path, op });
+    }
+}
+
+fn shell_command_path_accesses(command: &str, root: &Path) -> Vec<ShellPathAccess> {
+    use crate::runtime::path_auth::PathOp;
+
+    let tokens = command
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut accesses = Vec::new();
+
+    for (idx, token) in tokens.iter().enumerate() {
+        if matches!(
+            token.to_ascii_lowercase().as_str(),
+            ">" | ">>" | "2>" | "2>>" | "-filepath" | "-literalpath" | "-path"
+        ) {
+            if let Some(next) = tokens.get(idx + 1) {
+                let op = if token == ">" || token == ">>" || token == "2>" || token == "2>>" {
+                    PathOp::Write
+                } else {
+                    PathOp::Read
+                };
+                push_access(&mut accesses, next, root, op);
+            }
+            continue;
+        }
+        if let Some(path) = token.strip_prefix(">>").or_else(|| token.strip_prefix('>')) {
+            push_access(&mut accesses, path, root, PathOp::Write);
+        }
+    }
+
+    let mut idx = 0;
+    while idx < tokens.len() {
+        let token = &tokens[idx];
+        if shell_separator(token) {
+            idx += 1;
+            continue;
+        }
+        let command = command_name(token);
+        let op = if matches!(
+            command.as_str(),
+            "remove-item" | "rm" | "del" | "erase" | "rmdir" | "rd"
+        ) {
+            Some(PathOp::Delete)
+        } else if matches!(
+            command.as_str(),
+            "set-content"
+                | "add-content"
+                | "out-file"
+                | "new-item"
+                | "copy-item"
+                | "move-item"
+                | "ni"
+                | "sc"
+                | "ac"
+        ) {
+            Some(PathOp::Write)
+        } else if matches!(
+            command.as_str(),
+            "get-content"
+                | "gc"
+                | "type"
+                | "select-string"
+                | "get-childitem"
+                | "get-childitems"
+                | "dir"
+                | "ls"
+                | "test-path"
+        ) {
+            Some(PathOp::Read)
+        } else {
+            None
+        };
+
+        let Some(default_op) = op else {
+            idx += 1;
+            continue;
+        };
+        let mut segment_paths = Vec::new();
+        let mut j = idx + 1;
+        while j < tokens.len() && !shell_separator(&tokens[j]) {
+            if let Some(path) = resolve_shell_path_token(&tokens[j], root) {
+                segment_paths.push(path);
+            }
+            j += 1;
+        }
+        if command == "copy-item" || command == "move-item" {
+            if let Some((last, sources)) = segment_paths.split_last() {
+                for source in sources {
+                    accesses.push(ShellPathAccess {
+                        path: source.clone(),
+                        op: PathOp::Read,
+                    });
+                }
+                accesses.push(ShellPathAccess {
+                    path: last.clone(),
+                    op: PathOp::Write,
+                });
+            }
+        } else {
+            for path in segment_paths {
+                accesses.push(ShellPathAccess {
+                    path,
+                    op: default_op,
+                });
+            }
+        }
+        idx = j;
+    }
+
+    accesses
+}
+
+fn path_auth_scope(canonical: &Path, op: crate::runtime::path_auth::PathOp) -> String {
+    let scope_path = if canonical.is_dir() {
+        canonical.to_path_buf()
+    } else {
+        canonical
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| canonical.to_path_buf())
+    };
+    match op {
+        crate::runtime::path_auth::PathOp::Read => format!("path:{}", scope_path.display()),
+        crate::runtime::path_auth::PathOp::Write => format!("pathwrite:{}", scope_path.display()),
+        crate::runtime::path_auth::PathOp::Delete => {
+            format!("pathdelete:{}", scope_path.display())
+        }
+    }
+}
+
+fn command_path_permission_decision(
+    command: &str,
+    ctx: &ToolExecutionContext,
+) -> Option<PermissionDecision> {
+    let root = require_workspace_root(ctx).ok()?;
+    let storage = ctx.capability.as_ref()?.storage.as_ref()?;
+    let perm_ctx = storage.permission_ctx.as_ref();
+    let effective_ctx;
+    let ctx_ref = if perm_ctx.primary_root.is_none() {
+        effective_ctx = crate::runtime::path_auth::ToolPermissionContext {
+            primary_root: Some(root.clone()),
+            ..(*perm_ctx).clone()
+        };
+        &effective_ctx
+    } else {
+        perm_ctx
+    };
+
+    for access in shell_command_path_accesses(command, &root) {
+        let canonical = crate::runtime::path_auth::decide::canonicalize_or_ancestor(&access.path)
+            .unwrap_or(access.path);
+        match crate::runtime::path_auth::decide::is_path_allowed(&canonical, access.op, ctx_ref) {
+            crate::runtime::path_auth::Decision::Allow => {}
+            crate::runtime::path_auth::Decision::Deny(message) => {
+                return Some(PermissionDecision::Deny {
+                    message,
+                    reason: PermissionReason::Capability,
+                });
+            }
+            crate::runtime::path_auth::Decision::Ask { reason } => {
+                return Some(PermissionDecision::Ask {
+                    message: reason,
+                    suggestions: vec!["仅本次允许".into(), "永久允许".into(), "拒绝".into()],
+                    remember_options: vec![
+                        crate::runtime::tools::permission::PermissionDestination::Session,
+                        crate::runtime::tools::permission::PermissionDestination::User,
+                    ],
+                    default_destination: Some(
+                        crate::runtime::tools::permission::PermissionDestination::Session,
+                    ),
+                    reason: PermissionReason::Capability,
+                    path_auth_scope: Some(path_auth_scope(&canonical, access.op)),
+                });
+            }
+        }
+    }
+    None
+}
+
 #[async_trait]
 impl RuntimeTool for PowerShellTool {
     fn id(&self) -> &str {
@@ -153,9 +446,16 @@ impl RuntimeTool for PowerShellTool {
         &self,
         _ctx: &crate::runtime::tools::ToolDescriptionContext,
     ) -> ToolDefinition {
-        TOOL_CATALOG
+        let mut definition = TOOL_CATALOG
             .get("PowerShell")
-            .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"))
+            .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"));
+        let edition = detect().map(|location| location.edition);
+        definition.description = format!(
+            "{}\n\n{}",
+            definition.description,
+            edition_guidance(edition)
+        );
+        definition
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -199,6 +499,10 @@ impl RuntimeTool for PowerShellTool {
                     reason: PermissionReason::Other("dangerous_pattern".to_string()),
                 });
             }
+        }
+
+        if let Some(decision) = command_path_permission_decision(command, ctx) {
+            return Some(decision);
         }
 
         if let Some(store) = ctx.permission_store.as_ref() {
@@ -274,6 +578,8 @@ impl RuntimeTool for PowerShellTool {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .no_window();
+        inject_bundled_runtime_path(&ctx, &mut shell);
+        inject_trace_env(&mut shell);
         let mut child = shell
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn PowerShell: {e}")))?;
@@ -471,5 +777,22 @@ mod tests {
             .and_then(|def| def.default_timeout_secs)
             .unwrap_or(DEFAULT_TIMEOUT_SECS);
         assert_eq!(resolve_timeout_secs(&json!({})), expected);
+    }
+
+    #[test]
+    fn edition_guidance_matches_detected_powershell_edition() {
+        let desktop = edition_guidance(Some(PowerShellEdition::Desktop));
+        assert!(desktop.contains("Windows PowerShell 5.1"));
+        assert!(desktop.contains("`&&` 和 `||` 不可用"));
+        assert!(desktop.contains("避免在原生 exe/cmd 后追加 `2>&1`"));
+
+        let core = edition_guidance(Some(PowerShellEdition::Core));
+        assert!(core.contains("PowerShell 7+"));
+        assert!(core.contains("`&&` 和 `||` 可用"));
+        assert!(core.contains("UTF-8 without BOM"));
+
+        let unknown = edition_guidance(None);
+        assert!(unknown.contains("assume Windows PowerShell 5.1"));
+        assert!(unknown.contains("避免在原生 exe/cmd 后追加 `2>&1`"));
     }
 }

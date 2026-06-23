@@ -96,16 +96,10 @@ impl Instance {
 async fn build_gateway() -> (Arc<LlmGateway>, Arc<AppSettings>) {
     let home = AiJiaHome::from_home();
 
-    let secure_storage = SecureStorage::new(&home.crypto_dir())
-        .ok()
-        .map(Arc::new);
+    let secure_storage = SecureStorage::new(&home.crypto_dir()).ok().map(Arc::new);
     let global_store = Arc::new(GlobalConfigStore::new(home.global_dir()));
 
-    let auth_manager = Arc::new(AuthManager::new(
-        global_store,
-        secure_storage,
-        &home,
-    ));
+    let auth_manager = Arc::new(AuthManager::new(global_store, secure_storage, &home));
     // 从本地 ~/.renlijia 读持久化的 JWT
     auth_manager.restore().await;
 
@@ -121,9 +115,8 @@ async fn build_gateway() -> (Arc<LlmGateway>, Arc<AppSettings>) {
     let db = Arc::new(AppStorage::new(&tmp).expect("AppStorage::new"));
 
     let run_registry = Arc::new(RuntimeRunRegistry::new());
-    let gateway = Arc::new(
-        LlmGateway::new_with_registry(db, run_registry).with_auth_manager(auth_manager),
-    );
+    let gateway =
+        Arc::new(LlmGateway::new_with_registry(db, run_registry).with_auth_manager(auth_manager));
 
     let settings = Arc::new(AppSettings::default());
     (gateway, settings)
@@ -205,7 +198,11 @@ fn msg_text(v: &Value) -> String {
 /// 把结构化 messages 还原成真实多轮对话（ChatMessage），并合并相邻同角色
 /// （对齐 Anthropic 的 user/assistant 交替约束）。role 归一：assistant 保留，
 /// 其余（system/tool/user）一律按 user 处理。最后追加问题作为末轮 user。
-fn build_answer_messages(history: &[Value], question: &str, question_date: &str) -> Vec<ChatMessage> {
+fn build_answer_messages(
+    history: &[Value],
+    question: &str,
+    question_date: &str,
+) -> Vec<ChatMessage> {
     let mut pairs: Vec<(String, String)> = Vec::new();
     for v in history {
         let role = if msg_role(v) == "assistant" {
@@ -270,7 +267,13 @@ fn truncate(s: &str, n: usize) -> String {
 // 判分（移植自 LongMemEval evaluate_qa.py::get_anscheck_prompt）
 // ---------------------------------------------------------------------------
 
-fn anscheck_prompt(qtype: &str, question: &str, answer: &str, response: &str, abstention: bool) -> String {
+fn anscheck_prompt(
+    qtype: &str,
+    question: &str,
+    answer: &str,
+    response: &str,
+    abstention: bool,
+) -> String {
     if abstention {
         return format!(
             "I will give you an unanswerable question, an explanation, and a response from a model. Please answer yes if the model correctly identifies the question as unanswerable. The model could say that the information is incomplete, or some other information is given but the asked information is not.\n\nQuestion: {q}\n\nExplanation: {a}\n\nModel Response: {r}\n\nDoes the model correctly identify the question as unanswerable? Answer yes or no only.",
@@ -314,7 +317,14 @@ async fn judge(
         response,
         inst.is_abstention(),
     );
-    match ask(gateway, settings, None, vec![ChatMessage::text("user", prompt)]).await {
+    match ask(
+        gateway,
+        settings,
+        None,
+        vec![ChatMessage::text("user", prompt)],
+    )
+    .await
+    {
         Ok(verdict) => verdict.to_lowercase().contains("yes"),
         Err(e) => {
             eprintln!("[judge] 失败（按 no 计）：{}", e);
@@ -356,7 +366,12 @@ impl Scoreboard {
 
     fn print(&self, title: &str) {
         println!("\n===== {} =====", title);
-        println!("总正确率: {:.4} ({}/{})", self.acc(), self.correct, self.total);
+        println!(
+            "总正确率: {:.4} ({}/{})",
+            self.acc(),
+            self.correct,
+            self.total
+        );
         for (qtype, (c, t)) in &self.by_type {
             let a = if *t == 0 { 0.0 } else { *c as f64 / *t as f64 };
             println!("  {:<28} {:.4} ({}/{})", qtype, a, c, t);
@@ -394,7 +409,13 @@ struct Outcome {
 ///
 /// 摘要走 `send_message` + 生产 `COMPACT_SYSTEM_PROMPT`（顶部 import，单一真相源）。
 /// 不走 `LlmCompactSummaryClient`，因其内部强制 v2 网关，在 headless 测试环境会空返回。
-async fn eval_one(gw: &LlmGateway, st: &AppSettings, inst: &Instance, idx: usize, n: usize) -> Option<Outcome> {
+async fn eval_one(
+    gw: &LlmGateway,
+    st: &AppSettings,
+    inst: &Instance,
+    idx: usize,
+    n: usize,
+) -> Option<Outcome> {
     let history = sessions_to_messages(inst);
     let pre = estimate_total_chars(&history);
 

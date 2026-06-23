@@ -3,6 +3,7 @@
  * @sizing caption 12 muted; chip r-999 border 1 bg background padding [6,12] gap 8
  */
 import type { ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 export interface SuggestChip {
   label: string
@@ -21,15 +22,15 @@ export function SuggestChipGroup({ caption = '建议回复', items }: SuggestChi
       <div className="text-xs text-muted-foreground">{caption}</div>
       <div className="flex flex-wrap gap-2">
         {items.map((it, i) => (
-          <button
+          <Button unstyled
             key={i}
             type="button"
             onClick={it.onClick}
-            className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
+            className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
           >
             {it.icon}
             <span>{it.label}</span>
-          </button>
+          </Button>
         ))}
       </div>
     </div>

@@ -84,7 +84,7 @@ if [ -z "$APP" ]; then
     exit 1
 fi
 
-# DMG is now optional. tauri.conf.json bundles only "app" (+nsis for Windows);
+# DMG is now optional. tauri.conf.json bundles only "app" (+msi for Windows);
 # bundle_dmg.sh has been unreliable for months. Step 1b will build the DMG
 # from the signed .app via hdiutil. If a prior DMG exists (placeholder, old
 # build, or CI-produced), we still find it and let Step 1b decide whether

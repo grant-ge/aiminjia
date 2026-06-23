@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AssistantMarkdown } from '../../AssistantMarkdown'
+import type { GeneratedFile } from '@/types/message'
 
 const mockOpenLocalFile = vi.fn()
 const mockOpenPreview = vi.fn()
@@ -196,6 +197,42 @@ describe('AssistantMarkdown', () => {
     expect(screen.getByRole('link', { name: '工作空间示意图' })).toBeInTheDocument()
   })
 
+  it('renders generated relative image markdown through generated file metadata', async () => {
+    const generatedFile: GeneratedFile = {
+      id: 'file-1',
+      fileName: 'result.jpg',
+      filePath: '/Users/oayzz/.renlijia/users/t_1__u_2/conversations/conv-1/generated/images/result.jpg',
+      fileType: 'jpeg',
+      fileSize: 12,
+      category: 'image',
+      version: 1,
+      isLatest: true,
+      createdAt: '2026-06-10T00:00:00Z',
+      description: 'generated image',
+    }
+    mockGetLocalFilePreview.mockResolvedValue({
+      kind: 'image',
+      fileName: 'result.jpg',
+      mimeType: 'image/jpeg',
+      dataUrl: 'data:image/jpeg;base64,aW1hZ2U=',
+    })
+
+    const { container } = render(
+      <AssistantMarkdown
+        text={'![生成图](generated/images/result.jpg)'}
+        conversationId="conv-1"
+        generatedFiles={[generatedFile]}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockGetLocalFilePreview).toHaveBeenCalledWith(generatedFile.filePath)
+    })
+    const image = container.querySelector('img') as HTMLImageElement | null
+    expect(image).toBeInTheDocument()
+    expect(image?.src).toBe('data:image/jpeg;base64,aW1hZ2U=')
+  })
+
   it('renders empty GFM table header without the structured TableView empty state', () => {
     const md = `| A | B |
 |---|---|`
@@ -256,7 +293,7 @@ Paragraph with **bold**, *italic*, ~~deleted~~, and \`inline code\`.
     const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8')
 
     expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*border-left: 3px solid/s)
-    expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*border-radius: 0;/s)
+    expect(css).not.toMatch(/\.assistant-markdown blockquote \{[^}]*border-radius:/s)
     expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*background: transparent;/s)
   })
 

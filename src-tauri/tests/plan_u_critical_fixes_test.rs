@@ -8,7 +8,9 @@ use app_lib::runtime::chat::compaction::{
     build_compact_boundary_record, compact_transcript_path_for_conversation_dir,
     CompactBoundaryRecord, CompactTrigger,
 };
-use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
+use app_lib::runtime::chat::turn_config::{
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnError,
+};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
@@ -154,6 +156,13 @@ impl CompactingExecutor {
 
 #[async_trait]
 impl RuntimeLlmExecutor for CompactingExecutor {
+    async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
+        Ok(ResolvedLlmSettings {
+            context_window: Some(128_000),
+            ..ResolvedLlmSettings::default()
+        })
+    }
+
     async fn run_llm_step(
         &self,
         _input: &LlmStepInput<'_>,
@@ -212,6 +221,7 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         _content: &str,
         _attachments: &[app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef],
         _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
+        _reasoning_mode: Option<app_lib::runtime::chat::chat_turn_driver::ReasoningMode>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         let id = "current-user".to_string();

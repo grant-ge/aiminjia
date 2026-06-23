@@ -11,7 +11,10 @@ fn sample_item(id: &str) -> PendingItem {
         sender_nick: None,
         attachments: vec![],
         skill_command: None,
+        reasoning_mode: None,
         received_at: "2026-05-11T03:21:00Z".into(),
+        origin: Default::default(),
+        output_binding: Default::default(),
     }
 }
 
@@ -60,6 +63,31 @@ fn read_pending_with_unknown_schema_returns_empty() {
     std::fs::write(&path, r#"{"schemaVersion":99,"items":[]}"#).unwrap();
     let items = read_pending(&path).unwrap();
     assert!(items.is_empty());
+}
+
+#[test]
+fn read_pending_v1_item_without_source_defaults_to_app() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("pending.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "schemaVersion": 1,
+            "items": [{
+                "id": "legacy-1",
+                "text": "legacy pending text",
+                "receivedAt": "2026-05-11T03:21:00Z"
+            }]
+        }"#,
+    )
+    .unwrap();
+
+    let items = read_pending(&path).unwrap();
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, "legacy-1");
+    assert_eq!(items[0].source, PendingSource::App);
+    assert_eq!(items[0].text, "legacy pending text");
 }
 
 #[test]

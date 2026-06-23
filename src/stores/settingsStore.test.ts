@@ -19,13 +19,15 @@ describe('settingsStore — defaults', () => {
     expect(state.primaryApiKey).toBe('')
     expect(state.autoModelRouting).toBe(true)
     expect(state.analysisThreshold).toBe(1.65)
-    expect(state.dataMaskingLevel).toBe('relaxed')
+    expect('dataMaskingLevel' in state).toBe(false)
     expect(state.autoCleanupEnabled).toBe(true)
     expect(state.tempFileRetentionDays).toBe(7)
     expect(state.keepOldVersions).toBe(1)
     expect(state.cloudModel).toBe('')
     expect(state.cloudModelType).toBe('')
+    expect(state.fontScale).toBe('medium')
     expect(state.chatWidthMode).toBe('full')
+    expect(state.uiSidebarCollapsedProjects).toBe('')
     expect(state.isLoaded).toBe(false)
   })
 })
@@ -58,10 +60,10 @@ describe('settingsStore — setters', () => {
   it('sets font scale and applies the root font size immediately', () => {
     useSettingsStore.getState().setFontScale('large')
     expect(useSettingsStore.getState().fontScale).toBe('large')
-    expect(document.documentElement.style.fontSize).toBe('18px')
+    expect(document.documentElement.style.fontSize).toBe('17.2307692308px')
 
     useSettingsStore.getState().setFontScale('small')
-    expect(document.documentElement.style.fontSize).toBe('14px')
+    expect(document.documentElement.style.fontSize).toBe('14.7692307692px')
   })
 
   it('sets chat width mode', () => {
@@ -85,13 +87,13 @@ describe('settingsStore — setters', () => {
 describe('settingsStore — setSettings (bulk)', () => {
   it('updates multiple settings at once', () => {
     useSettingsStore.getState().setSettings({
-      primaryModel: 'claude',
+      primaryModel: 'custom',
       autoModelRouting: false,
       chatWidthMode: 'full',
     })
 
     const state = useSettingsStore.getState()
-    expect(state.primaryModel).toBe('claude')
+    expect(state.primaryModel).toBe('custom')
     expect(state.autoModelRouting).toBe(false)
     expect(state.chatWidthMode).toBe('full')
     // Other settings remain at defaults
@@ -136,14 +138,14 @@ describe('settingsStore — appLanguage consistency', () => {
     useSettingsStore.getState().setAppLanguage('en-US')
 
     // …then backend settings (saved on another session) arriving post sign-in.
-    useSettingsStore.getState().setSettings({ primaryModel: 'claude', appLanguage: 'zh-CN' })
+    useSettingsStore.getState().setSettings({ primaryModel: 'custom', appLanguage: 'zh-CN' })
 
     const state = useSettingsStore.getState()
     // Device choice wins: the on-screen language and the store agree.
     expect(i18n.language).toBe('en-US')
     expect(state.appLanguage).toBe('en-US')
     // Unrelated settings still apply.
-    expect(state.primaryModel).toBe('claude')
+    expect(state.primaryModel).toBe('custom')
   })
 
   it('leaves appLanguage untouched on a partial update that omits it', () => {
@@ -153,11 +155,10 @@ describe('settingsStore — appLanguage consistency', () => {
   })
 })
 
-describe('settingsStore — setDataMaskingLevel', () => {
-  it('updates dataMaskingLevel in store', () => {
-    useSettingsStore.getState().setDataMaskingLevel('strict')
-    expect(useSettingsStore.getState().dataMaskingLevel).toBe('strict')
-    useSettingsStore.getState().setDataMaskingLevel('relaxed')
-    expect(useSettingsStore.getState().dataMaskingLevel).toBe('relaxed')
+describe('settingsStore — removed legacy data masking setting', () => {
+  it('does not expose dataMaskingLevel or its setter', () => {
+    const state = useSettingsStore.getState()
+    expect('dataMaskingLevel' in state).toBe(false)
+    expect('setDataMaskingLevel' in state).toBe(false)
   })
 })

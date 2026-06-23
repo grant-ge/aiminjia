@@ -172,3 +172,46 @@ export function truncateText(text: string, maxLength: number): string {
 export function formatNumber(value: number): string {
   return new Intl.NumberFormat(currentLocale()).format(value);
 }
+
+function formatScaledNumber(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+/**
+ * Format token counts with readable large-number units while preserving the
+ * original number for calculations elsewhere.
+ */
+export function formatTokenCount(value: number | null | undefined): string {
+  const numericValue = Number(value);
+  if (value == null || !Number.isFinite(numericValue)) return '-';
+
+  const locale = currentLocale();
+  const absValue = Math.abs(numericValue);
+  const isChinese = locale.toLowerCase().startsWith('zh');
+
+  if (isChinese) {
+    if (absValue >= 1_000_000_000) {
+      return `${formatScaledNumber(numericValue / 1_000_000_000, locale)} 十亿 Tokens`;
+    }
+    if (absValue >= 1_000_000) {
+      return `${formatScaledNumber(numericValue / 1_000_000, locale)} 百万 Tokens`;
+    }
+    if (absValue >= 10_000) {
+      return `${formatScaledNumber(numericValue / 10_000, locale)} 万 Tokens`;
+    }
+    return `${formatNumber(numericValue)} Tokens`;
+  }
+
+  if (absValue >= 1_000_000_000) {
+    return `${formatScaledNumber(numericValue / 1_000_000_000, locale)}B Tokens`;
+  }
+  if (absValue >= 1_000_000) {
+    return `${formatScaledNumber(numericValue / 1_000_000, locale)}M Tokens`;
+  }
+  if (absValue >= 1_000) {
+    return `${formatScaledNumber(numericValue / 1_000, locale)}K Tokens`;
+  }
+  return `${formatNumber(numericValue)} Tokens`;
+}

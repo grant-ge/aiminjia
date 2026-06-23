@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react'
+import { Check, Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 
 interface CodeProps {
   inline?: boolean
@@ -7,7 +9,7 @@ interface CodeProps {
   children?: React.ReactNode
 }
 
-function textFromNode(node: React.ReactNode): string {
+export function textFromNode(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return ''
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (Array.isArray(node)) return node.map(textFromNode).join('')
@@ -23,9 +25,9 @@ function InlineCode({ children }: { children?: React.ReactNode }) {
       style={{
         background: 'var(--color-bg-base)',
         padding: '1px 5px',
-        borderRadius: 3,
+        borderRadius: 'var(--radius-md)',
         fontFamily: 'var(--font-mono)',
-        fontSize: '0.82em',
+        fontSize: '0.928571em',
         color: 'var(--color-text-primary)',
       }}
     >
@@ -59,7 +61,7 @@ function FencedCodeBlock({ className, children }: { className?: string; children
     <div
       style={{
         margin: '12px 0',
-        borderRadius: 8,
+        borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
         border: '1px solid var(--color-border-subtle)',
       }}
@@ -79,31 +81,23 @@ function FencedCodeBlock({ className, children }: { className?: string; children
         }}
       >
         <span>{lang}</span>
-        <button
+        <Button
           type="button"
+          link
           onClick={handleCopy}
-          style={{
-            cursor: 'pointer',
-            border: 'none',
-            background: 'none',
-            fontSize: '0.7rem',
-            color:
-              copied === 'ok'
-                ? 'var(--color-semantic-green)'
-                : copied === 'fail'
-                  ? 'var(--color-semantic-red)'
-                  : 'var(--color-text-muted)',
-            fontFamily: 'var(--font-mono)',
-            padding: '2px 6px',
-            borderRadius: 3,
-          }}
+          className="gap-1 font-mono text-[0.7rem] text-[var(--color-text-muted)]"
         >
+          {copied === 'ok' ? (
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
           {copied === 'ok'
             ? t('common.copied', 'Copied')
             : copied === 'fail'
               ? t('common.copyFailed', 'Copy failed')
               : t('common.copy', 'Copy')}
-        </button>
+        </Button>
       </div>
       <pre
         style={{
@@ -111,7 +105,7 @@ function FencedCodeBlock({ className, children }: { className?: string; children
           padding: '12px 14px',
           overflowX: 'auto',
           background: 'var(--color-bg-elevated, var(--color-bg-card))',
-          fontSize: '0.82rem',
+          fontSize: '0.928571em',
           lineHeight: 1.55,
           fontFamily: 'var(--font-mono)',
           color: 'var(--color-text-primary)',

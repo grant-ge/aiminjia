@@ -109,6 +109,7 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         authorized_workspace: parent.authorized_workspace.clone(),
         read_file_state: parent.read_file_state.clone(),
         app_handle: parent.app_handle.clone(),
+        auth_manager: parent.auth_manager.clone(),
         runtime_resolver: parent.runtime_resolver.clone(),
         skill_registry: None,
         permission_ctx: None,

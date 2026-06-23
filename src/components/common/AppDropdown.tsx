@@ -60,7 +60,7 @@ export function AppDropdown({
         className={cn(
           // spec §5 — uses --shadow-popover (already covered by DropdownMenuContent default,
           // but kept explicit here for the wider min-width variant)
-          'min-w-40 rounded-lg border border-border bg-popover p-1.5 text-foreground shadow-[var(--shadow-popover)]',
+          'min-w-40 rounded-md border border-border bg-popover p-1.5 text-foreground shadow-[var(--shadow-popover)]',
           '[&_[data-highlighted]]:bg-accent [&_[data-highlighted]]:text-accent-foreground',
           contentClassName,
         )}

@@ -2,9 +2,10 @@
 //!
 //! Architectural intent (see `lotus/docs/superpowers/specs/2026-05-10-employee-templates-as-a-service.md`):
 //!
-//! - Templates are versioned, immutable JSON documents. The authoritative
-//!   catalog lives on lotus ops-portal (table `employee_templates`, OSS path
-//!   `ops/employee-templates/{template_id}/{version}.json`).
+//! - Templates are versioned JSON documents. The authoritative catalog lives on
+//!   lotus ops-portal (table `employee_templates`, OSS path
+//!   `ops/employee-templates/{template_id}/{version}.json`); desktop cache
+//!   freshness is determined by the published package sha256.
 //! - The desktop client caches downloaded snapshots in
 //!   `~/.renlijia/employee-templates-cache/{encoded_tid}/{encoded_ver}.json`.
 //!   Cache path components are percent-encoded because OPS template IDs such as
@@ -412,23 +413,11 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 //
 //   {encoded_template_id}/{encoded_version}.json       — the canonical snapshot JSON
 //
-// The cache is content-addressed (the sha256 from the OPS manifest must
-// match) and immutable per `(template_id, version)`. Callers always go
-// through `fetch_or_cache()`; hitting the cache is free, missing entries
-// trigger one HTTP GET. The cache is shared across users on the same
-// machine — templates are not user data.
-
-/// Default lotus ops-portal base URL. Can be overridden via the
-/// `LOTUS_OPS_BASE_URL` env var (useful for local dev pointing at
-/// `http://localhost:8082`).
-const DEFAULT_OPS_BASE_URL: &str = "https://ai-ops.renlijia.com";
-
-fn ops_base_url() -> String {
-    std::env::var("LOTUS_OPS_BASE_URL")
-        .unwrap_or_else(|_| DEFAULT_OPS_BASE_URL.to_string())
-        .trim_end_matches('/')
-        .to_string()
-}
+// The cache is validated against the sha256 from the OPS manifest. Callers can
+// reuse a local file when the hash matches; if a published same-version
+// snapshot is corrected and the manifest hash changes, refresh overwrites the
+// cached JSON. The cache is shared across users on the same machine —
+// templates are not user data.
 
 /// Shape of `GET /api/public/employee-templates/:tid/manifest`. Only the
 /// fields we actually use are declared — extra fields are ignored by serde.
@@ -578,6 +567,40 @@ pub fn read_cache(cache_dir: &Path, template_id: &str, version: &str) -> Option<
     None
 }
 
+fn existing_cache_path(cache_dir: &Path, template_id: &str, version: &str) -> Option<PathBuf> {
+    let encoded_path = cache_path_for(cache_dir, template_id, version);
+    if encoded_path.exists() {
+        return Some(encoded_path);
+    }
+    if let Some(legacy_path) = legacy_cache_path_for(cache_dir, template_id, version) {
+        if legacy_path.exists() {
+            return Some(legacy_path);
+        }
+    }
+    None
+}
+
+pub fn cached_snapshot_matches_sha256(
+    cache_dir: &Path,
+    template_id: &str,
+    version: &str,
+    expected_sha256: &str,
+) -> bool {
+    let Some(path) = existing_cache_path(cache_dir, template_id, version) else {
+        return false;
+    };
+    if expected_sha256.trim().is_empty() {
+        return true;
+    }
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let mut h = Sha256::new();
+    h.update(&bytes);
+    let got = hex_lower(&h.finalize());
+    expected_sha256.eq_ignore_ascii_case(&got)
+}
+
 /// Persist `snapshot` to the cache directory. Atomic (tmp + rename).
 pub fn write_cache(cache_dir: &Path, snapshot: &TemplateSnapshot) -> Result<PathBuf> {
     let p = cache_path_for(cache_dir, &snapshot.template_id, &snapshot.version);
@@ -596,7 +619,7 @@ pub fn write_cache(cache_dir: &Path, snapshot: &TemplateSnapshot) -> Result<Path
 pub async fn fetch_manifest(client: &reqwest::Client, template_id: &str) -> Result<RemoteManifest> {
     let url = format!(
         "{}/api/public/employee-templates/{}/manifest",
-        ops_base_url(),
+        crate::environment::ops_host(),
         url_path_segment(template_id)
     );
     let resp = client
@@ -626,7 +649,10 @@ pub async fn fetch_manifest(client: &reqwest::Client, template_id: &str) -> Resu
 /// Fetch the full published catalog `GET {base}/api/public/employee-templates`.
 /// Returns the latest published version per `template_id`, `tenant_scope=global`.
 pub async fn fetch_catalog(client: &reqwest::Client) -> Result<Vec<serde_json::Value>> {
-    let url = format!("{}/api/public/employee-templates", ops_base_url());
+    let url = format!(
+        "{}/api/public/employee-templates",
+        crate::environment::ops_host()
+    );
     let resp = client
         .get(&url)
         .timeout(std::time::Duration::from_secs(10))
@@ -694,20 +720,46 @@ pub async fn ensure_cached(
     template_id: &str,
     version: &str,
 ) -> Result<TemplateSnapshot> {
-    if let Some(s) = read_cache(cache_dir, template_id, version) {
-        return Ok(s);
-    }
-    let manifest = fetch_manifest(client, template_id).await?;
+    Ok(
+        ensure_cached_with_status(cache_dir, client, template_id, version)
+            .await?
+            .0,
+    )
+}
+
+pub async fn ensure_cached_with_status(
+    cache_dir: &Path,
+    client: &reqwest::Client,
+    template_id: &str,
+    version: &str,
+) -> Result<(TemplateSnapshot, bool)> {
+    let manifest = match fetch_manifest(client, template_id).await {
+        Ok(manifest) => manifest,
+        Err(e) => {
+            if let Some(s) = read_cache(cache_dir, template_id, version) {
+                return Ok((s, false));
+            }
+            return Err(e);
+        }
+    };
     if manifest.latest_version != version {
+        if let Some(s) = read_cache(cache_dir, template_id, version) {
+            return Ok((s, false));
+        }
         anyhow::bail!(
             "cache miss for {template_id}@{version}, but OPS latest is {}; \
              fetching historical versions is not supported yet",
             manifest.latest_version
         );
     }
+    if cached_snapshot_matches_sha256(cache_dir, template_id, version, &manifest.package_sha256) {
+        if let Some(s) = read_cache(cache_dir, template_id, version) {
+            return Ok((s, false));
+        }
+    }
     let snap = download_snapshot(client, &manifest.package_url, &manifest.package_sha256).await?;
     write_cache(cache_dir, &snap)?;
-    Ok(snap)
+    Ok((snap, true))
 }
 
 /// Merge the bootstrap list with any cached (downloaded) versions. When

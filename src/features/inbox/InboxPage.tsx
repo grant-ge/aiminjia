@@ -1,14 +1,22 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCheck } from 'lucide-react'
+import {
+  CheckCheck,
+} from 'lucide-react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { Button } from '@/components/ui/button'
+import {
+  employeeInitial,
+  getLocalEmployeeAvatarUrl,
+} from '@/features/employees/employeeVisual'
+import { localizeEmployeeDisplay } from '@/features/employees/templates'
 import { useEmployees } from '@/features/employees/useEmployees'
 import { useInbox } from '@/features/employees/useInbox'
 import { useUiStore } from '@/stores/uiStore'
-import type { InboxKind } from '@/lib/tauri'
+import type { EmployeeRecord, InboxKind } from '@/lib/tauri'
+import { cn } from '@/lib/utils'
 
 type KindFilter = 'all' | InboxKind
 
@@ -19,13 +27,53 @@ const KIND_TAB_KEYS: { key: KindFilter; i18nKey: string }[] = [
   { key: 'error', i18nKey: 'inbox.filterError' },
 ]
 
-function kindIcon(kind: InboxKind): string {
-  switch (kind) {
-    case 'report': return '📄'
-    case 'signal': return '💡'
-    case 'running': return '⚙️'
-    case 'error': return '⚠️'
+function EmployeeInboxAvatar({ name }: { name: string }) {
+  const avatarUrl = getLocalEmployeeAvatarUrl(name)
+  return (
+    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-sm font-semibold leading-none text-muted-foreground shadow-[var(--shadow-sm)]">
+      {avatarUrl ? (
+        <img
+          alt=""
+          className="h-full w-full object-cover"
+          draggable={false}
+          src={avatarUrl}
+        />
+      ) : (
+        employeeInitial(name)
+      )}
+    </span>
+  )
+}
+
+function formatInboxTitleParts(
+  title: string,
+  employee: EmployeeRecord | undefined,
+  language: string,
+): { identity: string | null; status: string } {
+  if (!employee) return { identity: null, status: title }
+  const display = localizeEmployeeDisplay(
+    employee.templateId,
+    {
+      name: employee.name,
+      role: employee.role ?? '',
+      description: employee.description ?? '',
+    },
+    language,
+  )
+  const role = display.role?.trim()
+  const name = display.name.trim()
+  const identity = role ? `${role} · ${name}` : name
+  const spacedPrefix = role ? `${role} ${name}` : name
+  const normalizedTitle = title.trim()
+  let status = normalizedTitle
+  if (normalizedTitle.startsWith(spacedPrefix)) {
+    status = normalizedTitle.slice(spacedPrefix.length).trimStart()
+  } else if (normalizedTitle.startsWith(identity)) {
+    status = normalizedTitle.slice(identity.length).trimStart()
+  } else if (normalizedTitle.startsWith(name)) {
+    status = normalizedTitle.slice(name.length).trimStart()
   }
+  return { identity, status: status || normalizedTitle }
 }
 
 function useInboxTimeLabel() {
@@ -46,7 +94,7 @@ function useInboxTimeLabel() {
 }
 
 export function InboxPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const timeLabel = useInboxTimeLabel()
   const { employees } = useEmployees()
   const { entries, markAllRead, markRead } = useInbox()
@@ -86,72 +134,74 @@ export function InboxPage() {
           variant="title"
           title={t('inbox.title')}
           trailing={
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 text-xs"
-              disabled={markingAll || unread === 0}
-              onClick={handleMarkAll}
-            >
-              <CheckCheck className="h-3.5 w-3.5" />
-              {t('inbox.markAllRead')}
-            </Button>
+            <div className="flex items-center gap-2">
+              {unread > 0 && (
+                <span className="rounded-md bg-[rgba(var(--primary-rgb),0.10)] px-2 py-0.5 text-xs font-medium text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.10)]">
+                  {t('inbox.unreadCount', { count: unread })}
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                disabled={markingAll || unread === 0}
+                onClick={handleMarkAll}
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                {t('inbox.markAllRead')}
+              </Button>
+            </div>
           }
         />
       }
     >
-      {/* Filter bar */}
-      <div className="flex items-center gap-3">
-        {/* Kind tabs */}
-        <div className="flex items-center gap-0.5 rounded-lg bg-muted/50 p-0.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           {KIND_TAB_KEYS.map((tab) => (
-            <button
+            <Button unstyled
               key={tab.key}
               type="button"
               onClick={() => setKindFilter(tab.key)}
-              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+              className={cn(
+                'h-8 max-w-[120px] shrink-0 truncate rounded-md px-3 text-sm font-semibold transition-colors',
                 kindFilter === tab.key
-                  ? 'bg-background font-medium text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+                  ? 'bg-[rgba(var(--primary-rgb),0.10)] text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.12)]'
+                  : 'text-muted-foreground/80 hover:bg-muted/45 hover:text-foreground',
+              )}
             >
               {t(tab.i18nKey)}
-            </button>
+            </Button>
           ))}
         </div>
 
-        {/* Employee filter */}
-        <select
-          value={empFilter}
-          onChange={(e) => setEmpFilter(e.target.value)}
-          className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground"
-        >
-          <option value="all">{t('inbox.allEmployees')}</option>
-          {employees
-            .filter((emp) => emp.lifecycle !== 'archived')
-            .map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.avatar} {emp.name}
-              </option>
-            ))}
-        </select>
-
-        {unread > 0 && (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-            {t('inbox.unreadCount', { count: unread })}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          <select
+            value={empFilter}
+            onChange={(e) => setEmpFilter(e.target.value)}
+            className="h-8 rounded-md border border-border/70 bg-card px-2.5 text-sm font-medium text-foreground shadow-[var(--shadow-sm)] outline-none transition-colors hover:border-border focus:border-primary"
+          >
+            <option value="all">{t('inbox.allEmployees')}</option>
+            {employees
+              .filter((emp) => emp.lifecycle !== 'archived')
+              .map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name}
+                </option>
+              ))}
+          </select>
+        </div>
       </div>
 
       {/* Entry list */}
       {filtered.length === 0 ? (
-        <div className="flex h-[240px] items-center justify-center rounded-xl border border-dashed border-border">
+        <div className="flex h-[240px] items-center justify-center rounded-md border border-dashed border-border/70 bg-card shadow-[var(--shadow-card)]">
           <p className="text-sm text-muted-foreground">{t('inbox.noRecords')}</p>
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border">
+        <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-md border border-border/70 bg-card shadow-[var(--shadow-card)]">
           {filtered.map((entry) => {
             const emp = employees.find((e) => e.id === entry.employeeId)
+            const title = formatInboxTitleParts(entry.title, emp, i18n.language)
             const clickable = !!entry.conversationId
             const handleClick = async () => {
               if (!entry.read) {
@@ -163,27 +213,29 @@ export function InboxPage() {
               }
             }
             return (
-              <button
+              <Button unstyled
                 key={entry.id}
                 type="button"
+                aria-label={title.identity ? `${title.identity} ${title.status}` : title.status}
                 onClick={handleClick}
                 disabled={!clickable}
-                className={`flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-accent/30 disabled:cursor-default disabled:hover:bg-transparent ${
-                  !entry.read ? 'bg-blue-50/20' : ''
-                }`}
+                className={cn(
+                  'flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent',
+                  !entry.read && 'bg-[rgba(var(--primary-rgb),0.055)]',
+                )}
               >
-                <span className="mt-0.5 text-lg">{kindIcon(entry.kind)}</span>
+                <EmployeeInboxAvatar name={emp?.name ?? entry.employeeId} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    {emp && (
-                      <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                        {emp.avatar} {emp.name}
+                  <div className="flex min-w-0 items-center gap-4">
+                    {title.identity && (
+                      <span className="max-w-[42%] shrink-0 truncate text-sm font-semibold text-foreground">
+                        {title.identity}
                       </span>
                     )}
-                    <span className="text-sm font-medium text-foreground">{entry.title}</span>
+                    <span className="min-w-0 truncate text-sm font-semibold text-foreground">{title.status}</span>
                   </div>
                   {entry.summary && (
-                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{entry.summary}</p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{entry.summary}</p>
                   )}
                   {entry.catchupInfo && (
                     <p className="mt-0.5 text-xs italic text-muted-foreground/60">{entry.catchupInfo}</p>
@@ -192,10 +244,10 @@ export function InboxPage() {
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-xs text-muted-foreground/60">{timeLabel(entry.createdAt)}</span>
                   {!entry.read && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                    <span className="h-1.5 w-1.5 rounded-md bg-primary" />
                   )}
                 </div>
-              </button>
+              </Button>
             )
           })}
         </div>

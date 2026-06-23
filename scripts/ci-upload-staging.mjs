@@ -1,21 +1,21 @@
 #!/usr/bin/env node
-// Upload unsigned Windows installer to OSS staging area where
+// Upload unsigned Windows MSI installer to OSS staging area where
 // release-windows.ps1 pulls it from. Called by build-desktop.yml.
 //
-// Usage: node scripts/ci-upload-staging.mjs <version> <exe-path> <sig-path>
+// Usage: node scripts/ci-upload-staging.mjs <version> <installer-path> <sig-path>
 //
 // Required env: OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET
 
 import { existsSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
-const [, , version, exePath, sigPath] = process.argv
-if (!version || !exePath) {
-  console.error('Usage: node scripts/ci-upload-staging.mjs <version> <exe-path> <sig-path>')
+const [, , version, installerPath, sigPath] = process.argv
+if (!version || !installerPath) {
+  console.error('Usage: node scripts/ci-upload-staging.mjs <version> <installer-path> <sig-path>')
   process.exit(1)
 }
-if (!existsSync(exePath)) {
-  console.error(`ERROR: exe not found: ${exePath}`)
+if (!existsSync(installerPath)) {
+  console.error(`ERROR: installer not found: ${installerPath}`)
   process.exit(1)
 }
 if (!process.env.OSS_ACCESS_KEY_ID || !process.env.OSS_ACCESS_KEY_SECRET) {
@@ -50,10 +50,9 @@ const client = new OSS({
   secure: true,
 })
 
-const exeName = exePath.replace(/\\/g, '/').split('/').pop()
 const stagingPrefix = `aijia/staging/unsigned/v${version}`
-const exeKey = `${stagingPrefix}/${exeName}`
-const sigKey = `${exeKey}.sig`
+const installerKey = `${stagingPrefix}/AIjia_${version}_x64-setup.msi`
+const sigKey = `${installerKey}.sig`
 
 async function upload(localPath, remoteKey) {
   const size = statSync(localPath).size
@@ -69,12 +68,12 @@ async function upload(localPath, remoteKey) {
 }
 
 try {
-  await upload(exePath, exeKey)
+  await upload(installerPath, installerKey)
   if (sigPath && existsSync(sigPath)) {
     await upload(sigPath, sigKey)
   }
   console.log(`\n[ok] staging URLs:`)
-  console.log(`  https://lotus.renlijia.com/${exeKey}`)
+  console.log(`  https://lotus.renlijia.com/${installerKey}`)
   if (sigPath && existsSync(sigPath)) console.log(`  https://lotus.renlijia.com/${sigKey}`)
 } catch (err) {
   console.error(`\nERROR: staging upload failed: ${err.message}`)

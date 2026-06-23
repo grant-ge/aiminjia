@@ -2,4 +2,5 @@
 pub enum PathOp {
     Read,
     Write,
+    Delete,
 }

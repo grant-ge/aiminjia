@@ -7,9 +7,23 @@ const sendUserMessage = vi.fn(async () => undefined)
 // Mock stores that HomePage's children touch
 const setRoute = vi.fn()
 const consumePrefillText = vi.fn(() => null)
-const uiState = { route: { kind: 'home' }, setRoute, openSettings: vi.fn(), consumePrefillText, consumePendingSkill: vi.fn(() => null) }
+const setPermissionModeForSession = vi.fn()
+const setReasoningModeForSession = vi.fn()
+const uiState = {
+  route: { kind: 'home' },
+  setRoute,
+  openSettings: vi.fn(),
+  consumePrefillText,
+  consumePendingSkill: vi.fn(() => null),
+  permissionModesBySession: {},
+  reasoningModesBySession: {},
+  setPermissionModeForSession,
+  setReasoningModeForSession,
+}
 
 vi.mock('@/stores/uiStore', () => ({
+  DRAFT_PERMISSION_SESSION_ID: '__draft__',
+  DRAFT_REASONING_SESSION_ID: '__draft_reasoning__',
   useUiStore: Object.assign(
     (sel: (s: unknown) => unknown) => sel(uiState),
     { getState: () => uiState },
@@ -45,6 +59,8 @@ describe('HomePage', () => {
     sendUserMessage.mockClear()
     setRoute.mockClear()
     consumePrefillText.mockClear()
+    setPermissionModeForSession.mockClear()
+    setReasoningModeForSession.mockClear()
   })
 
   it('renders mascot title and composer without secondary CTA or suggestions', () => {
@@ -57,7 +73,7 @@ describe('HomePage', () => {
 
   it('vertically centers the main home content column', () => {
     const { container } = render(<HomePage />)
-    const pageWrapper = container.querySelector('.mx-auto.max-w-\\[1032px\\]')
+    const pageWrapper = container.querySelector('.mx-auto.max-w-\\[1280px\\]')
     expect(pageWrapper?.className).toMatch(/justify-center/)
   })
 

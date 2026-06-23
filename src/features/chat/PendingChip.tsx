@@ -2,6 +2,7 @@ import { Paperclip, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { PendingItem } from '@/types/pending'
+import { Button } from '@/components/ui/button'
 
 const PREVIEW_MAX = 30
 
@@ -56,19 +57,19 @@ export function PendingChip({ item, onRemove }: Props) {
           data-testid="pending-chip-attachment-icon"
         />
       )}
-      <button
+      <Button unstyled
         type="button"
         onClick={onRemove}
         aria-label={t('chat.pending.removeAria')}
         className="
           ml-0.5 shrink-0
           hover:bg-destructive/10 hover:text-destructive
-          rounded p-0.5
+          rounded-md p-0.5
           transition-colors
         "
       >
         <X className="w-3 h-3" />
-      </button>
+      </Button>
     </div>
   )
 }

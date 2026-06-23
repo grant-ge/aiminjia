@@ -1,6 +1,5 @@
 import { CheckCircle2, FolderOpen, Loader2, Package, XCircle } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { ExportConversationResult } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 export type ConversationExportStatus = 'idle' | 'exporting' | 'success' | 'error'
 
@@ -41,13 +41,13 @@ function StepRow({
 }) {
   return (
     <div className="flex items-center gap-3 text-sm">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
         {done ? (
           <CheckCircle2 className="h-4 w-4 text-primary" aria-hidden />
         ) : active ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden />
         ) : (
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+          <span className="h-2 w-2 rounded-md bg-muted-foreground/40" />
         )}
       </span>
       <span className={done || active ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
@@ -73,7 +73,7 @@ export function ConversationExportDialog({
   return (
     <Dialog open={open} onOpenChange={isExporting ? undefined : onOpenChange}>
       <DialogContent
-        className="overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]"
+        className="overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]"
         style={{
           width: 'min(28rem, calc(100vw - 2rem))',
           maxWidth: 'calc(100vw - 2rem)',
@@ -87,7 +87,7 @@ export function ConversationExportDialog({
               : isError
                 ? '导出时遇到问题，可以稍后再试。'
                 : isIdle
-                  ? '将生成一个本地 zip 文件，包含当前对话和运行信息。文件只会保存在本机。'
+                  ? '将生成一个本地 zip 文件，包含当前对话和最近 24 小时运行信息。文件只会保存在本机。'
                   : '正在整理当前对话内容，请稍等。'}
           </DialogDescription>
         </DialogHeader>
@@ -122,13 +122,13 @@ export function ConversationExportDialog({
               <Package className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
               <div className="space-y-1 text-sm">
                 <div className="font-medium text-foreground">准备生成对话文件</div>
-                <div className="text-muted-foreground">开始后会自动整理内容并生成 zip 文件。</div>
+                <div className="text-muted-foreground">开始后会自动整理当前对话和最近 24 小时日志。</div>
               </div>
             </div>
           ) : (
             <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
               <StepRow done={progressStep > 0} active={progressStep === 0} label="整理对话内容" />
-              <StepRow done={progressStep > 1} active={progressStep === 1} label="收集运行信息" />
+              <StepRow done={progressStep > 1} active={progressStep === 1} label="收集最近 24 小时运行信息" />
               <StepRow done={false} active={progressStep >= 2} label="生成文件" />
             </div>
           )}

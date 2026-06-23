@@ -1,9 +1,9 @@
 mod common;
 
 use app_lib::runtime::chat::compaction::{CompactBoundaryRecord, CompactTrigger};
-use app_lib::runtime::chat::history::{HistoryConfig, build_chat_history};
-use app_lib::storage::file_store::AppStorage;
+use app_lib::runtime::chat::history::{build_chat_history, HistoryConfig};
 use app_lib::storage::file_store::types::StoredMessage;
+use app_lib::storage::file_store::AppStorage;
 use app_lib::transport::tauri_commands::chat::{
     deserialize_chat_messages_for_gateway, load_history_via_runtime_history,
 };
@@ -31,12 +31,10 @@ fn valid_tool_pair_passes_through() {
         build_chat_history(&stored, None, &HistoryConfig::default(), None).expect("build history");
     assert_eq!(history.len(), 4);
     assert_eq!(history[1].role, "assistant");
-    assert!(
-        history[1]
-            .tool_calls
-            .as_ref()
-            .is_some_and(|calls| calls.len() == 1)
-    );
+    assert!(history[1]
+        .tool_calls
+        .as_ref()
+        .is_some_and(|calls| calls.len() == 1));
     assert_eq!(history[2].role, "tool");
     assert_eq!(history[2].tool_call_id.as_deref(), Some("tc_1"));
 }
@@ -194,12 +192,10 @@ fn load_history_via_runtime_history_uses_v2_storage_and_boundary() {
     let history = load_history_via_runtime_history(&storage, "c1", false).expect("load history");
     assert_eq!(history.len(), 3);
     assert_eq!(history[0]["role"], "user");
-    assert!(
-        history[0]["content"]
-            .as_str()
-            .unwrap_or("")
-            .contains("summary text")
-    );
+    assert!(history[0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains("summary text"));
     assert_eq!(history[1]["content"], "new question");
     assert_eq!(history[2]["content"], "new answer");
 }
@@ -259,12 +255,10 @@ fn load_history_via_runtime_history_can_recover_boundary_from_transcript_artifac
 
     assert_eq!(history.len(), 3);
     assert_eq!(history[0]["role"], "user");
-    assert!(
-        history[0]["content"]
-            .as_str()
-            .unwrap_or("")
-            .contains("summary body")
-    );
+    assert!(history[0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains("summary body"));
     assert_eq!(history[1]["id"], "3");
     assert_eq!(history[1]["content"], "current question");
     assert_eq!(history[2]["content"], "current answer");
@@ -346,12 +340,10 @@ fn load_history_via_runtime_history_merges_incomplete_sidecar_from_transcript_ar
 
     assert_eq!(history.len(), 3);
     assert_eq!(history[0]["role"], "user");
-    assert!(
-        history[0]["content"]
-            .as_str()
-            .unwrap_or("")
-            .contains("transcript summary")
-    );
+    assert!(history[0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains("transcript summary"));
     assert_eq!(history[1]["id"], "3");
     assert_eq!(history[1]["content"], "current question");
     assert_eq!(history[2]["content"], "current answer");

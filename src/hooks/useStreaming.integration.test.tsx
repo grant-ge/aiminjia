@@ -242,6 +242,162 @@ describe('useStreaming integration review', () => {
     expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.done.received')).toBe(true)
   })
 
+  it('removes one pending ask when permission:resolved arrives from backend', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const askHandler = tauriEventMock.listeners.get('permission:ask')
+    const resolvedHandler = tauriEventMock.listeners.get('permission:resolved')
+    expect(askHandler).toBeTypeOf('function')
+    expect(resolvedHandler).toBeTypeOf('function')
+
+    act(() => {
+      askHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'r1',
+          toolCallId: 'tc-1',
+          toolName: 'Read',
+          message: 'Read first?',
+          suggestions: null,
+          mode: 'default',
+          rememberOptions: null,
+          defaultDestination: null,
+        },
+      })
+      askHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'r1',
+          toolCallId: 'tc-2',
+          toolName: 'Read',
+          message: 'Read second?',
+          suggestions: null,
+          mode: 'default',
+          rememberOptions: null,
+          defaultDestination: null,
+        },
+      })
+    })
+
+    act(() => {
+      resolvedHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'r1',
+          toolCallId: 'tc-1',
+        },
+      })
+    })
+
+    expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
+    expect(useStreamingStore.getState().pendingAsks.has('tc-2')).toBe(true)
+  })
+
+  it('clears matching waitingPermission stage when permission:resolved arrives', async () => {
+    useStreamingStore.setState({
+      streamStates: {
+        'conv-1': {
+          isStreaming: true,
+          streamingContent: '',
+          toolExecutions: [],
+          turnStage: {
+            kind: 'waitingPermission',
+            toolName: 'Grep',
+            toolCallId: 'tc-1',
+          },
+          stageStartedAt: Date.now(),
+          lastHeartbeatAt: Date.now(),
+          turnStartedAt: Date.now(),
+        },
+      },
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const resolvedHandler = tauriEventMock.listeners.get('permission:resolved')
+    expect(resolvedHandler).toBeTypeOf('function')
+
+    act(() => {
+      resolvedHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'r1',
+          toolCallId: 'tc-1',
+        },
+      })
+    })
+
+    expect(useStreamingStore.getState().streamStates['conv-1']?.turnStage).toBeNull()
+  })
+
+  it('clears matching waitingInteraction stage when interaction:resolved arrives', async () => {
+    useStreamingStore.setState({
+      streamStates: {
+        'conv-1': {
+          isStreaming: true,
+          streamingContent: '',
+          toolExecutions: [],
+          turnStage: {
+            kind: 'waitingInteraction',
+            interactionKind: 'askUserQuestion',
+            interactionId: 'ask-1',
+          },
+          stageStartedAt: Date.now(),
+          lastHeartbeatAt: Date.now(),
+          turnStartedAt: Date.now(),
+        },
+      },
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const resolvedHandler = tauriEventMock.listeners.get('interaction:resolved')
+    expect(resolvedHandler).toBeTypeOf('function')
+
+    act(() => {
+      resolvedHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'r1',
+          interactionId: 'ask-1',
+        },
+      })
+    })
+
+    expect(useStreamingStore.getState().streamStates['conv-1']?.turnStage).toBeNull()
+  })
+
+  it('surfaces streaming notices as informational notifications', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('streaming:notice')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-notice',
+          runId: 'run-notice',
+          level: 'info',
+          code: 'auto_failed_over',
+          message: '当前模型服务不稳定，已自动切换到备选模型继续。',
+          fromRoute: { provider: 'anthropic' },
+          toRoute: { provider: 'openai' },
+        },
+      })
+    })
+
+    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+      level: 'info',
+      message: '当前模型服务不稳定，已自动切换到备选模型继续。',
+    })
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.notice.received')).toBe(true)
+  })
+
   it('stores compact completion token savings from compact:completed', async () => {
     useChatStore.setState({
       activeConversationId: 'conv-compact',

@@ -33,13 +33,17 @@ import {
   createConversation,
   getDefaultFolder,
   pickLocalDirectory,
+  type PermissionMode,
+  type ReasoningMode,
   type AuthorizedWorkspaceRef,
 } from '@/lib/tauri'
 import { localizeSkill, localizedSkillName } from '@/lib/skillLocalization'
 import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { useUiStore } from '@/stores/uiStore'
+import { DRAFT_PERMISSION_SESSION_ID, DRAFT_REASONING_SESSION_ID, useUiStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
 
 export function HomeTaskComposerCard() {
   const { t, i18n } = useTranslation()
@@ -58,6 +62,15 @@ export function HomeTaskComposerCard() {
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
+  const defaultPermissionMode = useSettingsStore((s) => s.defaultPermissionMode ?? 'default')
+  const permissionMode = useUiStore((s) =>
+    s.permissionModesBySession[DRAFT_PERMISSION_SESSION_ID] ?? defaultPermissionMode,
+  )
+  const setPermissionModeForSession = useUiStore((s) => s.setPermissionModeForSession)
+  const reasoningMode = useUiStore((s) =>
+    s.reasoningModesBySession[DRAFT_REASONING_SESSION_ID] ?? 'auto',
+  )
+  const setReasoningModeForSession = useUiStore((s) => s.setReasoningModeForSession)
   // Snapshot of the installed skills as composer-friendly tokens. Drives the
   // slash-command input rule and chip rendering inside the editor (mirrors
   // ChatBottomArea — single source of truth for selected skills).
@@ -108,6 +121,14 @@ export function HomeTaskComposerCard() {
     composerRef.current?.focus()
     setShowSkillPopover(false)
   }, [getSkillById, i18n.language])
+
+  const handlePermissionModeChange = useCallback((mode: PermissionMode) => {
+    setPermissionModeForSession(DRAFT_PERMISSION_SESSION_ID, mode)
+  }, [setPermissionModeForSession])
+
+  const handleReasoningModeChange = useCallback((mode: ReasoningMode) => {
+    setReasoningModeForSession(DRAFT_REASONING_SESSION_ID, mode)
+  }, [setReasoningModeForSession])
 
   // Load default folder if no workspace has been selected yet
   useEffect(() => {
@@ -166,6 +187,8 @@ export function HomeTaskComposerCard() {
     try {
       // Create conversation first so we have an ID to authorize against
       const backendId = await createConversation()
+      setPermissionModeForSession(backendId, permissionMode)
+      setReasoningModeForSession(backendId, reasoningMode)
       const now = new Date().toISOString()
       const store = useChatStore.getState()
       store.setConversations([
@@ -217,11 +240,20 @@ export function HomeTaskComposerCard() {
       // doc, gets cleared automatically on submit, and is collected by the
       // serializer into payload.skills (mirrors ChatBottomArea).
       const skillForThisTurn = payload.skills[0] ?? null
-      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
+      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn, permissionMode, reasoningMode)
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage])
+  }, [
+    displayWorkspace,
+    isSubmitting,
+    permissionMode,
+    reasoningMode,
+    sendUserMessage,
+    setPermissionModeForSession,
+    setReasoningModeForSession,
+    t,
+  ])
 
   const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath
@@ -229,7 +261,7 @@ export function HomeTaskComposerCard() {
   return (
     <div
       data-testid="home-composer-shell"
-      className="home-composer-large relative isolate overflow-visible rounded-[28px] shadow-[var(--shadow-card)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-[28px] [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-6 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-6 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
+      className="home-composer-large relative isolate overflow-visible rounded-md shadow-[var(--shadow-card)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-md [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-5 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-5 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
     >
       <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
         <SkillPopover
@@ -249,6 +281,10 @@ export function HomeTaskComposerCard() {
         initialMarkdown={initialMarkdown}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
         skillTokens={skillTokens}
+        permissionMode={permissionMode}
+        onPermissionModeChange={handlePermissionModeChange}
+        reasoningMode={reasoningMode}
+        onReasoningModeChange={handleReasoningModeChange}
         showProjectButton={false}
         limitEditorHeight
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
@@ -256,28 +292,28 @@ export function HomeTaskComposerCard() {
 
       <div
         data-testid="home-workspace-bar"
-        className="absolute inset-x-0 top-full z-0 flex min-h-[78px] -translate-y-[28px] items-center justify-between rounded-b-[28px] border-x border-b border-border bg-sidebar px-6 pt-[28px]"
+        className="absolute inset-x-0 top-full z-0 flex min-h-[58px] -translate-y-2 items-center justify-between rounded-b-md border-x border-b border-border bg-sidebar px-5 pt-2"
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
+            <Button unstyled
               type="button"
               data-aijia-workspace-trigger
               disabled={isSubmitting}
               aria-label={t('homeComposer.selectWorkDirAria', { name: workspaceLabel })}
               title={workspacePath}
-              className="inline-flex max-w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[15px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+              className="inline-flex max-w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
             >
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
               <span className="truncate">{t('homeComposer.workingIn', { name: workspaceLabel })}</span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
             side="bottom"
             sideOffset={8}
-            className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[var(--shadow-popover)]"
+            className="w-[300px] max-w-[calc(100vw-32px)] rounded-md border-border bg-card p-1 shadow-[var(--shadow-popover)]"
           >
             {recentWorkspaces.filter((ws) => ws.id !== 'default').length > 0 ? (
               <div className="max-h-[200px] overflow-y-auto">
@@ -288,11 +324,11 @@ export function HomeTaskComposerCard() {
                     data-aijia-workspace-path={ws.rootPath}
                     onSelect={() => selectWorkspace(ws)}
                     title={ws.rootPath}
-                    className="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+                    className="group flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
                   >
                     <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="flex-1 truncate text-foreground">{ws.displayName}</span>
-                    <button
+                    <Button unstyled
                       type="button"
                       aria-label={`从最近列表中移除 ${ws.displayName}`}
                       onClick={(e) => {
@@ -301,10 +337,10 @@ export function HomeTaskComposerCard() {
                         removeRecentWorkspace(ws.rootPath)
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
-                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
+                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </DropdownMenuItem>
                 ))}
               </div>
@@ -313,7 +349,7 @@ export function HomeTaskComposerCard() {
             <DropdownMenuItem
               data-aijia-workspace-action="pick-default"
               onSelect={() => void handleSelectDefaultFolder()}
-              className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+              className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
               <House className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span>{t('homeComposer.useDefaultFolder')}</span>
@@ -321,7 +357,7 @@ export function HomeTaskComposerCard() {
             <DropdownMenuItem
               data-aijia-workspace-action="pick-other"
               onSelect={() => void handlePickProject()}
-              className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+              className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
               <FolderPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span>{t('homeComposer.selectOtherDir')}</span>

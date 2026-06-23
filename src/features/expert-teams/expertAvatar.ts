@@ -4,9 +4,53 @@
 // `public/expert-avatars/<teamId>/<safeName>.svg` — committed to git so
 // runtime never needs network or @dicebear at all.
 
-import { EXPERT_TEAMS, type ExpertTeam } from './teams'
+import {
+  EXPERT_TEAMS,
+  findExpertByAgentName,
+  type ExpertAvatarAtlas,
+  type ExpertAvatarSource,
+  type ExpertPersona,
+  type ExpertTeam,
+} from './teams'
 
 const SAFE_RE = /[\\/<>:"|?*\s]/g
+const ROUNDTABLE_PLACEHOLDER_AVATARS = [
+  '/expert-avatars/roundtable/动态专家一.svg',
+  '/expert-avatars/roundtable/动态专家二.svg',
+  '/expert-avatars/roundtable/动态专家三.svg',
+]
+const HR_WORKPLACE_ATLAS_URL = '/expert-avatars/hr-workplace/avatar-atlas.svg'
+const HR_WORKPLACE_ATLAS_WIDTH = 384
+const HR_WORKPLACE_ATLAS_HEIGHT = 288
+const HR_WORKPLACE_AVATAR_TILES = [
+  { stableName: 'recruiting-lead', name: '宋知澜', tile: { x: 0, y: 0, w: 96, h: 96 } },
+  { stableName: 'hiring-manager', name: '陆承川', tile: { x: 96, y: 0, w: 96, h: 96 } },
+  { stableName: 'interview-coach', name: '唐砚宁', tile: { x: 192, y: 0, w: 96, h: 96 } },
+  { stableName: 'talent-researcher', name: '赵明川', tile: { x: 288, y: 0, w: 96, h: 96 } },
+  { stableName: 'compensation-expert', name: '方予衡', tile: { x: 0, y: 96, w: 96, h: 96 } },
+  { stableName: 'performance-advisor', name: '秦砚知', tile: { x: 96, y: 96, w: 96, h: 96 } },
+  { stableName: 'hrbp-care', name: '温嘉言', tile: { x: 192, y: 96, w: 96, h: 96 } },
+  { stableName: 'legal-advisor', name: '陈景律', tile: { x: 288, y: 96, w: 96, h: 96 } },
+  { stableName: 'od-advisor', name: '梁承序', tile: { x: 0, y: 192, w: 96, h: 96 } },
+  { stableName: 'hrbp-planning', name: '何远策', tile: { x: 96, y: 192, w: 96, h: 96 } },
+  { stableName: 'talent-reviewer', name: '唐识衡', tile: { x: 192, y: 192, w: 96, h: 96 } },
+  { stableName: 'people-analyst', name: '周思齐', tile: { x: 288, y: 192, w: 96, h: 96 } },
+] satisfies Array<{
+  stableName: string
+  name: string
+  tile: Omit<ExpertAvatarAtlas, 'kind' | 'url' | 'atlasWidth' | 'atlasHeight'>
+}>
+const HR_WORKPLACE_AVATARS = new Map<string, Omit<ExpertAvatarAtlas, 'kind' | 'url' | 'atlasWidth' | 'atlasHeight'>>(
+  HR_WORKPLACE_AVATAR_TILES.flatMap(({ stableName, name, tile }) => [
+    [stableName, tile],
+    [name, tile],
+  ]),
+)
+
+export type ExpertAvatarVisual =
+  | { kind: 'image'; url: string }
+  | ExpertAvatarAtlas
+  | { kind: 'text'; text: string }
 
 /** Mirrors the `safe()` helper in scripts/generate-expert-avatars.mjs. */
 function safeName(name: string): string {
@@ -39,26 +83,91 @@ export function getExpertAvatarUrl(teamId: string, expertName: string): string |
   return `/expert-avatars/${teamId}/${safeName(expertName)}.svg`
 }
 
-/** Loose normalization: lower-case + strip spaces / hyphens / underscores so
- * 'CEO' matches 'ceo'，'CEO 教练' matches 'ceo-coach'，etc. */
-function normalize(s: string): string {
-  return s.toLowerCase().replace(/[\s\-_]+/g, '')
+function isAtlasAvatar(value: ExpertAvatarSource | null | undefined): value is ExpertAvatarAtlas {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      value.kind === 'atlas' &&
+      typeof value.url === 'string' &&
+      typeof value.x === 'number' &&
+      typeof value.y === 'number' &&
+      typeof value.w === 'number' &&
+      typeof value.h === 'number' &&
+      typeof value.atlasWidth === 'number' &&
+      typeof value.atlasHeight === 'number',
+  )
+}
+
+function localHrAtlasAvatar(expert: ExpertPersona): ExpertAvatarAtlas | null {
+  const tile = [expert.avatarName, expert.name, expert.agentName]
+    .map((key) => key?.trim())
+    .find((key): key is string => !!key && HR_WORKPLACE_AVATARS.has(key))
+  if (!tile) return null
+  const avatarTile = HR_WORKPLACE_AVATARS.get(tile)
+  if (!avatarTile) return null
+  return {
+    kind: 'atlas',
+    url: HR_WORKPLACE_ATLAS_URL,
+    ...avatarTile,
+    atlasWidth: HR_WORKPLACE_ATLAS_WIDTH,
+    atlasHeight: HR_WORKPLACE_ATLAS_HEIGHT,
+  }
+}
+
+function textAvatar(value: ExpertAvatarSource | null | undefined, fallback: string): string {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  return Array.from(fallback.trim())[0] ?? '?'
+}
+
+function stableIndex(value: string, modulo: number): number {
+  let hash = 0
+  for (const char of value) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return hash % modulo
+}
+
+export function getRoundtablePlaceholderAvatarUrl(seed: string | number): string {
+  const index = typeof seed === 'number'
+    ? seed % ROUNDTABLE_PLACEHOLDER_AVATARS.length
+    : stableIndex(seed, ROUNDTABLE_PLACEHOLDER_AVATARS.length)
+  return ROUNDTABLE_PLACEHOLDER_AVATARS[index]
+}
+
+export function getExpertAvatarVisual(
+  teamId: string,
+  expert: ExpertPersona,
+): ExpertAvatarVisual {
+  const localAtlas = localHrAtlasAvatar(expert)
+  if (localAtlas) return localAtlas
+
+  const localAvatarUrl = getExpertAvatarUrl(teamId, expert.avatarName ?? expert.name)
+  if (localAvatarUrl) return { kind: 'image', url: localAvatarUrl }
+
+  if (isAtlasAvatar(expert.avatar)) return expert.avatar
+
+  return {
+    kind: 'text',
+    text: expert.avatarText?.trim() || textAvatar(expert.avatar, expert.name) || expert.emoji,
+  }
 }
 
 export function getExpertAvatarUrlForAgent(team: ExpertTeam | null | undefined, agentName: string): string | null {
   if (!team) return null
-  const target = normalize(agentName)
-  // Try strict match first (cheapest, exact UI display name).
-  let expert = team.experts.find((e) => e.agentName === agentName || e.name === agentName)
-  if (!expert) {
-    // Fuzzy: LLM 经常把"CEO" spawn 成 "ceo"，把"数据分析师" spawn 成 "analyst"。
-    // 同时比较 normalize(name) / normalize(agentName)，宽松地兜底。
-    expert = team.experts.find((e) => {
-      const nName = normalize(e.name)
-      const nAgent = e.agentName ? normalize(e.agentName) : ''
-      return nName === target || nAgent === target
-    })
-  }
+  const expert = findExpertByAgentName(team, agentName)
+  if (!expert && team.facilitationStyle === 'open') return getRoundtablePlaceholderAvatarUrl(agentName)
   if (!expert) return null
   return getExpertAvatarUrl(team.id, expert.name)
+}
+
+export function getExpertAvatarVisualForAgent(
+  team: ExpertTeam | null | undefined,
+  agentName: string,
+): ExpertAvatarVisual | null {
+  const expert = findExpertByAgentName(team, agentName)
+  if (team && !expert && team.facilitationStyle === 'open') {
+    return { kind: 'image', url: getRoundtablePlaceholderAvatarUrl(agentName) }
+  }
+  if (!team || !expert) return null
+  return getExpertAvatarVisual(team.id, expert)
 }

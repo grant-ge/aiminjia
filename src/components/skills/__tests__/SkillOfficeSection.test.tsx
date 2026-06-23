@@ -15,4 +15,14 @@ describe('SkillOfficeSection', () => {
     expect(screen.getByTestId('bar')).toBeInTheDocument()
     expect(screen.getByText('card1')).toBeInTheDocument()
   })
+
+  it('does not let the skill grid force horizontal page overflow', () => {
+    const { container } = render(
+      <SkillOfficeSection categoryBar={<div data-testid="bar">bar</div>}>
+        <div>card1</div>
+      </SkillOfficeSection>,
+    )
+    expect(container.querySelector('section')?.className).toMatch(/min-w-0/)
+    expect(container.querySelector('.grid')?.className).toMatch(/min-w-0/)
+  })
 })

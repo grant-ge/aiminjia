@@ -7,7 +7,7 @@ use crate::runtime::employee::store::{
     CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
 use crate::runtime::employee::template_store::{
-    ensure_cached, ensure_instance_snapshot, fetch_catalog, find_latest_for_template,
+    ensure_cached_with_status, ensure_instance_snapshot, fetch_catalog, find_latest_for_template,
     merge_catalog, read_instance_snapshot, TemplateSnapshot,
 };
 use crate::storage::file_store::AppStorage;
@@ -66,9 +66,9 @@ pub async fn employee_template_catalog() -> Result<Vec<TemplateSnapshot>, String
 ///
 /// 1. `GET {OPS}/api/public/employee-templates` — list of currently-published
 ///    templates (latest version per `template_id`, `tenant_scope=global`).
-/// 2. For each entry whose version is newer than the cache (or missing),
-///    fetch its manifest, download the snapshot, verify sha256, and write
-///    to `~/.renlijia/employee-templates-cache/{encoded_tid}/{encoded_version}.json`.
+/// 2. For each entry whose version is missing or whose cached bytes no longer
+///    match the manifest sha256, download the snapshot, verify sha256, and
+///    write to `~/.renlijia/employee-templates-cache/{encoded_tid}/{encoded_version}.json`.
 ///
 /// Returns the count of templates downloaded this call.
 ///
@@ -98,8 +98,12 @@ pub async fn employee_template_refresh() -> Result<u32, String> {
             continue;
         };
 
-        match ensure_cached(&cache_dir, &client, &template_id, &version).await {
-            Ok(_) => downloaded += 1,
+        match ensure_cached_with_status(&cache_dir, &client, &template_id, &version).await {
+            Ok((_, changed)) => {
+                if changed {
+                    downloaded += 1;
+                }
+            }
             Err(e) => log::warn!("[employee_template_refresh] {template_id}@{version}: {e}"),
         }
     }

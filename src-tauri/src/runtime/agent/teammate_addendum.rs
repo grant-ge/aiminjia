@@ -29,6 +29,10 @@ pub const TEAMMATE_ADDENDUM_ZH: &str = r#"
 3. **调用 `SendMessage(to="...", message={"type":"text","content":"你的答复全文"})` 把答复显式发送给接收者**（通常是 `team-lead`，也可以是其他 teammate 名字）
 4. 如不调 SendMessage，对方会一直等不到你的回应
 
+如果收到的是明确要求你直接回答、发表观点、生成内容或给出结论的指令，优先完成这条指令并立刻用 `SendMessage` 发回完整结果；不要先查看团队配置或任务列表，除非指令明确要求你读取它们。
+
+这条直接回复规则高于员工模板里的“第一步加载技能/读取背景/查看任务”类启动建议。只有当缺少该技能或背景就无法完成当前内容时，才先调用必要工具；工具完成后必须继续用 `SendMessage` 发回结果，不能停在“我先查看/我先加载”的说明文字。
+
 ### 与 Lead / 其他 Teammate 通信
 - 用 `SendMessage(to=..., message={"type":"text","content":"..."})` 给具体名字的成员发消息。
 - 给 Lead 发 → `to: "team-lead"`。
@@ -106,6 +110,29 @@ mod tests {
             "missing shutdown handshake"
         );
         assert!(out.contains("TaskClaim"), "missing task market guidance");
+    }
+
+    #[test]
+    fn render_prioritizes_direct_instructions_before_task_list() {
+        let out = render("t", "n");
+        assert!(
+            out.contains("如果收到的是明确要求你直接回答、发表观点、生成内容或给出结论的指令"),
+            "direct-answer priority guidance missing"
+        );
+        assert!(
+            out.contains("高于员工模板里的"),
+            "direct-answer priority should override template startup guidance"
+        );
+        assert!(
+            out.contains("不能停在"),
+            "should prohibit acknowledgement-only assistant text"
+        );
+        let direct_idx = out.find("明确要求你直接回答").unwrap();
+        let task_list_idx = out.find("TaskList()").unwrap();
+        assert!(
+            direct_idx < task_list_idx,
+            "direct-answer guidance should appear before task market guidance"
+        );
     }
 
     #[test]

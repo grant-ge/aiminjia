@@ -27,6 +27,42 @@ cargo install --path crates/tauri-pilot-cli --force
 
 ## ⏳ 待做
 
+### 场景 P：技能中心启用状态改造（技能 task 意图 16-26）— ⏳ 真未做
+
+2026-06-10 复核当前 `tauri-pilot aijia --help`：已有 `goto skill-center`、`skill-import-queue`、`skill-import-open`、`skill-import-pick`、`skill-cards`，但还没有覆盖技能中心启用状态改造所需的市场、开关、详情、聊天入口和同步原子命令。`docs/test-intents/spec/tasks/技能/rules.md` 的意图 16-26 在这些命令补齐前只能标记为 `CLI gap`，不能把人工点击或 generic eval 当成稳定 L4 结果。
+
+2026-06-15 补充：lotus-app 已补齐本场景所需的大部分 WebView DOM selector 前置，包括技能中心页签、技能卡片 enabled 状态、市场添加按钮、开关、详情页根节点/动作按钮、聊天技能 picker 项。`tauri-pilot aijia` 仍缺下表的原子命令；下一步应在 sibling `../tauri-pilot/` 仓库按这些 selector 封装命令，而不是在意图测试里绕回 generic eval。
+
+| CLI | 原子动作 | 参数 | 返回/断言字段 |
+|---|---|---|---|
+| `aijia skill-center-open` | 打开技能中心 | 无；可以先作为 `goto skill-center` 的语义别名实现 | `{ok, route}` |
+| `aijia skill-center-tab` | 点击一个技能中心一级页签 | `--name 市场|内置|已安装` | `{ok, activeTab}` |
+| `aijia skill-center-list` | 读取当前已安装/内置管理列表 | `--json` | `[{id, title, source, enabled, visible}]` |
+| `aijia skill-center-toggle` | 切换单个技能开关 | `--id <skillId> --enabled true|false` | `{ok, id, enabled}` |
+| `aijia skill-market-list` | 读取市场卡片快照 | `--json` | `[{id, packageId, title, installed, actionLabel}]` |
+| `aijia skill-market-add` | 点击市场卡片的添加按钮 | `--id <skillId>` | `{ok, id, installed}`；只点 UI，不直调 IPC |
+| `aijia skill-detail-open` | 从技能中心打开某技能详情页 | `--id <skillId>` | `{ok, id}` |
+| `aijia skill-detail-snapshot` | 读取详情页动作和文案 | `--json` | `{id, title, primaryAction, secondaryActions}` |
+| `aijia skill-picker-open` | 打开聊天输入框技能选择入口并读列表 | `--json` | `[{id, title, command}]` |
+| `aijia slash-suggestions` | 在 composer 中输入 slash 查询并读候选 | `--query <text> --json` | `[{id, command, title}]` |
+| `aijia sync-builtin-skills` | 通过 UI 的“同步/更新官方技能”入口触发同步 | 可选 `--mode builtin|local`；默认 builtin | `{ok, installed, skipped}` |
+
+selector 前置要求：
+
+- 技能中心页签：`data-aijia-skill-tab="market|builtin|installed"`。
+- 技能卡片：继续复用 `data-aijia-skill-card`，补 `data-aijia-skill-id`、`data-aijia-skill-source`、`data-aijia-skill-enabled`。
+- 技能开关：`data-aijia-skill-toggle="<skillId>"`，返回 checked 状态。
+- 市场卡片：`data-aijia-skill-market-card`、`data-aijia-skill-id`、`data-aijia-skill-installed`，添加按钮用 `data-aijia-skill-market-action="add"`。
+- 详情页：根节点 `data-aijia-skill-detail`，主按钮 `data-aijia-skill-detail-action="primary"`，辅助按钮用 `data-aijia-skill-detail-action="<verb>"`。
+- 聊天技能 picker：可复用现有 popover，但每个选项要有 `data-aijia-skill-picker-item` 与 `data-aijia-skill-id`。
+- slash 候选：候选项要能被 CLI 区分为 skill command，建议 `data-aijia-slash-suggestion-kind="skill"` + `data-aijia-skill-id`。
+
+边界：
+
+- 这些命令必须封装 UI 原子动作或 UI 快照，不直调 `set_skill_enabled`、`list_skills`、`install_marketplace_skill` 等 IPC 来绕过真实入口。
+- `sync-builtin-skills` 可以点击 UI 入口或包装已有可见同步入口，但不能直接伪造后端返回。
+- 账号隔离意图 026 可复用现有 `aijia login` / `logout`，但仍依赖上表的技能开关和列表读取命令；没有两套专用测试账号时标记环境阻塞。
+
 ### 按场景列：跑测时被卡住的 CLI 缺口（2026-05-21 收口，按 `test-intents-cli-author` skill 铁则审计）
 
 > **铁则**（再次强调）：每条 CLI = 一个原子 UI 动作（点一个按钮 / 填一个字段 / 等一个状态 / 读一段状态）；多步流程由 rules.md 串联，**不许写一体命令**；走 webview DOM eval，**不走 IPC**；selector 优先级 `data-aijia-*` > id > aria-label > textContent。
@@ -127,6 +163,34 @@ CLI 端无明显缺口（聊天流复用 `type-message / send / wait-reply / whe
 2. 对齐后看是否需要 mock provider（让流式可控）来稳定复现 pending 入队
 3. 如果产品认为"用户连发"应该走前端 dedup / 节流而不入队，rules 整组应该改语义（pending 不是用户视角的概念）
 4. 都没着落前，把 task 标 `BLOCKED-PENDING-PRODUCT`，agent 跳过
+
+#### 场景 O：升级 task（updater stale candidate）— ⏳ 测试源已补，仍缺 updater CLI
+
+新增 `docs/test-intents/spec/tasks/升级/rules.md` 后，当前已具备本地 mock 更新源和 app 侧测试 selector，但还不能按 runner 铁则稳定自动跑完整 L4，因为当前机器没有 `../tauri-pilot` 源码，无法补 `aijia updater-*` 原子命令。
+
+已补齐：
+
+| 能力 | 用途 |
+|---|---|
+| `pnpm dev:updater-intent` | 一体化启动本地 mock 更新源 + Tauri dev，默认轮询 30 秒 |
+| `scripts/dev-updater-intent-mock.mjs` | 从线上 update.json 继承平台 URL / signature，仅切换 manifest version 和失败 URL |
+| `update.test.json` | 配置测试旧版本 / 新版本；只在启动前改，场景运行中不改，避免 HMR |
+| `/control/old-ok` / `/control/old-fail` / `/control/new-ok` / `/control/new-fail` | 运行时切换内存状态，不修改源码和配置文件 |
+| updater UI selectors | `data-aijia-updater-*`、`data-aijia-settings-action="check-update"` |
+
+仍需补齐：
+
+| 能力 | 用途 |
+|---|---|
+| `aijia updater-open` | 打开更新提示入口 / 更新面板 |
+| `aijia updater-click --action download|retry|install` | 点击更新面板里的单个操作按钮 |
+| `aijia updater-snapshot` | 读取更新面板显示的版本、阶段、错误文案、进度 |
+
+注意：
+- 不要修改线上 `https://lotus.renlijia.com/aijia/update.json` 做测试。
+- 场景运行中不要编辑 `update.test.json`、`package.json` 或 Tauri 配置；切版本必须走本地 mock 的 control endpoint，避免 HMR / 应用重载污染测试。
+- 不要用 IPC 直接改 updater store；否则测不到真实 UI 入口和 Tauri updater 边界。
+- 当前 mock 复用线上签名包，能覆盖“发现新版 / 下载 / 缓存 / 安装前刷新”路径；如果未来要真的安装到一个并不存在的测试版本，需要额外产出对应版本号的签名包。
 
 ---
 

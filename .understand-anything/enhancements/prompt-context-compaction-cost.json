@@ -1,0 +1,355 @@
+{
+  "module": "prompt-context-compaction-cost",
+  "source_basis": "code-tests-only",
+  "coverage": "代码/测试来源：runtime session/chat turn driver、prompt assembler、context builder、history/preprocess/compaction、LLM provider usage、QueryEngine cost accumulator、runtime event adapter、前端 streaming hook 与相关 review/plan tests。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/session_runtime.rs",
+      "summary": "Chat turn 的会话级入口，创建 TurnState、复用或隔离 QueryEngine，并调用 chat turn driver。",
+      "tags": ["runtime", "session", "conversation", "cost"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "summary": "Chat turn 主执行状态机，串起 prompt snapshot、动态 context、消息预处理、LLM step、usage 汇总和完成事件。",
+      "tags": ["runtime", "prompt", "context", "compaction", "cost"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "summary": "Tauri chat 命令与 RuntimeLlmExecutor 实现，负责历史装载、provider 流式结果落地和 compact boundary 持久化。",
+      "tags": ["transport", "runtime", "history", "provider"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/prompt/sections.rs",
+      "summary": "PromptAssembler 所在文件，定义 system prompt 静态块、会话动态块和易变块的拼装顺序。",
+      "tags": ["prompt", "system-prompt", "cache"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/llm/prompts.rs",
+      "summary": "Prompt 兼容入口，源码注释明确 build_system_prompt_parts 是唯一 system prompt 组装入口并委托新 prompt 体系。",
+      "tags": ["prompt", "compat", "assembly"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/context_builder.rs",
+      "summary": "Iteration 级动态上下文构建器，拼接 core/project memory、workspace、file、connector 和 skill catalog 等材料。",
+      "tags": ["context", "memory", "prompt-cache"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "summary": "LLM 前消息预处理总入口，依次处理 tool-result budget、microcompact、collapse 和 auto compact。",
+      "tags": ["preprocess", "compaction", "history"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/compaction.rs",
+      "summary": "Compact artifact 结构与规则定义处，生成 compact boundary、isCompactSummary 和 tail round 语义。",
+      "tags": ["compaction", "summary", "boundary"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/compact_client.rs",
+      "summary": "独立 compact summary 客户端抽象，让总结生成从主 executor trait 中隔离出来。",
+      "tags": ["compaction", "summary-client", "llm"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/history.rs",
+      "summary": "运行前历史重建器，应用 compact boundary、过滤 error 消息、回放 tool 链接，并把 summary 注入为 synthetic user context。",
+      "tags": ["history", "conversation", "compaction"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/query_engine.rs",
+      "summary": "Session 级 usage、permission 和 budget 状态容器，负责 token 聚合、成本估算和预算判断。",
+      "tags": ["query-engine", "usage", "budget", "cost"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/llm/streaming.rs",
+      "summary": "Provider 统一流式协议与 TokenUsage 定义，是 usage/cost 从 provider 回到 runtime 的契约。",
+      "tags": ["llm", "streaming", "usage"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/llm/providers/claude.rs",
+      "summary": "Anthropic SSE provider，从事件中提取 input/output/cache usage 并回传统一 StreamEvent::Done。",
+      "tags": ["provider", "claude", "usage"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+      "summary": "AIjia gateway v2 provider，从 gateway SSE usage 字段提取 input/output/cache usage 并映射到统一 usage 结构。",
+      "tags": ["provider", "gateway", "usage"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/events.rs",
+      "summary": "Runtime 事件契约，TurnCompleted 定义总 token、cache token 和 estimated cost 字段。",
+      "tags": ["events", "contract", "cost"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_event_adapter.rs",
+      "summary": "Rust runtime 事件到前端 turn:completed payload 的桥接层，把 usage/cost 字段转换为前端事件。",
+      "tags": ["transport", "events", "frontend-contract"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/hooks/useStreaming.ts",
+      "summary": "前端 turn:completed 的主要消费者，负责 busy state 清理、toast 和 lastTurnSummary 写入。",
+      "tags": ["frontend", "streaming", "cost"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "type": "calls",
+      "reason": "Tauri send_message 与 legacy executor 最终调用 runtime.run_chat_request(request)。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "type": "calls",
+      "reason": "run_chat_request 创建 turn 与 driver，并执行 chat turn 主状态机。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "type": "configures",
+      "reason": "query_engine_for_session 负责同 session 复用、跨 session 隔离的 QueryEngine 状态。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/context_builder.rs",
+      "type": "calls",
+      "reason": "每轮 iteration 通过 build_iteration_context 组装动态上下文。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/prompt/sections.rs",
+      "type": "calls",
+      "reason": "executor 使用 PromptAssembler 构建 TurnPromptSnapshot。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/prompts.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/prompt/sections.rs",
+      "type": "calls",
+      "reason": "build_system_prompt_parts 作为兼容入口委托 PromptAssembler。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "type": "calls",
+      "reason": "每次 LLM 调用前先走 prepare_messages_for_llm 做预算、折叠和 compact 预处理。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/compaction.rs",
+      "type": "calls",
+      "reason": "auto compact 成功后 materialize compact artifact 和 boundary record。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/preprocess.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/compact_client.rs",
+      "type": "calls",
+      "reason": "compact summary 通过独立 CompactSummaryClient 获取。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/history.rs",
+      "type": "calls",
+      "reason": "读取消息与 compact boundary 后调用 build_chat_history 重建上下文历史。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/history.rs",
+      "targetFilePath": "src-tauri/src/storage/file_store/compact_boundaries.rs",
+      "type": "reads_from",
+      "reason": "history 回放依赖 boundary 的 summary_text 与 tail_message_id 语义。",
+      "weight": 0.83
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "targetFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "type": "writes_to",
+      "reason": "turn 结束时写入 token/cache usage，并读取预算与成本状态。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/providers/claude.rs",
+      "targetFilePath": "src-tauri/src/llm/streaming.rs",
+      "type": "transforms",
+      "reason": "Claude provider 把 Anthropic SSE usage 映射到统一 TokenUsage。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+      "targetFilePath": "src-tauri/src/llm/streaming.rs",
+      "type": "transforms",
+      "reason": "AIjia gateway v2 provider 把 gateway SSE usage 映射到统一 TokenUsage。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/events.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_event_adapter.rs",
+      "type": "transforms",
+      "reason": "TurnCompleted 的 Rust 字段在 adapter 中映射到 camelCase 前端 payload。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_event_adapter.rs",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "publishes",
+      "reason": "前端 TurnCompletedPayload 与事件名承接 adapter 输出的 turn:completed 合约。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src/hooks/useStreaming.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "depends_on",
+      "reason": "useStreaming 通过 onTurnCompleted 注册 listener，并据此驱动 UI 状态与成本展示。",
+      "weight": 0.94
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "System prompt 已收敛到单一装配点",
+      "description": "当前生产链路里，system prompt 不再由多个 runtime 模块各自拼接；PromptAssembler 是实际装配器，llm/prompts.rs 只是兼容入口并声明唯一组装点。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/prompt/sections.rs",
+        "src-tauri/src/llm/prompts.rs",
+        "src-tauri/tests/review_prompt_single_assembly_point_test.rs"
+      ]
+    },
+    {
+      "title": "动态 context 与静态 system prompt 分离",
+      "description": "context_builder 负责 memory、workspace、file、connector、skill catalog 等动态材料，目的是保持 static prompt prefix 稳定，提升 prompt/KV cache 稳定性。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/context_builder.rs",
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/tests/plan_aa_prompt_caching_test.rs"
+      ]
+    },
+    {
+      "title": "Compaction 是 LLM 调用前的独立预处理子流水线",
+      "description": "每次 LLM step 前都会进入 prepare_messages_for_llm；compact 支持阈值触发和 PromptTooLong 恢复触发，summary 生成经独立 CompactSummaryClient，不再耦合在 executor trait 上。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/preprocess.rs",
+        "src-tauri/src/runtime/chat/compact_client.rs",
+        "src-tauri/tests/review_compact_summary_trait_isolation_test.rs",
+        "src-tauri/tests/review_autocompact_constraints_test.rs"
+      ]
+    },
+    {
+      "title": "Compact 后的历史回放依赖 boundary 与 synthetic user context",
+      "description": "runtime 读取 transcript 时，用 tail_message_id 截断 transcript，再把 summary_text 注入为最前面的 context user message，而不是把 boundary 当普通历史消息回灌。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/history.rs",
+        "src-tauri/src/storage/file_store/compact_boundaries.rs",
+        "src-tauri/tests/plan_k_compact_boundary_test.rs"
+      ]
+    },
+    {
+      "title": "错误消息不会进入下一轮 LLM 上下文",
+      "description": "带 error 的持久化消息用于 UI red callout，但 build_chat_history 会过滤，避免把运行错误或超时气泡再喂回模型。",
+      "evidence": [
+        "src-tauri/src/runtime/chat/history.rs",
+        "src-tauri/tests/review_history_filters_error_messages.rs"
+      ]
+    },
+    {
+      "title": "成本核算是 session 级累计并包含 cache token 权重",
+      "description": "provider 上报 input/output/cache_creation/cache_read；driver 把 step usage 累加到 QueryEngine；estimated_cost_usd 对 cache write 和 cache read 使用不同权重估算。",
+      "evidence": [
+        "src-tauri/src/llm/providers/claude.rs",
+        "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/src/runtime/query_engine.rs",
+        "src-tauri/tests/plan_o_queryengine_session_state_test.rs"
+      ]
+    },
+    {
+      "title": "cache token 已到前端事件层但 summary 写入不完整",
+      "description": "Rust TurnCompleted、adapter、TS payload 和 store 类型已有 cache token 字段；useStreaming 写 setLastTurnSummary 时只落 input/output/cost，当前测试也未覆盖 cache token summary 写入。",
+      "evidence": [
+        "src-tauri/src/runtime/events.rs",
+        "src-tauri/src/transport/tauri_event_adapter.rs",
+        "src/lib/tauri.ts",
+        "src/stores/streamingStore.ts",
+        "src/hooks/useStreaming.ts",
+        "src/hooks/useStreaming.integration.test.tsx"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "追踪 chat turn 的入口和 session 状态",
+      "description": "从 Tauri chat command 进入 SessionRuntime，再看 QueryEngine 如何按 session 复用并承担 usage/cost 状态。",
+      "filePaths": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/session_runtime.rs",
+        "src-tauri/src/runtime/query_engine.rs"
+      ]
+    },
+    {
+      "title": "理解 prompt snapshot 与动态 context 分工",
+      "description": "先读 PromptAssembler 和 llm/prompts.rs 的兼容入口，再读 context_builder 如何在每次 iteration 拼动态材料。",
+      "filePaths": [
+        "src-tauri/src/runtime/chat/prompt/sections.rs",
+        "src-tauri/src/llm/prompts.rs",
+        "src-tauri/src/runtime/chat/context_builder.rs"
+      ]
+    },
+    {
+      "title": "串起 compact 触发、summary 生成和历史回放",
+      "description": "从 preprocess 到 compaction/compact_client，再回到 history 与 compact boundary，确认压缩后的 transcript 如何回灌。",
+      "filePaths": [
+        "src-tauri/src/runtime/chat/preprocess.rs",
+        "src-tauri/src/runtime/chat/compaction.rs",
+        "src-tauri/src/runtime/chat/compact_client.rs",
+        "src-tauri/src/runtime/chat/history.rs",
+        "src-tauri/src/storage/file_store/compact_boundaries.rs"
+      ]
+    },
+    {
+      "title": "检查 usage/cost 从 provider 到前端的闭环",
+      "description": "从 provider TokenUsage 到 QueryEngine 累计，再经 TurnCompleted 和 Tauri event adapter 到前端 useStreaming。",
+      "filePaths": [
+        "src-tauri/src/llm/streaming.rs",
+        "src-tauri/src/llm/providers/claude.rs",
+        "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+        "src-tauri/src/runtime/events.rs",
+        "src-tauri/src/transport/tauri_event_adapter.rs",
+        "src/hooks/useStreaming.ts"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "QueryEngine 预算阈值普通 chat 主链未接入",
+      "description": "QueryEngine::with_max_budget_usd 和 with_cost_per_1k_tokens 当前主要由测试覆盖；已读普通 chat 构造链未发现生产预算阈值注入点，因此不应再标成待确认。",
+      "evidence": ["src-tauri/src/runtime/query_engine.rs", "src-tauri/src/runtime/session_runtime.rs", "src-tauri/tests/plan_o_queryengine_session_state_test.rs"]
+    },
+    {
+      "title": "cache token 前端 summary 写入存在断点",
+      "description": "TurnCompletedPayload 和 TurnSummary 有 cache token 字段，但 useStreaming 的 setLastTurnSummary 未写入这些字段，相关 integration test 也未覆盖。",
+      "evidence": ["src/lib/tauri.ts", "src/stores/streamingStore.ts", "src/hooks/useStreaming.ts", "src/hooks/useStreaming.integration.test.tsx"]
+    }
+  ]
+}

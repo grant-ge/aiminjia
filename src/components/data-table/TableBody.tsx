@@ -28,7 +28,7 @@ function renderCell(value: TableCellValue) {
   if (value.variant === 'pill') {
     return (
       <span
-        className="inline-block rounded px-1.5 leading-[1.4]"
+        className="inline-block rounded-md px-1.5 leading-[1.4]"
         style={{
           background: toneVar(value.tone, 'bg'),
           color: toneVar(value.tone, 'fg'),

@@ -103,13 +103,6 @@ pub enum TeamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         feedback: Option<String>,
     },
-    PeerMessage {
-        ts: String,
-        from: String,
-        to: String,
-        text: String,
-        variant: String,
-    },
 }
 
 impl TeamEvent {
@@ -120,7 +113,6 @@ impl TeamEvent {
             TeamEvent::AgentSpawn { ts, .. } => ts,
             TeamEvent::AgentStop { ts, .. } => ts,
             TeamEvent::SendMessage { ts, .. } => ts,
-            TeamEvent::PeerMessage { ts, .. } => ts,
         }
     }
 }
@@ -633,6 +625,69 @@ mod tests {
             // live team：deleted_at 仍是 None。
             assert!(s.deleted_at.is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn scan_teams_dir_does_not_surface_private_assistant_transcript_as_team_message() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path().join("conversations").join("conv-peer");
+        std::fs::create_dir_all(&conv_dir).unwrap();
+        let session_id = SessionId::new("conv-peer");
+
+        let reg = TeamRegistry::new();
+        let team = reg
+            .create(
+                session_id.clone(),
+                dummy_lead("team-lead"),
+                "alpha".to_string(),
+            )
+            .await
+            .unwrap();
+        {
+            let mut team = team.lock().await;
+            team.add_teammate(Member {
+                agent_id: AgentId::new("agent-researcher"),
+                name: "researcher".to_string(),
+                role: MemberRole::Teammate {
+                    employee_id: String::new(),
+                    spawned_by: AgentId::new("lead-team-lead"),
+                },
+                created_at: chrono::DateTime::parse_from_rfc3339("2026-05-15T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                last_active_at: chrono::DateTime::parse_from_rfc3339("2026-05-15T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+            })
+            .unwrap();
+        }
+        reg.persist(&session_id, "alpha", &conv_dir).await.unwrap();
+
+        let paths = crate::runtime::agent::team_paths::TeamPaths::for_team(&conv_dir, "alpha");
+        std::fs::write(
+            paths.team_chat_jsonl(),
+            r#"{"ts":"2026-05-15T00:00:10Z","from":"team-lead","to":"researcher","text":"hello","variant":"text"}
+"#,
+        )
+        .unwrap();
+        let transcript = paths.teammate_transcript("agent-researcher");
+        std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+        std::fs::write(
+            transcript,
+            r#"{"role":"user","content":"hello","from":"team-lead"}
+{"role":"assistant","content":"reply from researcher"}
+"#,
+        )
+        .unwrap();
+
+        let sessions = scan_teams_dir(&conv_dir, "conv-peer", &LifecycleByTeam::default());
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].events.len(), 1);
+        assert!(matches!(
+            &sessions[0].events[0],
+            TeamEvent::SendMessage { from, to, text, .. }
+                if from == "team-lead" && to == "researcher" && text == "hello"
+        ));
     }
 
     #[tokio::test]

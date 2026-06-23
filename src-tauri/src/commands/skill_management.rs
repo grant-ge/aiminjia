@@ -1,3 +1,4 @@
+use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::loader::is_valid_skill_id;
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::storage::UserScopedPathResolver;
@@ -114,12 +115,28 @@ pub struct SkillInfo {
     /// 来自 SKILL.md frontmatter 的 `version:` 字段。前端把它作为
     /// chip 显示在卡片标题旁。读不到时为 None。
     pub version: Option<String>,
+    /// Whether the skill is enabled for the current logged-in user.
+    /// Disabled skills remain visible in management views but are filtered from
+    /// chat entrypoints and runtime catalog.
+    pub enabled: bool,
 }
 
 /// Pure function for testability: list all skills in the new disk-backed registry.
 pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<SkillInfo> {
     use crate::plugin::skill::updated_at::DirMtimeResolver;
-    list_skills_from_registry_with_resolver(registry, &DirMtimeResolver)
+    list_skills_from_registry_with_resolver(
+        registry,
+        &DirMtimeResolver,
+        &SkillEnablementState::default(),
+    )
+}
+
+pub fn list_skills_from_registry_with_enablement(
+    registry: &Arc<Mutex<SkillRegistry>>,
+    enablement: &SkillEnablementState,
+) -> Vec<SkillInfo> {
+    use crate::plugin::skill::updated_at::DirMtimeResolver;
+    list_skills_from_registry_with_resolver(registry, &DirMtimeResolver, enablement)
 }
 
 /// 同上，但允许调用方注入自定义的 `SkillUpdatedAtResolver`，用于单测或
@@ -127,6 +144,7 @@ pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<Sk
 pub fn list_skills_from_registry_with_resolver(
     registry: &Arc<Mutex<SkillRegistry>>,
     resolver: &dyn crate::plugin::skill::updated_at::SkillUpdatedAtResolver,
+    enablement: &SkillEnablementState,
 ) -> Vec<SkillInfo> {
     let guard = registry.lock().unwrap();
     guard
@@ -161,10 +179,76 @@ pub fn list_skills_from_registry_with_resolver(
                     },
                     updated_at: resolver.resolve(skill),
                     version: skill.frontmatter.version.clone(),
+                    enabled: enablement.is_enabled(&skill.id),
                 }
             })
         })
         .collect()
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillEnablementChangedPayload {
+    pub skill_id: String,
+    pub enabled: bool,
+}
+
+pub fn set_skill_enabled_for_registry(
+    registry: &Arc<Mutex<SkillRegistry>>,
+    enablement_store: &SkillEnablementStore,
+    skill_id: &str,
+    enabled: bool,
+    refresh_registry: impl FnOnce() -> Result<(), String>,
+) -> Result<SkillInfo, String> {
+    let exists = registry
+        .lock()
+        .map_err(|e| format!("registry lock poisoned: {}", e))?
+        .get(skill_id)
+        .is_some();
+
+    if !exists {
+        refresh_registry()?;
+        let exists_after_refresh = registry
+            .lock()
+            .map_err(|e| format!("registry lock poisoned: {}", e))?
+            .get(skill_id)
+            .is_some();
+        if !exists_after_refresh {
+            return Err(format!("Unknown skill: {}", skill_id));
+        }
+    }
+
+    let enablement = enablement_store
+        .set_enabled(skill_id, enabled)
+        .map_err(|e| e.to_string())?;
+
+    list_skills_from_registry_with_enablement(registry, &enablement)
+        .into_iter()
+        .find(|skill| skill.id == skill_id)
+        .ok_or_else(|| format!("Unknown skill: {}", skill_id))
+}
+
+#[tauri::command]
+pub async fn set_skill_enabled(
+    app: AppHandle,
+    registry: tauri::State<'_, Arc<Mutex<SkillRegistry>>>,
+    enablement_store: tauri::State<'_, Arc<SkillEnablementStore>>,
+    skill_id: String,
+    enabled: bool,
+) -> Result<SkillInfo, String> {
+    let skill = set_skill_enabled_for_registry(
+        registry.inner(),
+        enablement_store.inner().as_ref(),
+        &skill_id,
+        enabled,
+        || refresh_skill_registry(&app),
+    )?;
+
+    let _ = app.emit(
+        "skill:enablement-changed",
+        SkillEnablementChangedPayload { skill_id, enabled },
+    );
+    Ok(skill)
 }
 
 #[derive(serde::Serialize)]
@@ -224,23 +308,35 @@ fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(cus.require_paths().map_err(|e| e.to_string())?.skills_dir())
 }
 
+fn clear_enablement_override_for_skill(app: &AppHandle, skill_id: &str) -> Result<(), String> {
+    if let Some(store) = app.try_state::<Arc<SkillEnablementStore>>() {
+        store.clear_override(skill_id).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Re-scan both [user_skills_dir, global_skills_dir] roots and replace the
 /// in-memory `SkillRegistry`. Both roots are always scanned because user-root
 /// skills shadow same-id global skills; a single-root scan would mis-resurrect
 /// or hide skills after uninstall.
 pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
-    use crate::plugin::skill::loader::load_skill_roots;
+    use crate::plugin::skill::loader::load_skill_roots_tagged;
+    use crate::plugin::skill::types::SkillSource;
     use crate::storage::AiJiaHome;
 
     let aijia_home = app.state::<Arc<AiJiaHome>>();
     let global_root = aijia_home.skills_dir();
     let user_root = user_skills_dir(app).ok();
-    let roots: Vec<PathBuf> = match user_root {
-        Some(user) => vec![user, global_root],
-        None => vec![global_root],
+    let roots: Vec<(PathBuf, SkillSource)> = match user_root {
+        Some(user) => vec![
+            (user, SkillSource::User),
+            (global_root, SkillSource::Global),
+        ],
+        None => vec![(global_root, SkillSource::Global)],
     };
 
-    let loaded = load_skill_roots(&roots).map_err(|e| format!("load_skill_roots failed: {}", e))?;
+    let loaded =
+        load_skill_roots_tagged(&roots).map_err(|e| format!("load_skill_roots failed: {}", e))?;
     let registry = app.state::<Arc<Mutex<SkillRegistry>>>();
     registry
         .lock()
@@ -315,6 +411,9 @@ pub async fn install_custom_skill(
         )));
     };
 
+    if let Some(skill_id) = Path::new(&dest).file_name().and_then(|name| name.to_str()) {
+        clear_enablement_override_for_skill(&app, skill_id).map_err(InstallSkillError::Io)?;
+    }
     refresh_skill_registry(&app).map_err(InstallSkillError::Io)?;
     Ok(dest)
 }
@@ -386,18 +485,12 @@ fn install_skill_md_file(
 /// Uninstall a custom skill by ID.
 ///
 /// Looks in both the per-user `user_skills_dir` and the legacy global
-/// `~/.renlijia/skills/` root. The dual-root design (PR-2026-05-15
-/// reaffirmed) keeps OPS-synced skills in the global root so multiple
-/// accounts on the same machine share them; user-imported packages go
-/// to the user root. The delete UI should be able to clear stale items
-/// from either side — without this fallback users hit
-/// "Custom skill 'daily-work-plan' not found" toasts whenever they
-/// tried to remove an OPS-orphaned skill that only lived in the global
-/// root.
+/// `~/.renlijia/skills/` root. Runtime skill availability is user-root
+/// first; the global fallback exists to clear old OPS-synced orphans left
+/// behind before marketplace and tenant skills became explicit installs.
 ///
-/// Caveat: if the deleted skill is still published in OPS, the next
-/// `sync_builtin_skills` call will re-create it. To prevent that, ask
-/// the OPS admin to unpublish the corresponding package.
+/// Caveat: required platform builtins can still be recreated by
+/// `sync_builtin_skills`.
 #[tauri::command]
 pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<String, String> {
     let user_dir = user_skills_dir(&app)?.join(&skill_id);
@@ -414,6 +507,7 @@ pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<
     };
 
     std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+    clear_enablement_override_for_skill(&app, &skill_id)?;
     refresh_skill_registry(&app)?;
     Ok(format!("Uninstalled skill '{}'", skill_id))
 }
@@ -508,18 +602,31 @@ pub async fn pack_skill(skill_dir: String, dest_path: String) -> Result<String, 
 #[serde(rename_all = "camelCase")]
 pub struct MarketplaceSkillItem {
     pub id: i64,
+    #[serde(alias = "plugin_id")]
     pub plugin_id: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub category: String,
+    #[serde(default)]
     pub icon: String,
+    #[serde(default)]
     pub version: String,
+    #[serde(default)]
     pub scope: String,
+    #[serde(default)]
     pub status: String,
+    #[serde(default)]
     pub downloads: i64,
+    #[serde(default)]
     pub featured: bool,
+    #[serde(default, alias = "package_size")]
     pub package_size: i64,
+    #[serde(default, alias = "tenant_name")]
     pub tenant_name: String,
+    #[serde(default, alias = "created_at")]
     pub created_at: String,
 }
 
@@ -531,6 +638,189 @@ pub struct MarketplaceResponse {
     pub total: i64,
     pub page: i64,
     pub size: i64,
+}
+
+/// Full raw SKILL.md preview for an uninstalled marketplace package.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceSkillPreview {
+    pub raw_content: String,
+}
+
+fn parse_marketplace_response(
+    body: serde_json::Value,
+    requested_page: u32,
+    requested_size: u32,
+) -> Result<MarketplaceResponse, String> {
+    let data = body
+        .get("data")
+        .ok_or_else(|| "No data in marketplace response".to_string())?;
+    let (item_values, total, page, size) = if data.is_array() {
+        let items = data.as_array().cloned().unwrap_or_default();
+        let total = body
+            .get("total")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(items.len() as i64);
+        (
+            items,
+            total,
+            body.get("page")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_page as i64),
+            body.get("size")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_size as i64),
+        )
+    } else {
+        let items = data
+            .get("items")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        (
+            items,
+            data.get("total").and_then(|v| v.as_i64()).unwrap_or(0),
+            data.get("page")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_page as i64),
+            data.get("size")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_size as i64),
+        )
+    };
+
+    let mut items: Vec<MarketplaceSkillItem> =
+        serde_json::from_value(serde_json::Value::Array(item_values))
+            .map_err(|e| format!("Failed to parse marketplace items: {}", e))?;
+    for item in &mut items {
+        if item.name.trim().is_empty() {
+            item.name = item.plugin_id.clone();
+        }
+    }
+
+    Ok(MarketplaceResponse {
+        items,
+        total,
+        page,
+        size,
+    })
+}
+
+fn marketplace_download_url(body: &serde_json::Value) -> Option<String> {
+    body["package_url"]
+        .as_str()
+        .or_else(|| body["url"].as_str())
+        .or_else(|| body["data"]["package_url"].as_str())
+        .or_else(|| body["data"]["url"].as_str())
+        .map(ToString::to_string)
+}
+
+fn marketplace_download_meta(body: &serde_json::Value) -> Option<serde_json::Value> {
+    let category = body["category"]
+        .as_str()
+        .or_else(|| body["data"]["category"].as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+    let display_i18n = body
+        .get("displayI18n")
+        .or_else(|| body.get("display_i18n"))
+        .or_else(|| body["data"].get("displayI18n"))
+        .or_else(|| body["data"].get("display_i18n"))
+        .filter(|value| !value.is_null())
+        .cloned();
+
+    if category.is_none() && display_i18n.is_none() {
+        return None;
+    }
+
+    let mut payload = serde_json::Map::new();
+    if let Some(category) = category {
+        payload.insert("category".to_string(), serde_json::Value::String(category));
+    }
+    if let Some(display_i18n) = display_i18n {
+        payload.insert("displayI18n".to_string(), display_i18n);
+    }
+    Some(serde_json::Value::Object(payload))
+}
+
+fn install_marketplace_archive(
+    archive_path: &Path,
+    tmp_root: &Path,
+    custom_dir: &Path,
+    plugin_id: &str,
+) -> Result<String, String> {
+    if plugin_id.starts_with('_') || plugin_id.starts_with('.') || !is_valid_skill_id(plugin_id) {
+        return Err(format!("Invalid plugin_id: {}", plugin_id));
+    }
+
+    std::fs::create_dir_all(custom_dir).map_err(|e| e.to_string())?;
+    let prepared = tmp_root.join("prepared").join(plugin_id);
+    crate::plugin::skill::global_sync::extract_global_skills_zip(archive_path, &prepared)
+        .map_err(|e| e.to_string())?;
+
+    let source = if prepared.join("SKILL.md").is_file() {
+        prepared
+    } else if let Some(subdir) =
+        crate::plugin::skill::global_sync::find_single_level_skill_root(&prepared)
+            .map_err(|e| e.to_string())?
+    {
+        subdir
+    } else {
+        return Err(format!(
+            "skill package '{}' missing SKILL.md after extraction",
+            plugin_id
+        ));
+    };
+
+    crate::plugin::skill::global_sync::install_one_prepared_skill(&source, custom_dir, plugin_id)
+        .map_err(|e| e.to_string())?;
+    Ok(custom_dir.join(plugin_id).to_string_lossy().to_string())
+}
+
+fn write_marketplace_sidecar(dest: &Path, meta: Option<serde_json::Value>) {
+    let Some(meta) = meta else {
+        return;
+    };
+    if let Ok(bytes) = serde_json::to_vec(&meta) {
+        if let Err(error) = std::fs::write(dest.join(".lotus-meta.json"), bytes) {
+            log::warn!(
+                "Marketplace: write .lotus-meta.json for '{}' failed: {}",
+                dest.display(),
+                error
+            );
+        }
+    }
+}
+
+fn read_marketplace_archive_skill_md(
+    archive_path: &Path,
+    tmp_root: &Path,
+    plugin_id: &str,
+) -> Result<String, String> {
+    if plugin_id.starts_with('_') || plugin_id.starts_with('.') || !is_valid_skill_id(plugin_id) {
+        return Err(format!("Invalid plugin_id: {}", plugin_id));
+    }
+
+    let prepared = tmp_root.join("prepared").join(plugin_id);
+    crate::plugin::skill::global_sync::extract_global_skills_zip(archive_path, &prepared)
+        .map_err(|e| e.to_string())?;
+
+    let source = if prepared.join("SKILL.md").is_file() {
+        prepared
+    } else if let Some(subdir) =
+        crate::plugin::skill::global_sync::find_single_level_skill_root(&prepared)
+            .map_err(|e| e.to_string())?
+    {
+        subdir
+    } else {
+        return Err(format!(
+            "skill package '{}' missing SKILL.md after extraction",
+            plugin_id
+        ));
+    };
+
+    std::fs::read_to_string(source.join("SKILL.md")).map_err(|e| e.to_string())
 }
 
 /// List skill packages from the cloud marketplace.
@@ -549,8 +839,10 @@ pub async fn list_marketplace_skills(
     // page; do not pass scope=public or tenant private skills are filtered out
     // server-side (see plugin/skill/global_sync.rs note).
     let mut url = format!(
-        "https://ai-tenant.renlijia.com/v1/skill-packages?page={}&size={}",
-        page, size
+        "{}/v1/skill-packages?page={}&size={}",
+        crate::environment::tenant_host(),
+        page,
+        size
     );
     if let Some(cat) = &category {
         if !cat.is_empty() {
@@ -594,22 +886,12 @@ pub async fn list_marketplace_skills(
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    // Parse { code: 0, data: { items, total, page, size } }
-    let data = &body["data"];
-    let items: Vec<MarketplaceSkillItem> =
-        serde_json::from_value(data["items"].clone()).unwrap_or_default();
-
-    Ok(MarketplaceResponse {
-        items,
-        total: data["total"].as_i64().unwrap_or(0),
-        page: data["page"].as_i64().unwrap_or(1),
-        size: data["size"].as_i64().unwrap_or(20),
-    })
+    parse_marketplace_response(body, page, size)
 }
 
 /// Download and install a skill package from the marketplace.
-/// Downloads the zip from `package_url` and extracts to `~/.renlijia/skills/{plugin_id}/`.
+/// Downloads the zip from `package_url` and installs it under the current
+/// user's `~/.renlijia/users/{scope}/skills/{plugin_id}/`.
 #[tauri::command]
 pub async fn install_marketplace_skill(
     app: AppHandle,
@@ -623,7 +905,8 @@ pub async fn install_marketplace_skill(
 
     // Step 1: Get the download URL
     let download_url = format!(
-        "https://ai-tenant.renlijia.com/v1/skill-packages/{}/download",
+        "{}/v1/skill-packages/{}/download",
+        crate::environment::tenant_host(),
         package_id
     );
     let resp = client
@@ -640,11 +923,8 @@ pub async fn install_marketplace_skill(
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let package_url = body["package_url"]
-        .as_str()
-        .or_else(|| body["data"]["package_url"].as_str())
-        .ok_or("No package_url in response")?
-        .to_string();
+    let package_url = marketplace_download_url(&body).ok_or("No package_url in response")?;
+    let sidecar_meta = marketplace_download_meta(&body);
 
     // Step 2: Download the zip file
     let zip_resp = client
@@ -666,60 +946,89 @@ pub async fn install_marketplace_skill(
         .await
         .map_err(|e| format!("Download error: {}", e))?;
 
-    // Step 3: Extract to ~/.renlijia/skills/{plugin_id}/
+    // Step 3: Extract to the current user's skills dir.
     let custom_dir = user_skills_dir(&app)?;
-    std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
-
-    let dest = custom_dir.join(&plugin_id);
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
-    }
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-
-    let cursor = std::io::Cursor::new(zip_bytes.as_ref());
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("Invalid zip: {}", e))?;
-
-    const MAX_EXTRACT_SIZE: u64 = 50 * 1024 * 1024; // 50 MB limit
-    let mut total_extracted: u64 = 0;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
-
-        total_extracted += file.size();
-        if total_extracted > MAX_EXTRACT_SIZE {
-            let _ = std::fs::remove_dir_all(&dest);
-            return Err("Package too large (exceeds 50MB extraction limit)".to_string());
-        }
-
-        // Use enclosed_name() to prevent path traversal attacks — it returns
-        // None for entries whose resolved path would escape the destination.
-        let relative = file
-            .enclosed_name()
-            .ok_or_else(|| format!("Unsafe zip entry path: {:?}", file.name()))?
-            .to_path_buf();
-        let out_path = dest.join(&relative);
-
-        // Belt-and-suspenders: verify the resolved path is still under dest
-        if !out_path.starts_with(&dest) {
-            return Err(format!("Path traversal detected: {:?}", relative));
-        }
-
-        if file.is_dir() {
-            std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
-        } else {
-            if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-            }
-            let mut outfile = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
-            std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
-        }
-    }
+    let tmp = archive_tmp_root(&app);
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let archive_path = tmp.join("marketplace-skill.zip");
+    std::fs::write(&archive_path, zip_bytes.as_ref()).map_err(|e| e.to_string())?;
+    let dest = install_marketplace_archive(
+        &archive_path,
+        &tmp.join("unpacked"),
+        &custom_dir,
+        &plugin_id,
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+    let dest = dest?;
+    write_marketplace_sidecar(Path::new(&dest), sidecar_meta);
 
     log::info!("Marketplace: installed skill '{}' to {:?}", plugin_id, dest);
-    Ok(format!(
-        "Installed '{}' — restart app to activate",
-        plugin_id
-    ))
+    clear_enablement_override_for_skill(&app, &plugin_id)?;
+    refresh_skill_registry(&app)?;
+    Ok(format!("Installed '{}'", plugin_id))
+}
+
+/// Download a marketplace skill package and return its SKILL.md without
+/// installing it to the user's skill directory.
+#[tauri::command]
+pub async fn preview_marketplace_skill(
+    app: AppHandle,
+    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+    package_id: i64,
+    plugin_id: String,
+) -> Result<MarketplaceSkillPreview, String> {
+    let session_key = auth.get_session_key().await.map_err(|e| e.to_string())?;
+    let client = reqwest::Client::new();
+    let download_url = format!(
+        "{}/v1/skill-packages/{}/download",
+        crate::environment::tenant_host(),
+        package_id
+    );
+    let resp = client
+        .post(&download_url)
+        .header("Authorization", format!("Bearer {}", session_key))
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Download API error: {}", body));
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let package_url = marketplace_download_url(&body).ok_or("No package_url in response")?;
+    let zip_resp = client
+        .get(&package_url)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    if !zip_resp.status().is_success() {
+        return Err(format!(
+            "Failed to download package: HTTP {}",
+            zip_resp.status()
+        ));
+    }
+
+    let zip_bytes = zip_resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    let tmp = archive_tmp_root(&app).join("preview");
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let archive_path = tmp.join("marketplace-skill-preview.zip");
+    std::fs::write(&archive_path, zip_bytes.as_ref()).map_err(|e| e.to_string())?;
+    let raw_content =
+        read_marketplace_archive_skill_md(&archive_path, &tmp.join("unpacked"), &plugin_id);
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    Ok(MarketplaceSkillPreview {
+        raw_content: raw_content?,
+    })
 }
 
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -745,6 +1054,142 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::skill::enablement::SkillEnablementState;
+    use crate::plugin::skill::types::{DiskSkill, SkillFrontmatter, SkillMetadata, SkillSource};
+
+    fn test_disk_skill(id: &str, source: SkillSource) -> DiskSkill {
+        DiskSkill {
+            id: id.to_string(),
+            root: PathBuf::from("/tmp").join(id),
+            frontmatter: SkillFrontmatter {
+                name: id.to_string(),
+                description: "desc".to_string(),
+                when_to_use: None,
+                allowed_tools: vec![],
+                argument_hint: None,
+                arguments: vec![],
+                model: None,
+                effort: None,
+                context: None,
+                agent: None,
+                user_invocable: true,
+                disable_model_invocation: false,
+                version: None,
+                paths: vec![],
+                hooks: Default::default(),
+                shell: None,
+                category: None,
+                metadata: SkillMetadata::default(),
+            },
+            body: String::new(),
+            source,
+        }
+    }
+
+    #[test]
+    fn parses_marketplace_array_response_from_gateway() {
+        let body = serde_json::json!({
+            "code": 0,
+            "data": [
+                {
+                    "id": 42,
+                    "plugin_id": "bid-writing",
+                    "name": "标书撰写",
+                    "description": "解析招标文件",
+                    "category": "general",
+                    "icon": "file",
+                    "version": "0.4",
+                    "scope": "tenant",
+                    "status": "published",
+                    "package_size": 1234,
+                    "created_at": "2026-06-15T00:00:00Z"
+                }
+            ],
+            "total": 1,
+            "page": 1,
+            "size": 100
+        });
+
+        let parsed = parse_marketplace_response(body, 1, 100).unwrap();
+
+        assert_eq!(parsed.total, 1);
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].plugin_id, "bid-writing");
+        assert_eq!(parsed.items[0].package_size, 1234);
+    }
+
+    #[test]
+    fn parses_marketplace_paged_items_response() {
+        let body = serde_json::json!({
+            "code": 0,
+            "data": {
+                "items": [
+                    {
+                        "id": 7,
+                        "pluginId": "deep-research",
+                        "description": "研究报告",
+                        "scope": "public"
+                    }
+                ],
+                "total": 1,
+                "page": 2,
+                "size": 10
+            }
+        });
+
+        let parsed = parse_marketplace_response(body, 2, 10).unwrap();
+
+        assert_eq!(parsed.page, 2);
+        assert_eq!(parsed.size, 10);
+        assert_eq!(parsed.items[0].plugin_id, "deep-research");
+        assert_eq!(parsed.items[0].name, "deep-research");
+    }
+
+    #[test]
+    fn list_skills_merges_enabled_state_without_filtering_disabled() {
+        let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(vec![
+            test_disk_skill("enabled-skill", SkillSource::User),
+            test_disk_skill("disabled-skill", SkillSource::User),
+        ])));
+        let mut enablement = SkillEnablementState::default();
+        enablement
+            .disabled_skill_ids
+            .insert("disabled-skill".to_string());
+
+        let infos = list_skills_from_registry_with_enablement(&registry, &enablement);
+
+        assert_eq!(infos.len(), 2);
+        assert_eq!(
+            infos
+                .iter()
+                .map(|info| (info.id.as_str(), info.enabled))
+                .collect::<Vec<_>>(),
+            vec![("disabled-skill", false), ("enabled-skill", true)]
+        );
+    }
+
+    #[test]
+    fn set_skill_enabled_unknown_skill_does_not_write_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = Arc::new(crate::storage::AiJiaHome::from_path(
+            tmp.path().to_path_buf(),
+        ));
+        let current_user = Arc::new(crate::storage::CurrentUserStorage::new(home));
+        current_user
+            .activate_scope(crate::storage::UserScope::new(1, 2))
+            .unwrap();
+        let config_path = current_user.resolve_paths().unwrap().skills_config_path();
+        let store = crate::plugin::skill::enablement::SkillEnablementStore::new(current_user);
+        let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(Vec::new())));
+
+        let err =
+            set_skill_enabled_for_registry(&registry, &store, "missing-skill", false, || Ok(()))
+                .unwrap_err();
+
+        assert!(err.contains("Unknown skill"));
+        assert!(!config_path.exists());
+    }
+
     #[test]
     fn init_skill_template_writes_skill_md_and_subdirs() {
         let tmp = tempfile::tempdir().unwrap();
@@ -963,5 +1408,92 @@ mod tests {
             "got {:?}",
             err
         );
+    }
+
+    fn write_marketplace_zip(path: &Path, entries: &[(&str, &str)]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        use std::io::Write;
+        for (name, content) in entries {
+            zip.start_file(name, opts).unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn install_marketplace_archive_accepts_server_sidecars() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("server.zip");
+        write_marketplace_zip(
+            &archive,
+            &[
+                (
+                    "SKILL.md",
+                    "---\nname: xiaojia-doctor\ndescription: doctor\n---\nbody",
+                ),
+                (".lotus-meta.json", r#"{"category":"runtime"}"#),
+                (".scope", "tenant"),
+                ("scripts/doctor.ps1", "Write-Output ok"),
+                ("references/runtime-doctor.md", "# ref"),
+            ],
+        );
+
+        let custom_dir = tmp.path().join("user-skills");
+        let dest = install_marketplace_archive(
+            &archive,
+            &tmp.path().join("unpack"),
+            &custom_dir,
+            "xiaojia-doctor",
+        )
+        .unwrap();
+        let dest = PathBuf::from(dest);
+
+        assert_eq!(
+            dest.file_name().unwrap().to_string_lossy(),
+            "xiaojia-doctor"
+        );
+        assert!(dest.join("SKILL.md").is_file());
+        assert!(dest.join(".lotus-meta.json").is_file());
+        assert!(dest.join(".scope").is_file());
+        assert!(dest.join("scripts").join("doctor.ps1").is_file());
+        assert!(dest.join("references").join("runtime-doctor.md").is_file());
+    }
+
+    #[test]
+    fn install_marketplace_archive_accepts_inner_skill_layout_and_i18n() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("server-inner.zip");
+        write_marketplace_zip(
+            &archive,
+            &[
+                (
+                    "bid-writing/SKILL.md",
+                    "---\nname: bid-writing\ndescription: bid\n---\nbody",
+                ),
+                (
+                    "bid-writing/i18n/en-US/SKILL.md",
+                    "---\nname: bid-writing\ndescription: bid\n---\nbody",
+                ),
+                ("bid-writing/references/outline_check.py", "print('ok')"),
+            ],
+        );
+
+        let custom_dir = tmp.path().join("user-skills");
+        let dest = install_marketplace_archive(
+            &archive,
+            &tmp.path().join("unpack"),
+            &custom_dir,
+            "bid-writing",
+        )
+        .unwrap();
+        let dest = PathBuf::from(dest);
+
+        assert_eq!(dest.file_name().unwrap().to_string_lossy(), "bid-writing");
+        assert!(dest.join("SKILL.md").is_file());
+        assert!(dest.join("i18n").join("en-US").join("SKILL.md").is_file());
+        assert!(dest.join("references").join("outline_check.py").is_file());
     }
 }

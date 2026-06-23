@@ -279,7 +279,7 @@ fn first_meaningful_line(raw: &str) -> &str {
 }
 
 /// 从 user 首句生成对话标题：
-/// - 取首句（按 `,。?!？！,.\n` 切）
+/// - 取首句（按 `，。?!？！,.\n` 切）
 /// - 剥常见礼貌前缀（"请帮我" / "Please " 等）
 /// - 截到 32 视觉宽度（≈ 16 中文字 / 32 ASCII）
 pub fn title_from_user_text(user_text: &str) -> String {
@@ -288,7 +288,7 @@ pub fn title_from_user_text(user_text: &str) -> String {
     }
     // 切第一个有内容的句子
     let first_sentence = user_text
-        .split(|c: char| matches!(c, ',' | '。' | '?' | '!' | '？' | '！' | ',' | '.' | '\n'))
+        .split(|c: char| matches!(c, '，' | '。' | '?' | '!' | '？' | '！' | ',' | '.' | '\n'))
         .map(|s| s.trim())
         .find(|s| !s.is_empty())
         .unwrap_or("")
@@ -584,7 +584,7 @@ async fn try_llm_title(
     gateway: &LlmGateway,
     settings: &AppSettings,
     first_user: &str,
-    conversation_id: &str,
+    _conversation_id: &str,
 ) -> anyhow::Result<String> {
     let llm_messages = vec![ChatMessage::text("user", first_user)];
 

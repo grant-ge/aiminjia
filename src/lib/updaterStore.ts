@@ -16,12 +16,20 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
 
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'failed' | 'installing'
+type InstallStage = 'preparing' | 'verifying' | 'installing' | 'finishing'
+
+interface InstallProgress {
+  stage: InstallStage
+  current: number
+  total: number
+}
 
 interface UpdaterState {
   phase: Phase
   version: string | null
   notes: string
   progress: { downloaded: number; total: number } | null
+  installProgress: InstallProgress | null
   error: string | null
   panelOpen: boolean
   online: boolean
@@ -34,6 +42,7 @@ interface UpdaterState {
   _downloadInFlight: Promise<void> | null
   _progressUnlisten: UnlistenFn | null
   _failedUnlisten: UnlistenFn | null
+  _installProgressUnlisten: UnlistenFn | null
 
   bootstrap(opts?: { triggeredBy?: 'auto' | 'manual' }): Promise<void>
   startDownload(): Promise<void>
@@ -66,7 +75,24 @@ async function setupEventListeners(set: (partial: Partial<UpdaterState>) => void
       set({ phase: 'failed', error: e.payload.error })
     },
   )
-  set({ _progressUnlisten: progressUnlisten, _failedUnlisten: failedUnlisten })
+  const installProgressUnlisten = await listen<{
+    version: string
+    stage: InstallStage
+    current: number
+    total: number
+  }>(
+    'updater:install-progress',
+    (e) => {
+      const { version, stage, current, total } = e.payload
+      if (version !== get().version) return
+      set({ installProgress: { stage, current, total } })
+    },
+  )
+  set({
+    _progressUnlisten: progressUnlisten,
+    _failedUnlisten: failedUnlisten,
+    _installProgressUnlisten: installProgressUnlisten,
+  })
 }
 
 function extractUpdateMeta(
@@ -95,11 +121,120 @@ function extractUpdateMeta(
   return { url, size: 0, etag: '' }
 }
 
+type StoreSet = (partial: Partial<UpdaterState>) => void
+type StoreGet = () => UpdaterState
+
+async function refreshLatestCandidate(
+  set: StoreSet,
+  get: StoreGet,
+): Promise<{ hasUpdate: boolean; changed: boolean }> {
+  const previous = get()
+  let update: Update | null = null
+  try {
+    update = await check()
+  } catch (e) {
+    console.warn('[updater] refresh check failed:', e)
+    return { hasUpdate: Boolean(previous._update), changed: false }
+  }
+
+  if (!update) {
+    set({
+      phase: 'idle',
+      version: null,
+      notes: '',
+      progress: null,
+      installProgress: null,
+      error: null,
+      _update: null,
+      _cachedBytes: null,
+      _downloadUrl: '',
+      _expectedSize: 0,
+      _etag: '',
+    })
+    return { hasUpdate: false, changed: Boolean(previous._update) }
+  }
+
+  const current = await getVersion()
+  if (update.version === current) {
+    set({
+      phase: 'idle',
+      version: null,
+      notes: '',
+      progress: null,
+      installProgress: null,
+      error: null,
+      _update: null,
+      _cachedBytes: null,
+      _downloadUrl: '',
+      _expectedSize: 0,
+      _etag: '',
+    })
+    return { hasUpdate: false, changed: Boolean(previous._update) }
+  }
+
+  let platformKey = ''
+  try {
+    platformKey = await updaterPlatformKey()
+  } catch (e) {
+    console.warn('[updater] platform key lookup failed:', e)
+  }
+  const { url, etag } = extractUpdateMeta(update, platformKey)
+  const expectedSize = 0
+  const changed = previous._update?.version !== update.version
+    || previous._downloadUrl !== url
+    || previous._etag !== etag
+
+  set({
+    _update: update,
+    version: update.version,
+    notes: update.body ?? '',
+    _downloadUrl: url,
+    _expectedSize: expectedSize,
+    _etag: etag,
+    _cachedBytes: null,
+    progress: null,
+    installProgress: null,
+    error: null,
+  })
+
+  let cacheStatus: 'complete' | 'partial' | 'none' = 'none'
+  let downloadedSize = 0
+  try {
+    const r = await updaterCheckCache(update.version, expectedSize, etag)
+    cacheStatus = r.status
+    downloadedSize = r.downloaded_size
+  } catch (e) {
+    console.warn('[updater] cache check failed:', e)
+  }
+
+  if (cacheStatus === 'complete') {
+    try {
+      const bytes = await updaterReadCachedBytes(update.version)
+      set({
+        phase: 'ready',
+        _cachedBytes: new Uint8Array(bytes),
+        progress: { downloaded: bytes.length, total: bytes.length },
+      })
+      return { hasUpdate: true, changed }
+    } catch (e) {
+      console.warn('[updater] read cached bytes failed:', e)
+    }
+  }
+
+  set({
+    phase: 'available',
+    _cachedBytes: null,
+    progress: cacheStatus === 'partial' ? { downloaded: downloadedSize, total: expectedSize } : null,
+  })
+  return { hasUpdate: true, changed }
+}
+
 export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   phase: 'idle',
   version: null,
   notes: '',
   progress: null,
+  installProgress: null,
   error: null,
   panelOpen: false,
   online: typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -112,21 +247,22 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   _downloadInFlight: null,
   _progressUnlisten: null,
   _failedUnlisten: null,
+  _installProgressUnlisten: null,
 
   async bootstrap(opts?: { triggeredBy?: 'auto' | 'manual' }) {
     const triggeredBy = opts?.triggeredBy ?? 'auto'
     const inFlight = get()._bootstrapPromise
     if (inFlight) return inFlight
 
-    // Don't re-check if we've already discovered an update in this session.
-    // Re-running bootstrap() would wipe version/_update/_cachedBytes if the
-    // new check() returns null (Tauri updater can be flaky on repeat calls),
-    // making the user think there's no update. Once we're past 'checking',
-    // assume state is authoritative — user can use the UpdaterPanel directly.
     const currentPhase = get().phase
-    if (currentPhase === 'available' || currentPhase === 'downloading'
-        || currentPhase === 'ready' || currentPhase === 'failed'
-        || currentPhase === 'installing') {
+    if (currentPhase === 'downloading' || currentPhase === 'installing') {
+      return
+    }
+    if (currentPhase === 'available' || currentPhase === 'ready' || currentPhase === 'failed') {
+      const refreshed = await refreshLatestCandidate(set, get)
+      if (triggeredBy === 'auto' && refreshed.hasUpdate && refreshed.changed) {
+        void get().startDownload()
+      }
       return
     }
 
@@ -153,12 +289,12 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
         return
       }
       if (!update) {
-        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
+        set({ phase: 'idle', version: null, notes: '', progress: null, installProgress: null, _update: null, _cachedBytes: null })
         return
       }
       const current = await getVersion()
       if (update.version === current) {
-        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
+        set({ phase: 'idle', version: null, notes: '', progress: null, installProgress: null, _update: null, _cachedBytes: null })
         return
       }
 
@@ -179,6 +315,7 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
         _expectedSize: expectedSize,
         _etag: etag,
         error: null,
+        installProgress: null,
       })
 
       // Check cache
@@ -232,6 +369,12 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   },
 
   async startDownload() {
+    if (get().phase === 'failed') {
+      const refreshed = await refreshLatestCandidate(set, get)
+      if (!refreshed.hasUpdate) return
+      if (get().phase === 'ready') return
+    }
+
     const { _update, _downloadUrl, _expectedSize, _etag, phase } = get()
     if (!_update || (phase !== 'available' && phase !== 'failed' && phase !== 'checking')) return
     if (!_downloadUrl) {
@@ -248,6 +391,7 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
     set({
       phase: 'downloading',
       progress: { downloaded: 0, total: _expectedSize },
+      installProgress: null,
       error: null,
       _cachedBytes: null,
     })
@@ -276,6 +420,9 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
 
   async retryDownload() {
     if (get().phase !== 'failed') return
+    const refreshed = await refreshLatestCandidate(set, get)
+    if (!refreshed.hasUpdate) return
+    if (get().phase === 'ready') return
     await get().startDownload()
   },
 
@@ -304,17 +451,49 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
       })
       return
     }
-    set({ phase: 'installing' })
+
+    const refreshed = await refreshLatestCandidate(set, get)
+    if (!refreshed.hasUpdate) {
+      useNotificationStore.getState().push({
+        context: 'toast',
+        level: 'error',
+        title: i18n.t('updater.installFailedTitle'),
+        message: i18n.t('updater.notReadyMessage'),
+        actions: [], dismissible: true, autoHide: 6,
+      })
+      return
+    }
+    if (refreshed.changed || get().phase !== 'ready') {
+      await get().startDownload()
+      return
+    }
+
+    const latest = get()
+    if (!latest._update || !latest._cachedBytes || latest.phase !== 'ready') {
+      useNotificationStore.getState().push({
+        context: 'toast',
+        level: 'error',
+        title: i18n.t('updater.installFailedTitle'),
+        message: i18n.t('updater.notReadyMessage'),
+        actions: [], dismissible: true, autoHide: 6,
+      })
+      return
+    }
+
+    set({
+      phase: 'installing',
+      installProgress: { stage: 'preparing', current: 1, total: 4 },
+    })
     let installed = false
     try {
       // The JS plugin-updater's install() requires a prior JS-side download()
       // call (it tracks bytesRid internally). We have bytes in Rust cache,
       // so we go through our custom command that uses the Rust-side
       // Update::install(bytes) API directly.
-      await updaterInstallCached(_update.version)
+      await updaterInstallCached(latest._update.version)
       installed = true
       await updaterClearCache().catch(() => {})
-      set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
+      set({ phase: 'idle', version: null, notes: '', progress: null, installProgress: null, _update: null, _cachedBytes: null })
       await relaunch()
     } catch (e) {
       console.error('[updater] install failed:', e)
@@ -325,11 +504,25 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
           message: i18n.t('updater.relaunchFailedHint'),
           actions: [], dismissible: true, autoHide: 10,
         })
-        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
+        set({ phase: 'idle', version: null, notes: '', progress: null, installProgress: null, _update: null, _cachedBytes: null })
       } else {
         const msg = String((e as Error)?.message ?? e)
-        if (msg.toLowerCase().includes('signature')) {
+        const lower = msg.toLowerCase()
+        if (lower.includes('signature') || lower.includes('version mismatch')) {
           await updaterClearCache().catch(() => {})
+        }
+        if (lower.includes('version mismatch')) {
+          const refreshedAfterMismatch = await refreshLatestCandidate(set, get)
+          if (refreshedAfterMismatch.hasUpdate && get().phase !== 'ready') {
+            await get().startDownload()
+          }
+          useNotificationStore.getState().push({
+            context: 'toast', level: 'error',
+            title: i18n.t('updater.installFailedTitle'),
+            message: msg,
+            actions: [], dismissible: true, autoHide: 8,
+          })
+          return
         }
         useNotificationStore.getState().push({
           context: 'toast', level: 'error',

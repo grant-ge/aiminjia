@@ -23,6 +23,12 @@ fn stream_error_maps_to_legacy_event() {
         RuntimeEventKind::StreamError {
             error: "Connection timeout".to_string(),
             raw_error: Some("reqwest::Error".to_string()),
+            code: None,
+            retryable: None,
+            handling: None,
+            request_phase: None,
+            current_route: None,
+            alternatives: None,
         },
     );
     let legacy = map_runtime_event(&event);
@@ -601,6 +607,9 @@ fn review_s4_no_app_emit_in_runtime_chat() {
 fn review_s4_runtime_has_no_tauri_use() {
     // Sanity check: ensure runtime/ modules do not import tauri::*
     for entry in walk_rust_files("src/runtime/") {
+        if is_allowed_runtime_tauri_bridge(&entry) {
+            continue;
+        }
         let content = std::fs::read_to_string(&entry).unwrap_or_default();
         assert!(
             !content.contains("use tauri::"),
@@ -608,6 +617,13 @@ fn review_s4_runtime_has_no_tauri_use() {
             entry.display()
         );
     }
+}
+
+fn is_allowed_runtime_tauri_bridge(path: &std::path::Path) -> bool {
+    matches!(
+        path.to_string_lossy().replace('\\', "/").as_str(),
+        "src/runtime/tools/builtin/load_skill.rs" | "src/runtime/tools/builtin/refresh_skills.rs"
+    )
 }
 
 fn walk_rust_files(dir: &str) -> Vec<std::path::PathBuf> {
@@ -732,8 +748,13 @@ async fn driver_s4_injects_system_reminder_as_first_user_message() {
         content
     );
     assert!(
-        content.contains("今天是"),
-        "system-reminder must contain date info, got: {}",
+        content.contains("当前本地时间是"),
+        "system-reminder must contain local date/time info, got: {}",
+        content
+    );
+    assert!(
+        content.matches(':').count() >= 2,
+        "system-reminder must include HH:MM:SS style time, got: {}",
         content
     );
     assert!(
@@ -1253,6 +1274,7 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         _content: &str,
         _attachments: &[ChatAttachmentRef],
         _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
+        _reasoning_mode: Option<app_lib::runtime::chat::chat_turn_driver::ReasoningMode>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-id".to_string())

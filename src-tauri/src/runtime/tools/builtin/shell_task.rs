@@ -565,7 +565,12 @@ fn finish_shell_task(
             result,
             None,
         );
-        notifications.enqueue(task_id.as_str(), xml, parent_session_id.clone(), parent_run_id);
+        notifications.enqueue(
+            task_id.as_str(),
+            xml,
+            parent_session_id.clone(),
+            parent_run_id,
+        );
     }
 
     let state = match status {
@@ -616,7 +621,12 @@ where
     Ok((captured, truncated))
 }
 
-fn append_chunk(captured: &mut Vec<u8>, chunk: &[u8], truncated: &mut bool, transcript_path: &Path) {
+fn append_chunk(
+    captured: &mut Vec<u8>,
+    chunk: &[u8],
+    truncated: &mut bool,
+    transcript_path: &Path,
+) {
     if captured.len() < MAX_OUTPUT_BYTES {
         let remaining = MAX_OUTPUT_BYTES - captured.len();
         let copy_len = remaining.min(chunk.len());

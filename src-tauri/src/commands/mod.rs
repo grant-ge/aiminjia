@@ -1,11 +1,14 @@
 pub mod auth;
 pub mod chat;
+#[cfg(debug_assertions)]
+pub mod dev_environment;
 pub mod diagnostics;
 pub mod dingtalk;
 pub mod employees;
 pub mod expert_team_templates;
 pub mod file;
 pub mod plugin;
+pub mod workplace_directory;
 
 pub mod channel;
 pub mod persona;

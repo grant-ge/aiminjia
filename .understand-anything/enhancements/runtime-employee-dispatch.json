@@ -1,0 +1,314 @@
+{
+  "module": "runtime-employee-dispatch",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/commands/employees.rs",
+      "summary": "Tauri 命令层入口，暴露 employee create/list/get/delete/update 等 API，负责参数校验和调用 runtime 适配器，不直接执行业务调度。",
+      "tags": ["commands", "runtime-bridge", "employee"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "summary": "TauriChatCommandAdapter 的运行入口，按命令触发时创建运行上下文、构建 dispatch_prompt 并调度 employee 执行，包含运行期间的状态记录与异常返回。",
+      "tags": ["transport", "chat", "dispatch", "employee-run"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/runner.rs",
+      "summary": "调度器与触发器实现（on-demand 与 cron），通过 trait 与 chat 适配器解耦执行路径，调用 store 取 due 任务并交由统一分发接口。",
+      "tags": ["runner", "scheduler", "dispatch"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/store.rs",
+      "summary": "EmployeeStore 作为持久态唯一来源，管理 employee 定义、template_ref、last_run_at、knowledge status 等元数据，提供 take_due/list/create/update 等原子操作。",
+      "tags": ["store", "persistence", "employee-lifecycle"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/active_runs.rs",
+      "summary": "EmployeeActiveRuns 与 ActiveRunGuard 管理当前运行态并发和去重，支持 panic 安全回收，避免并发启动导致重复执行。",
+      "tags": ["active-run", "runtime-state", "concurrency"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/template_store.rs",
+      "summary": "模板快照管理：加载 `template/template.json`，落盘 manifest，并提供 effective_* 读取能力作为构建 prompt 的稳定事实来源。",
+      "tags": ["template", "snapshot", "fact-source", "cache"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/dispatch_prompt.rs",
+      "summary": "构建 dispatch prompt 的入口函数，组合 system/default prompt/技能提示/模板参数与 knowledge 入口，统一转换为 runtime 可执行的 prompt payload。",
+      "tags": ["prompt", "template", "agent-instructions", "knowledge"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/inbox.rs",
+      "summary": "inbox 运行时视图数据结构与持久化（append/list/read/read_unread/count）抽象，定义运行结果可见性与归档行为。",
+      "tags": ["inbox", "persist", "ui-state"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/inbox_writer.rs",
+      "summary": "写回链路封装：将运行完成/失败状态转换成 Report/Error 并入库至 inbox，作为前端可追踪回执。",
+      "tags": ["inbox", "writeback", "dispatch-lifecycle"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/knowledge.rs",
+      "summary": "知识索引入口，包括索引任务入队、单条记录分片处理、索引状态更新（indexing/done/failed）与错误信息回写。",
+      "tags": ["knowledge", "indexing", "status-machine"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/employee_projection.rs",
+      "summary": "EmployeeRecord 到 AgentDefinition 的同步投影层，基于 store sync hook 更新 AgentRegistry，保证 active/inactive 员工与 agent 入口一致。",
+      "tags": ["agent", "projection", "registry", "sync"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/lib.rs",
+      "summary": "应用入口注入 runtime 组件（store、active runs、registry、chat adapter），并建立定时调度与注册同步链路。",
+      "tags": ["bootstrap", "wiring", "lifecycle", "state-management"],
+      "complexity": "high"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/commands/employees.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/store.rs",
+      "type": "calls",
+      "reason": "命令层只调用 EmployeeStore 的 CRUD 与索引启动入口，不在命令模块内耦合实际执行逻辑。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/employees.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/runner.rs",
+      "type": "tested_by",
+      "reason": "命令层调用行为通过 runner 的调度契约和 store 交互被覆盖，形成 command->runner 隔离验证。",
+      "weight": 0.91
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/employees.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/knowledge.rs",
+      "type": "calls",
+      "reason": "索引 API 在命令层仅作为异步触发点，实际索引执行逻辑由 knowledge 模块完成。",
+      "weight": 0.89
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/runner.rs",
+      "type": "calls",
+      "reason": "chat 适配器实现统一的 EmployeeRunDispatcher 接口，触发命令执行路径但不承担调度策略细节。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/dispatch_prompt.rs",
+      "type": "calls",
+      "reason": "发送前先构建 dispatch prompt，并由 prompt 构建器统一注入系统提示与知识提示信息。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/active_runs.rs",
+      "type": "calls",
+      "reason": "执行时持有 ActiveRunGuard 并通过状态容器记录运行中实例，防止并发重入导致重复执行。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/inbox_writer.rs",
+      "type": "calls",
+      "reason": "运行完成后统一写回 report/error，形成从执行完成到 inbox 的回执闭环。",
+      "weight": 0.99
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/store.rs",
+      "type": "writes_to",
+      "reason": "每次 dispatch 结束会更新 store 的 last_run_at 与相关元数据，保留持久状态。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/employee/runner.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/store.rs",
+      "type": "depends_on",
+      "reason": "scheduler 通过 store.take_due 拉取应执行任务与调度窗口，决定下一步执行路径。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/employee/runner.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/active_runs.rs",
+      "type": "depends_on",
+      "reason": "调度前置检索 active_runs，做去重和运行态约束判断。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/employee/dispatch_prompt.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/template_store.rs",
+      "type": "depends_on",
+      "reason": "prompt 构建基于模板快照中的 effective_* 读数，确保配置来源可追溯且稳定。",
+      "weight": 0.99
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/employee/template_store.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/store.rs",
+      "type": "writes_to",
+      "reason": "create/get/list 的模板落盘信息通过 store 统一持久记录，建立模板事实与员工定义的绑定。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/employee/knowledge.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/store.rs",
+      "type": "writes_to",
+      "reason": "知识索引运行结果会回写 knowledgeSources 的状态和切片计数，供后续 UI 与策略读取。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/employee/store.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/employee_projection.rs",
+      "type": "publishes",
+      "reason": "store 的同步 hook 触发 employee 投影更新，确保 AgentRegistry 与 active 状态一致。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/runner.rs",
+      "type": "configures",
+      "reason": "应用启动时注入 runner 与 adapter/状态存储，完成命令层到执行层的组装。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/employee_projection.rs",
+      "type": "configures",
+      "reason": "启动阶段注册 store<->registry 同步链路，使 active/inactive 的 employee 变化在投影层可见。",
+      "weight": 0.9
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "命令层与执行层解耦",
+      "description": "`commands/employees.rs` 与 `transport/tauri_commands/chat.rs` 统一通过 trait/适配器将业务流量引入执行层，执行策略、调度及状态更新均由 runner/chat 实现，便于替换执行方式而不改命令签名。",
+      "evidence": [
+        "src-tauri/src/commands/employees.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/employee/runner.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "title": "EmployeeStore 持久态与 ActiveRuns 运行态分离",
+      "description": "持久状态（定义、状态、知识索引元数据、last_run_at）存储在 `EmployeeStore`；运行态通过 `EmployeeActiveRuns` 维护，并通过 guard 保证并发安全，职责完全分离。",
+      "evidence": [
+        "src-tauri/src/runtime/employee/store.rs",
+        "src-tauri/src/runtime/employee/active_runs.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/commands/employees.rs",
+        "src-tauri/tests/agenda_orphaned_by_employee_test.rs"
+      ]
+    },
+    {
+      "title": "template snapshot 是 prompt 构建事实源",
+      "description": "模板系统以 template snapshot 与 manifest 为事实源，dispatch prompt 全链路通过 `template_store` 的 effective_* 字段获取配置，减少运行时漂移与重复读取。",
+      "evidence": [
+        "src-tauri/src/runtime/employee/template_store.rs",
+        "src-tauri/src/runtime/employee/dispatch_prompt.rs",
+        "src-tauri/src/runtime/employee/store.rs",
+        "src-tauri/tests/employee_template_lifecycle_test.rs",
+        "src-tauri/tests/agenda_employee_dispatch_integration_test.rs"
+      ]
+    },
+    {
+      "title": "dispatch 与 inbox 回写闭环",
+      "description": "一次 dispatch 既记录运行状态，也在完成/失败后通过 inbox_writer 回写报告；该模式支持任务可观测、可追踪并与消息流解耦。",
+      "evidence": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/employee/inbox_writer.rs",
+        "src-tauri/src/runtime/employee/inbox.rs",
+        "src-tauri/tests/spawn_teammate_via_employee_test.rs"
+      ]
+    },
+    {
+      "title": "knowledge indexing 作为可追踪状态机",
+      "description": "知识索引动作由命令触发，索引过程维护 status（indexing/done/failed）与 error/slicedCount 元数据，持久回写到 employee store。",
+      "evidence": [
+        "src-tauri/src/commands/employees.rs",
+        "src-tauri/src/runtime/employee/knowledge.rs",
+        "src-tauri/src/runtime/employee/store.rs",
+        "src-tauri/tests/employee_knowledge_status_test.rs",
+        "src-tauri/tests/employee_knowledge_indexer_test.rs"
+      ]
+    },
+    {
+      "title": "agent projection 同步 active 状态",
+      "description": "员工生命周期状态变更通过 store 的 sync hook 进入 employee_projection，最终更新 AgentRegistry，保证 runtime 的 agent 入口与员工状态一致。",
+      "evidence": [
+        "src-tauri/src/runtime/employee/store.rs",
+        "src-tauri/src/runtime/agent/employee_projection.rs",
+        "src-tauri/src/lib.rs",
+        "src-tauri/tests/spawn_teammate_via_employee_test.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "从命令触发到 runner 分发",
+      "description": "先查看员工触发命令（create/list/trigger）如何进入命令层，再沿 edges 到 chat adapter 与 runner，确认命令层只做输入组织与任务分发。",
+      "filePaths": [
+        "src-tauri/src/commands/employees.rs",
+        "src-tauri/src/runtime/employee/runner.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs"
+      ]
+    },
+    {
+      "title": "持久态 vs 运行态的边界校验",
+      "description": "重点跟踪 `EmployeeStore` 与 `EmployeeActiveRuns` 的调用顺序，确认持久态更新和运行中内存状态互不替代、仅通过明确定义接口交互。",
+      "filePaths": [
+        "src-tauri/src/runtime/employee/store.rs",
+        "src-tauri/src/runtime/employee/active_runs.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs"
+      ]
+    },
+    {
+      "title": "dispatch prompt 构建链路",
+      "description": "从 `chat.rs` 调度到 `dispatch_prompt.rs`，再到 `template_store.rs` 的 snapshot 读取，确认系统提示与知识源整合逻辑。",
+      "filePaths": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/employee/dispatch_prompt.rs",
+        "src-tauri/src/runtime/employee/template_store.rs"
+      ]
+    },
+    {
+      "title": "运行完成回写 inbox",
+      "description": "在 report/error 触发点核对写回路径，确认 completed/failed 都能落库，并可从 inbox list/read/count 观察可见结果。",
+      "filePaths": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/employee/inbox_writer.rs",
+        "src-tauri/src/runtime/employee/inbox.rs"
+      ]
+    },
+    {
+      "title": "knowledge 索引状态追踪",
+      "description": "核对 index 请求如何进入 knowledge 模块并写回状态字段，确认失败/成功/进行中的字段能驱动上层策略与诊断。",
+      "filePaths": [
+        "src-tauri/src/commands/employees.rs",
+        "src-tauri/src/runtime/employee/knowledge.rs",
+        "src-tauri/src/runtime/employee/store.rs"
+      ]
+    },
+    {
+      "title": "agent_projection 的状态同步",
+      "description": "确认 store 同步回调到 projection 与 registry 的链路，避免 active employee 与 runtime agent 映射失配。",
+      "filePaths": [
+        "src-tauri/src/runtime/employee/store.rs",
+        "src-tauri/src/runtime/agent/employee_projection.rs",
+        "src-tauri/src/runtime/agent/registry.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    }
+  ]
+}

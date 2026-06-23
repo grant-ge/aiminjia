@@ -9,8 +9,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::runtime::agent::output_writer;
 use crate::runtime::agent::async_task_store::AsyncTaskType;
+use crate::runtime::agent::output_writer;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
@@ -41,6 +41,38 @@ fn validate_task_id(s: &str) -> Result<&str, ToolError> {
         )));
     }
     Ok(s)
+}
+
+fn is_teammate_transcript_path(path: &std::path::Path) -> bool {
+    let mut saw_teams = false;
+    for component in path.components() {
+        let value = component.as_os_str().to_string_lossy();
+        if value == "teams" {
+            saw_teams = true;
+        } else if saw_teams && value == "teammates" {
+            return true;
+        }
+    }
+    false
+}
+
+fn visible_teammate_transcript_line(raw: String) -> Option<String> {
+    let Ok(line) = serde_json::from_str::<output_writer::TranscriptLine>(&raw) else {
+        return Some(raw);
+    };
+
+    if line.role == "user" {
+        return None;
+    }
+    if line.role == "assistant"
+        && crate::runtime::agent::worker_runtime::non_deliverable_teammate_reply_reason(
+            &line.content,
+        )
+        .is_some()
+    {
+        return None;
+    }
+    Some(raw)
 }
 
 #[async_trait]
@@ -118,12 +150,14 @@ impl RuntimeTool for TaskOutputRuntimeTool {
             }
         }
         if requested_task_type != Some(AsyncTaskType::LocalBash) {
+            #[allow(deprecated)]
             candidates.push(output_writer::transcript_path(
                 &paths.subagent_transcripts_dir(),
                 task_id,
             ));
         }
         if candidates.is_empty() {
+            #[allow(deprecated)]
             candidates.push(output_writer::transcript_path(
                 &paths.subagent_transcripts_dir(),
                 task_id,
@@ -138,6 +172,21 @@ impl RuntimeTool for TaskOutputRuntimeTool {
 
         let (lines, new_offset) = output_writer::read_from(&path, offset)
             .map_err(|e| ToolError::ExecutionFailed(format!("read transcript failed: {e}")))?;
+        if is_teammate_transcript_path(&path) {
+            let hidden_line_count = lines
+                .into_iter()
+                .filter_map(visible_teammate_transcript_line)
+                .count();
+            let body = json!({
+                "lines": [],
+                "new_offset": new_offset,
+                "task_type": requested_task_type.map(AsyncTaskType::as_str),
+                "status": "teammate_output_hidden",
+                "hidden_line_count": hidden_line_count,
+                "message": "Teammate transcript is private. Teammate deliverables are delivered to the Lead through peer-messages / SendMessage, not TaskOutput.",
+            });
+            return Ok(ToolResult::new("TaskOutput", body.to_string(), None));
+        }
 
         let body = json!({
             "lines": lines,
@@ -256,6 +305,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let tool = build_tool(&tmp);
         let resolver_paths = UserScopedPaths::new(tmp.path(), "t_test__u_test");
+        #[allow(deprecated)]
         let path =
             output_writer::transcript_path(&resolver_paths.subagent_transcripts_dir(), "agent-x");
         for i in 0..3 {
@@ -293,10 +343,8 @@ mod tests {
         let tool = build_tool(&tmp);
         let conv_dir = tmp.path().join("conversations").join("conv-shell");
         let path = super::super::shell_task::shell_transcript_path(&conv_dir, "b12345678");
-        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-1"))
-            .unwrap();
-        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-2"))
-            .unwrap();
+        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-1")).unwrap();
+        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-2")).unwrap();
 
         let ctx = ToolExecutionContext::for_test("conv-shell", "r", "tc").with_conv_dir(conv_dir);
         let result = tool
@@ -310,5 +358,57 @@ mod tests {
         assert_eq!(body["lines"].as_array().unwrap().len(), 1);
         assert_eq!(body["new_offset"].as_u64().unwrap(), 2);
         assert_eq!(body["task_type"].as_str(), Some("local_bash"));
+    }
+
+    #[tokio::test]
+    async fn teammate_output_is_hidden_from_task_output() {
+        let tmp = TempDir::new().unwrap();
+        let tool = build_tool(&tmp);
+        let conv_dir = tmp.path().join("conversations").join("conv-team");
+        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(&conv_dir, "alpha")
+            .teammate_transcript("agent-a");
+        output_writer::append_line(
+            &path,
+            &output_writer::TranscriptLine::user_from(
+                "<system-reminder>retry</system-reminder>",
+                "system",
+            ),
+        )
+        .unwrap();
+        output_writer::append_line(
+            &path,
+            &output_writer::TranscriptLine::user_from("请直接输出观点。", "team-lead"),
+        )
+        .unwrap();
+        output_writer::append_line(
+            &path,
+            &output_writer::TranscriptLine::assistant("好的，马上输出首轮观点。"),
+        )
+        .unwrap();
+        output_writer::append_line(
+            &path,
+            &output_writer::TranscriptLine::assistant(
+                "这是专家直接生成的正式观点正文。我的结论是：本轮调薪方案需要先完成薪酬带宽、绩效等级和合规留痕三项校验，再进入预算分配。具体风险包括内部公平性失衡、绩效通胀导致预算错配、业务沟通口径不一致，以及低涨幅群体的离职风险。建议先用统一模板做数据诊断，再输出可解释的调薪矩阵。",
+            ),
+        )
+        .unwrap();
+        output_writer::append_line(
+            &path,
+            &output_writer::TranscriptLine::failed(
+                "Teammate ended without deliverable reply after 2 retries: empty",
+            ),
+        )
+        .unwrap();
+
+        let ctx = ToolExecutionContext::for_test("conv-team", "r", "tc").with_conv_dir(conv_dir);
+        let result = tool
+            .execute(json!({"task_id": "agent-a", "offset": 0}), ctx)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(body["new_offset"].as_u64().unwrap(), 5);
+        assert_eq!(body["status"].as_str(), Some("teammate_output_hidden"));
+        assert_eq!(body["hidden_line_count"].as_u64(), Some(2));
+        assert!(body["lines"].as_array().unwrap().is_empty());
     }
 }

@@ -31,7 +31,6 @@ pub struct ResolvedLlmSettings {
     pub cloud_gateway_mode: CloudGatewayMode,
     pub thinking_type: String,
     pub thinking_budget_tokens: u32,
-    pub masking_level: String,
     pub context_window: Option<usize>,
 }
 
@@ -48,7 +47,6 @@ impl Default for ResolvedLlmSettings {
             cloud_gateway_mode: CloudGatewayMode::V2,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
-            masking_level: "strict".to_string(),
             context_window: None,
         }
     }
@@ -83,14 +81,13 @@ pub struct TurnConfig {
     pub max_iterations: usize,
     pub token_budget: usize,
     pub chunk_timeout_secs: u64,
-    pub masking_level: String,
     pub workspace_path: PathBuf,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub llm_settings: ResolvedLlmSettings,
     pub conversation_id: SessionId,
     pub run_id: RunId,
     /// Top-level user-turn trace id (UUID from send_message). Used only for
-    /// observability propagation to the lotus gateway via the X-Aijia-Trace-Id
+    /// observability propagation to AIjia Gateway V2 via the X-Aijia-Trace-Id
     /// HTTP header. Empty string when unknown.
     pub trace_id: String,
     pub hook_registry: Option<Arc<HookRegistry>>,
@@ -184,7 +181,6 @@ pub struct LlmStepInput<'a> {
     pub tool_defs: &'a [JsonValue],
     pub token_budget: usize,
     pub chunk_timeout_secs: u64,
-    pub masking_level: &'a str,
     pub force_no_tools: bool,
     pub llm_settings: &'a ResolvedLlmSettings,
     pub conversation_id: &'a str,

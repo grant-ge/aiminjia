@@ -1,11 +1,12 @@
 ﻿# AIjia Windows release - one-shot end-to-end script.
 #
-# Downloads unsigned exe from OSS staging, Authenticode-signs it via signtool,
+# Downloads unsigned MSI from OSS staging, Authenticode-signs it via signtool,
 # generates the Tauri updater .sig, uploads everything to the public OSS path,
 # and cleans up staging. Zero Python dependency - uses Node (ali-oss) for OSS.
 #
-# Credentials are stored in Windows Credential Manager after the first run,
-# so subsequent runs only need -Version and -Type.
+# Credentials are read from environment variables or the local
+# .env.release-windows.local file first. On FullLanguage PowerShell, values can
+# also be read from Windows Credential Manager after the first run.
 #
 # Usage:
 #   .\scripts\release-windows.ps1 -Version 0.5.23-beta.1 -Type beta
@@ -16,7 +17,15 @@
 #   - OSS access key id + secret
 #   - Tauri signing key password
 #
-# Override stored creds: -Reconfigure
+# Local credential file (ignored by git):
+#   .env.release-windows.local
+#
+#   AIJIA_WINDOWS_CERT_THUMBPRINT=<sha1 thumbprint>
+#   OSS_ACCESS_KEY_ID=<oss key id>
+#   OSS_ACCESS_KEY_SECRET=<oss key secret>
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<tauri key password>
+#
+# Override env/stored creds: -Reconfigure
 # Skip cleanup of staging:  -KeepStaging
 #
 # Prereqs:
@@ -45,13 +54,14 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Split-Path -Parent $ScriptDir
 Set-Location $RepoRoot
 
-$ExeName  = "AIjia_${Version}_x64-setup.exe"
+$MsiName  = "AIjia_${Version}_x64-setup.msi"
 $WorkDir  = Join-Path $RepoRoot 'build\windows-unsigned'
-$ExePath  = Join-Path $WorkDir $ExeName
-$SigPath  = "$ExePath.sig"
+$MsiPath  = Join-Path $WorkDir $MsiName
+$SigPath  = "$MsiPath.sig"
 $TauriKey = Join-Path $HOME '.tauri\aijia.key'
 
 $StagingBase = "https://lotus.renlijia.com/aijia/staging/unsigned/v$Version"
+$ReleaseEnvPath = Join-Path $RepoRoot '.env.release-windows.local'
 
 # -- helpers --------------------------------------------------------------
 function Write-Section($title) {
@@ -82,11 +92,28 @@ function Get-Signtool {
     throw 'signtool.exe not found - install the Windows SDK or add it to PATH'
 }
 
+# Resolve npx as a .cmd/application, not the npm PowerShell shim (npx.ps1).
+# ConstrainedLanguage can execute external commands, but npm's ps1 shim may
+# fail with "Cannot invoke method..." before node is even started.
+function Get-NpxCommand {
+    $cmd = Get-Command npx.cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) { return $cmd.Source }
+
+    $cmd = Get-Command npx -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) { return $cmd.Source }
+
+    throw 'npx.cmd not found - install Node.js/npm and make sure npx.cmd is in PATH'
+}
+
 # -- credential storage (Windows Credential Manager) ----------------------
 # Uses cmdkey.exe (no extra modules needed). Each value stored as a generic
 # credential under target name AIjia.<key>.
 function Save-Credential {
     param([string]$Name, [string]$Value)
+    if (-not $CanUseCredentialManager) {
+        Write-Warn "Credential Manager write skipped for $Name; save it in $ReleaseEnvPath to avoid prompting next run."
+        return
+    }
     cmdkey /generic:"AIjia.$Name" /user:aijia /pass:"$Value" | Out-Null
 }
 
@@ -128,18 +155,70 @@ $credSource = @(
     '    }',
     '}'
 ) -join "`n"
-if (-not ('AIjiaCred' -as [type])) {
+$CanUseCredentialManager = $ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage'
+if ($CanUseCredentialManager -and -not ('AIjiaCred' -as [type])) {
     Add-Type -TypeDefinition $credSource -ErrorAction Stop
+} elseif (-not $CanUseCredentialManager) {
+    Write-Warn "PowerShell LanguageMode is $($ExecutionContext.SessionState.LanguageMode); Credential Manager reads are disabled."
 }
 
 function Load-Credential {
     param([string]$Name)
+    if (-not $CanUseCredentialManager) { return $null }
     return [AIjiaCred]::Read("AIjia.$Name")
+}
+
+function Import-ReleaseEnvFile {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return }
+
+    $loaded = 0
+    foreach ($line in Get-Content -Path $Path -ErrorAction Stop) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+        if ($trimmed -notmatch '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { continue }
+
+        $key = $Matches[1]
+        $value = $Matches[2].Trim()
+        if (
+            ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+            ($value.StartsWith("'") -and $value.EndsWith("'"))
+        ) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        $existing = Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+        if ($existing -and $existing.Value) { continue }
+        Set-Item -Path "Env:$key" -Value $value
+        $loaded += 1
+    }
+
+    if ($loaded -gt 0) {
+        Write-Ok "loaded $loaded values from $Path"
+    }
+}
+
+function Load-EnvCredential {
+    param([string]$Name)
+    $keys = switch ($Name) {
+        'Thumbprint'   { @('AIJIA_WINDOWS_CERT_THUMBPRINT', 'WINDOWS_CERT_THUMBPRINT', 'AUTHENTICODE_CERT_SHA1_THUMBPRINT') }
+        'OssKeyId'     { @('OSS_ACCESS_KEY_ID') }
+        'OssKeySecret' { @('OSS_ACCESS_KEY_SECRET') }
+        'TauriKeyPwd'  { @('TAURI_SIGNING_PRIVATE_KEY_PASSWORD', 'TAURI_PRIVATE_KEY_PASSWORD') }
+        default        { @() }
+    }
+    foreach ($key in $keys) {
+        $item = Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+        if ($item -and $item.Value) { return $item.Value }
+    }
+    return $null
 }
 
 function Get-OrPrompt {
     param([string]$Name, [string]$Prompt, [switch]$Secret)
     if (-not $Reconfigure) {
+        $envValue = Load-EnvCredential -Name $Name
+        if ($envValue) { return (Sanitize-Input $envValue) }
         $existing = Load-Credential -Name $Name
         if ($existing) { return (Sanitize-Input $existing) }
     }
@@ -159,14 +238,11 @@ function Get-OrPrompt {
 function Sanitize-Input {
     param([string]$s)
     if ($null -eq $s) { return '' }
-    $sb = New-Object System.Text.StringBuilder
-    foreach ($ch in $s.ToCharArray()) {
-        $code = [int]$ch
-        # Keep only printable ASCII (0x21-0x7E).
-        if ($code -ge 0x21 -and $code -le 0x7E) { [void]$sb.Append($ch) }
-    }
-    return $sb.ToString()
+    # Keep only printable ASCII (0x21-0x7E).
+    return ($s -replace '[^\x21-\x7E]', '')
 }
+
+Import-ReleaseEnvFile -Path $ReleaseEnvPath
 
 # -- 0. Sanity: tauri key file present ------------------------------------
 if (-not (Test-Path $TauriKey)) {
@@ -194,15 +270,15 @@ Write-Ok "thumbprint=$thumbPrefix... oss key id=$ossPrefix..."
 # -- 2. Download unsigned artifacts ---------------------------------------
 Write-Section "Step 2/5: Download unsigned artifacts from OSS staging"
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
-$exeUrl = "$StagingBase/$ExeName"
-$sigUrl = "$StagingBase/$ExeName.sig"
-Write-Host "  $exeUrl"
-Invoke-WebRequest -Uri $exeUrl -OutFile $ExePath -UseBasicParsing
+$msiUrl = "$StagingBase/$MsiName"
+$sigUrl = "$StagingBase/$MsiName.sig"
+Write-Host "  $msiUrl"
+Invoke-WebRequest -Uri $msiUrl -OutFile $MsiPath -UseBasicParsing
 Write-Host "  $sigUrl"
 Invoke-WebRequest -Uri $sigUrl -OutFile $SigPath -UseBasicParsing
-$exeSize = (Get-Item $ExePath).Length
-Write-Ok ("exe downloaded: {0:N0} bytes" -f $exeSize)
-# We always regenerate .sig from the SIGNED exe - drop the staging copy now.
+$msiSize = (Get-Item $MsiPath).Length
+Write-Ok ("MSI downloaded: {0:N0} bytes" -f $msiSize)
+# We always regenerate .sig from the SIGNED MSI - drop the staging copy now.
 Remove-Item $SigPath -ErrorAction SilentlyContinue
 
 # -- 3. Authenticode sign with signtool -----------------------------------
@@ -210,11 +286,11 @@ Write-Section "Step 3/5: Authenticode sign (signtool + EV token)"
 $signtool = Get-Signtool
 Write-Host "  signtool: $signtool"
 Write-Host "  timestamp: $TimestampUrl"
-& $signtool sign /v /fd sha256 /sha1 $Thumbprint /tr $TimestampUrl /td sha256 $ExePath
+& $signtool sign /v /fd sha256 /sha1 $Thumbprint /tr $TimestampUrl /td sha256 $MsiPath
 if ($LASTEXITCODE -ne 0) { throw "signtool sign failed (exit $LASTEXITCODE)" }
-& $signtool verify /pa /v $ExePath | Out-Null
+& $signtool verify /pa /v $MsiPath | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "signtool verify failed (exit $LASTEXITCODE)" }
-$auth = Get-AuthenticodeSignature $ExePath
+$auth = Get-AuthenticodeSignature $MsiPath
 if ($auth.Status -ne 'Valid') { throw "Authenticode status not Valid: $($auth.Status)" }
 if (-not $auth.TimeStamperCertificate) { Write-Warn 'No timestamp present - signature will expire with cert!' }
 $subjectCn = ($auth.SignerCertificate.Subject -replace '^CN=([^,]*).*', '$1')
@@ -229,7 +305,9 @@ Write-Section "Step 4/5: Generate Tauri updater signature"
 # as base64, hence the "Invalid symbol" errors we hit before.)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $TauriKeyPwd
 $tauriCliPkg = '@tauri-apps/cli@latest'
-& npx --yes $tauriCliPkg signer sign -f $TauriKey $ExePath
+$npx = Get-NpxCommand
+Write-Host "  npx: $npx"
+& $npx --yes $tauriCliPkg signer sign -f $TauriKey $MsiPath
 $signerExit = $LASTEXITCODE
 Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
 if ($signerExit -ne 0) { throw "tauri signer failed (exit $signerExit)" }
@@ -242,7 +320,7 @@ Write-Section "Step 5/5: Upload to OSS (Node + ali-oss)"
 $env:OSS_ACCESS_KEY_ID = $OssKeyId
 $env:OSS_ACCESS_KEY_SECRET = $OssKeySecret
 $uploadScript = Join-Path $ScriptDir 'ci-upload-windows.mjs'
-& node $uploadScript $Version $Type $ExePath
+& node $uploadScript $Version $Type $MsiPath
 $uploadExit = $LASTEXITCODE
 Remove-Item Env:\OSS_ACCESS_KEY_ID -ErrorAction SilentlyContinue
 Remove-Item Env:\OSS_ACCESS_KEY_SECRET -ErrorAction SilentlyContinue
@@ -264,7 +342,7 @@ if (-not $KeepStaging) {
 # finishes; Windows usually runs AFTER macOS, so without this step the page
 # only lists the macOS artifacts. Re-run the page generator on demand.
 # Hard-fail: previously we silently skipped this when python wasn't on PATH,
-# which is exactly how 0.5.28-beta.1 shipped without its Windows exe listed.
+# which is exactly how 0.5.28-beta.1 shipped without its Windows installer listed.
 Write-Section "Refresh downloads.html"
 $PageScript = Join-Path $ScriptDir "ci-generate-download-page.py"
 if (-not (Test-Path $PageScript)) {
@@ -291,4 +369,4 @@ Write-Host "================================================================" -F
 Write-Host " [OK] Windows v$Version ($Type) released" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
 $publicPrefix = if ($Type -eq 'beta') { 'beta/' } else { '' }
-Write-Host "  Download: https://lotus.renlijia.com/aijia/${publicPrefix}v$Version/AIjia_${Version}_x64-setup.exe"
+Write-Host "  Download: https://lotus.renlijia.com/aijia/${publicPrefix}v$Version/AIjia_${Version}_x64-setup.msi"

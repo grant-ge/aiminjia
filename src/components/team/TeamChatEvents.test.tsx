@@ -12,7 +12,7 @@
  * 这样断言可以精确锁定调用的 key。
  */
 import '@testing-library/jest-dom'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('react-i18next', () => ({
@@ -35,6 +35,8 @@ vi.mock('@/components/chat-scene/AssistantMarkdown', () => ({
 
 import { TeamChatEvents } from './TeamChatEvents'
 import type { TeamEvent } from '@/types/team'
+import type { ExpertTeam } from '@/features/expert-teams/teams'
+import { TeamVisualProvider } from './TeamVisualContext'
 
 function textMessage(text: string): TeamEvent {
   return {
@@ -49,6 +51,39 @@ function textMessage(text: string): TeamEvent {
   }
 }
 
+function leadMessage(to: string, text: string, ts = '2026-05-15T15:01:00Z'): TeamEvent {
+  return {
+    kind: 'send_message',
+    ts,
+    from: 'team-lead',
+    to,
+    text,
+    isError: false,
+    toolCallId: '',
+    variant: 'text',
+  }
+}
+
+const remoteHrTeam: ExpertTeam = {
+  id: 'performance-compensation',
+  name: '薪酬绩效评审团',
+  emoji: '⚖️',
+  tagline: '绩效校准 / 调薪方案 / 公平性复核',
+  examples: [],
+  composerPlaceholder: '告诉他们你要评审的绩效或薪酬方案...',
+  facilitationStyle: 'rounds',
+  experts: [
+    {
+      name: '薪酬专家',
+      agentName: 'compensation-expert',
+      avatar: '薪',
+      avatarText: '薪',
+      persona: '关注薪酬结构、分位对标和内部公平性',
+      emoji: '💰',
+    },
+  ],
+}
+
 describe('TeamChatEvents – send_message variant 分流', () => {
   it('variant=text + 非空文本：走 MessageBubble，不出现协议 icon', () => {
     const { container, getByTestId } = render(
@@ -59,6 +94,39 @@ describe('TeamChatEvents – send_message variant 分流', () => {
     expect(container.textContent).not.toMatch(/[⊙≪]/)
     // 也不应触发"（空消息）"兜底 key。
     expect(container.textContent).not.toContain('team.chat.emptyText')
+  })
+
+  it('normal message bubbles use a neutral card surface instead of the old colored boxes', () => {
+    const { getByTestId } = render(
+      <TeamChatEvents events={[textMessage('AI 不应该取代初级程序员')]} />,
+    )
+
+    const bubble = getByTestId('md').parentElement
+    expect(bubble).toHaveClass('bg-card')
+    expect(bubble).toHaveClass('border-border')
+    expect(bubble?.className).not.toMatch(/\bbg-(blue|emerald|rose|amber|violet|cyan)-500\/8\b/)
+    expect(bubble?.className).not.toContain('bg-primary/10')
+  })
+
+  it('renders system events as compact activity rows without horizontal divider lines', () => {
+    const events: TeamEvent[] = [
+      {
+        kind: 'team_create',
+        ts: '2026-05-15T15:00:00Z',
+        teamName: '市场营销策划团',
+      },
+      {
+        kind: 'agent_stop',
+        ts: '2026-05-15T15:01:00Z',
+        agentName: 'brand-lead',
+      },
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('team.chat.lifecycle.teamCreatedWithName')
+    expect(container.textContent).toContain('team.chat.lifecycle.agentLeft')
+    expect(container.querySelector('.h-px.bg-border')).not.toBeInTheDocument()
   })
 
   it('variant=shutdown_request：渲染 ⊙ SystemDivider，含 shutdownRequest key', () => {
@@ -125,5 +193,109 @@ describe('TeamChatEvents – send_message variant 分流', () => {
     expect(container.textContent).toContain('team.chat.emptyText')
     // 仍是 MessageBubble，不应误触协议 SystemDivider 的 icon。
     expect(container.textContent).not.toMatch(/[⊙✗≪]/)
+  })
+
+  it('renders remote expert display names instead of stable agent ids', () => {
+    const events: TeamEvent[] = [
+      {
+        kind: 'agent_spawn',
+        ts: '2026-05-15T15:00:00Z',
+        agentId: 'compensation-expert',
+        agentName: 'compensation-expert',
+      },
+      {
+        kind: 'send_message',
+        ts: '2026-05-15T15:01:00Z',
+        from: 'compensation-expert',
+        to: 'team-lead',
+        text: '建议先看薪酬分位。',
+        isError: false,
+        toolCallId: '',
+        variant: 'text',
+      },
+    ]
+    const { container } = render(
+      <TeamVisualProvider value={remoteHrTeam}>
+        <TeamChatEvents events={events} />
+      </TeamVisualProvider>,
+    )
+    expect(container.textContent).toContain('薪酬专家')
+    expect(container.textContent).not.toContain('compensation-expert')
+  })
+
+  it('merges repeated Lead assignments and displays the instruction directly', () => {
+    const text = '请就议题「618 大促营销节奏怎么排」发表你的观点，200-400 字。'
+    const events: TeamEvent[] = [
+      leadMessage('brand-lead', text),
+      leadMessage('content-lead', text, '2026-05-15T15:01:01Z'),
+      leadMessage('channel-manager', text, '2026-05-15T15:01:02Z'),
+      leadMessage('growth-hacker', text, '2026-05-15T15:01:03Z'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('team.chat.facilitation.assignment')
+    expect(container.textContent).toContain('"count":4')
+    expect(container.textContent).toContain('brand-lead、content-lead、channel-manager、growth-hacker')
+    expect(container.querySelectorAll('[data-testid="md"]')).toHaveLength(1)
+    expect(container.querySelector('[aria-expanded]')).not.toBeInTheDocument()
+  })
+
+  it('hides low-signal Lead waiting chatter from the discussion stream', () => {
+    const events: TeamEvent[] = [
+      leadMessage('legal-director', '收到法务总监的观点，已记录。正在等待其他专家发言。'),
+      textMessage('我从法务角度看，核心风险是合同变更依据不足。'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('我从法务角度看')
+    expect(container.textContent).toContain('team.chat.facilitation.hiddenLowSignal')
+    expect(container.textContent).not.toContain('收到法务总监')
+  })
+
+  it('classifies cross-review invitations before low-signal progress words', () => {
+    const text = '各位专家，第一轮观点已全部收到。进入互相点评环节，请各位发表简短看法。'
+    const events: TeamEvent[] = [
+      leadMessage('business-lead', text),
+      leadMessage('analyst', text, '2026-05-15T15:01:01Z'),
+      leadMessage('hr', text, '2026-05-15T15:01:02Z'),
+      leadMessage('process-advisor', text, '2026-05-15T15:01:03Z'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('team.chat.facilitation.cross_review')
+    expect(container.textContent).not.toContain('team.chat.facilitation.hiddenLowSignal')
+  })
+
+  it('shows valuable facilitation notes directly without a duplicate folded preview', () => {
+    const text = '各位专家，第一轮观点已全部收到。进入互相点评环节，请各位就核心根因发表看法。'
+    const events: TeamEvent[] = [
+      leadMessage('business-lead', text),
+      leadMessage('analyst', text, '2026-05-15T15:01:01Z'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(screen.getByLabelText('Lead')).toBeInTheDocument()
+    expect(container.textContent).toContain('Lead → business-lead、analyst')
+    expect(screen.queryByRole('button', { name: /team.chat.facilitation.expand/ })).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('md')).toHaveLength(1)
+    expect(screen.getByTestId('md')).toHaveTextContent(text)
+  })
+
+  it('keeps progress-only Lead chatter compact but expandable', () => {
+    const text = '收到法务总监的观点，已记录。正在等待其他专家发言。'
+    const events: TeamEvent[] = [
+      leadMessage('legal-director', text),
+      leadMessage('cfo', '仍在等待 CEO 的发言。', '2026-05-15T15:01:01Z'),
+    ]
+
+    render(<TeamChatEvents events={events} />)
+
+    expect(screen.queryByText(text)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /team.chat.facilitation.expand/ }))
+    expect(screen.getAllByTestId('md')[0]).toHaveTextContent(text)
   })
 })

@@ -9,9 +9,7 @@ import { SettingsMenu, SETTINGS_MENU_ITEMS } from '../SettingsMenu'
 // the menu structure + click handler, not on the language-specific labels.
 
 describe('SettingsMenu', () => {
-  // account-billing is conditionally hidden when tenant.type !== 'personal'.
-  // Tests don't set up authStore so tenant is null → hidden.
-  const visibleItems = SETTINGS_MENU_ITEMS.filter((it) => !it.disabled && it.key !== 'account-billing')
+  const visibleItems = SETTINGS_MENU_ITEMS.filter((it) => !it.disabled)
 
   it('renders only visible menu items (one button per enabled entry)', () => {
     render(<SettingsMenu activeKey="account" onSelect={() => {}} />)

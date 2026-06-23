@@ -8,9 +8,9 @@ import {
   type EmployeeRecord,
   type InboxEntry,
 } from '@/lib/tauri'
-import { Button } from '@/components/ui/button'
 import { findTemplate, localizeEmployeeDisplay } from './templates'
 import { formatRelativeNextRun } from './timeFormat'
+import { Button } from '@/components/ui/button'
 
 // ─── status derivation ───────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
   }
 
   return (
-    <button
+    <Button unstyled
       type="button"
       data-aijia-employee-card
       data-aijia-employee-id={emp.id}
@@ -149,7 +149,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
       data-aijia-employee-dispatch-disabled={emp.lifecycle === 'archived' ? 'true' : 'false'}
       onClick={onClick}
       className={cn(
-        'group relative flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-all hover:border-border/80 hover:shadow-sm border-border',
+        'group relative flex w-full flex-col gap-3 rounded-md border bg-card p-4 text-left transition-all hover:border-border/80 hover:shadow-sm border-border',
         status === 'has-report' && 'border-green-200 bg-green-50/30',
         status === 'running' && 'border-blue-200 bg-blue-50/20',
         status === 'needs-setup' && 'border-orange-200',
@@ -164,7 +164,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
               <span className="text-sm font-semibold text-foreground">{display.name}</span>
               <StatusDot status={status} />
               {templateVersion && (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
+                <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
                   v{templateVersion}
                 </span>
               )}
@@ -208,22 +208,18 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
           {emp.cron && (
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
               data-aijia-employee-action={emp.cronEnabled ? 'pause-cron' : 'resume-cron'}
-              className="h-6 w-6"
               disabled={busy}
               onClick={handleTogglePause}
+              aria-label={emp.cronEnabled ? t('employeeCard.pause') : t('employeeCard.resume')}
               title={emp.cronEnabled ? t('employeeCard.pause') : t('employeeCard.resume')}
-            >
-              {emp.cronEnabled
-                ? <Pause className="h-3 w-3" />
-                : <Play className="h-3 w-3" />
-              }
-            </Button>
+              icon={emp.cronEnabled ? <Pause /> : <Play />}
+            />
           )}
         </div>
       </div>
-    </button>
+    </Button>
   )
 }
 
@@ -236,15 +232,15 @@ interface AddEmployeeCardProps {
 export function AddEmployeeCard({ onClick }: AddEmployeeCardProps) {
   const { t } = useTranslation()
   return (
-    <button
+    <Button unstyled
       type="button"
       data-aijia-hire-button="add-card"
       onClick={onClick}
-      className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card/50 p-4 text-center transition-colors hover:border-border/80 hover:bg-card"
+      className="flex w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card/50 p-4 text-center transition-colors hover:border-border/80 hover:bg-card"
       style={{ minHeight: 152 }}
     >
       <span className="text-2xl text-muted-foreground/50">＋</span>
       <span className="text-xs text-muted-foreground">{t('employeeCard.hireNew')}</span>
-    </button>
+    </Button>
   )
 }

@@ -56,6 +56,7 @@
 ```bash
 pnpm install                 # 首次或依赖变更
 pnpm tauri:dev               # 启动 Tauri 开发模式（前端 + 后端热重载）
+CARGO_INCREMENTAL=0 pnpm tauri:dev  # 启动但关闭 Cargo 增量编译，适合 target 目录过大时临时使用
 pnpm dev                     # 仅启动前端 Vite 开发服务器
 ```
 
@@ -268,6 +269,8 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 ## 重要架构决策与约束
 
+> **日常编码必读：** [`.claude/rules/coding-rules.md`](.claude/rules/coding-rules.md) — 包含动手前分析、HTTP client 规范、零告警要求、多语言、trace 传播、最小改动原则及提交 checklist。
+
 1. **Tauri command 层只做参数接收 → 转发 Runtime**，不含业务逻辑（见 `docs/architecture-blueprint.md`）
 2. **不接受只改 prompt（base.md/daily.md）来修复能力问题**；能力边界应由 runtime/tool/capability/sandbox 保证
 3. **新工具应实现 `RuntimeTool` trait**，不应新增 `ToolPlugin` 实现
@@ -280,6 +283,8 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 10. **Shell 工具 PATH**：BashTool/PowerShellTool spawn 前必须 `inject_bundled_runtime_path`；命令收尾走 `emit_shell_failure_diagnostic`。详见 [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
 11. **云端唯一 + auth 401 按错误码判定**：所有 LLM 路由恒走 lotus 网关（已移除 `use_cloud`/本地模型/`tavily`/`bocha` 配置）；判定可刷新的 auth 401 用 HTTP 401 + 错误码/类型（`authentication_error`/`auth_error`），**禁止再用消息文案子串匹配**。详见 [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
 12. **`/auth/refresh` 必须单飞 + 先落盘后改内存**（`auth/mod.rs`）：服务器对 refresh_token 是单用即吊销，客户端必须把"读 refresh_token → 调 server → persist 磁盘 → 改 in-memory state"整段串行化（用 `AuthManager.refresh_lock: Mutex<()>`），并且 **持久化失败一律拒绝把新 token 提交到内存**（`persist_auth` 现在返回 `Result<()>`，调用方 `?` 传出）。两条铁规：① `refresh_auth_info` 和 `get_session_key` 不许各自独立发 refresh；② disk = source of truth，下次启动 `restore()` 看到的必须是服务器认可的最新 token。判定服务器拒签用 `client::is_auth_unauthorized(err)`（typed `AuthApiError.status==401`），网络/5xx 不清状态、留给下次重试。背景：SLS 实锤 `user_id=87` 服务器持有 `ed8f044d` / 客户端硬盘还是 `c104df42` 的 token 错位，根因就是 race + persist 静默失败。
+13. **所有 lotus 后端地址必须走 `crate::environment`**（详见 [`.claude/rules/backend-endpoint-rules.md`](.claude/rules/backend-endpoint-rules.md)）：tenant 用 `tenant_host()`、ops 用 `ops_host()`；禁止写死 `*.renlijia.com` 字面量或自建 `LOTUS_*_BASE_URL` 绕过 environment 模块。
+14. **日志系统架构 + 级别规范**（详见 [`.claude/rules/log-level-rules.md`](.claude/rules/log-level-rules.md)）：日志栈是 `log::*` → `tracing-subscriber`（内置 bridge）→ `tracing-appender` 每日轮转文件。**三条铁律**：① `tracing_setup::init()` 必须在 Tauri builder 之前调用；② 禁止在任何其他地方调用 `log::set_logger` / `LogTracer::init` / `set_global_default`（会 panic: SetLoggerError）；③ 不要单独添加 `tracing-log` crate 依赖。级别规范：`info` 仅用于重要生命周期事件，高频循环/`-trace` 标记/大对象打印必须用 `debug`。
 
 ### 已归档的设计决策（详情外迁，按需查阅）
 

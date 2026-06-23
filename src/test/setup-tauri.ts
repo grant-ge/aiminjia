@@ -17,14 +17,31 @@
 // assert on specific IPC calls — this stub only catches the un-mocked paths.
 
 const internals = {
-  invoke: () => Promise.reject(new Error('[test] Tauri IPC not available')),
+  metadata: {
+    currentWindow: {
+      label: 'main',
+    },
+  },
+  invoke: (cmd: string) => {
+    if (cmd === 'plugin:event|listen') return Promise.resolve(Math.floor(Math.random() * 1e9))
+    if (cmd === 'plugin:event|unlisten') return Promise.resolve(undefined)
+    if (cmd === 'plugin:window|is_fullscreen') return Promise.resolve(false)
+    return Promise.reject(new Error('[test] Tauri IPC not available'))
+  },
   transformCallback: (callback?: unknown) => {
     void callback
     return Math.floor(Math.random() * 1e9)
   },
+  unregisterCallback: () => undefined,
 }
 
 ;(globalThis as Record<string, unknown>).__TAURI_INTERNALS__ = internals
+;(globalThis as Record<string, unknown>).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+  unregisterListener: () => undefined,
+}
 if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = internals
+  ;(window as unknown as Record<string, unknown>).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener: () => undefined,
+  }
 }
