@@ -49,6 +49,9 @@ pub struct RequestScopedRuntimeDeps {
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
     pub skill_registry:
         Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub skill_enablement_store: Option<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>,
+    pub skill_market_install_roots:
+        Option<crate::runtime::tools::builtin::skill_market::HeadlessSkillMarketInstallRoots>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
@@ -89,6 +92,8 @@ impl RequestScopedRuntimeDeps {
             user_scoped_path_resolver: None,
             event_bus: ctx.event_bus.clone(),
             skill_registry: ctx.skill_registry.clone(),
+            skill_enablement_store: None,
+            skill_market_install_roots: None,
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
@@ -135,12 +140,16 @@ mod tests {
             .get_schemas_filtered(&ToolFilter::All, &ToolDescriptionContext::empty(), &empty)
             .await;
 
-        assert!(!without_overrides
-            .iter()
-            .any(|def| def.name == "SkillMarketSearch"));
-        assert!(!without_overrides
-            .iter()
-            .any(|def| def.name == "SkillMarketInstall"));
+        assert!(
+            !without_overrides
+                .iter()
+                .any(|def| def.name == "SkillMarketSearch")
+        );
+        assert!(
+            !without_overrides
+                .iter()
+                .any(|def| def.name == "SkillMarketInstall")
+        );
 
         let mut overrides = std::collections::HashMap::new();
         overrides.insert(
@@ -168,12 +177,16 @@ mod tests {
             )
             .await;
 
-        assert!(with_overrides
-            .iter()
-            .any(|def| def.name == "SkillMarketSearch"));
-        assert!(with_overrides
-            .iter()
-            .any(|def| def.name == "SkillMarketInstall"));
+        assert!(
+            with_overrides
+                .iter()
+                .any(|def| def.name == "SkillMarketSearch")
+        );
+        assert!(
+            with_overrides
+                .iter()
+                .any(|def| def.name == "SkillMarketInstall")
+        );
     }
 }
 
@@ -949,18 +962,22 @@ impl ToolRegistry {
     fn find_skills_market_tools_enabled(ctx: &RequestScopedRuntimeDeps) -> bool {
         use tauri::Manager;
 
-        let Some(app) = ctx.app_handle.as_ref() else {
-            return false;
-        };
         let Some(skill_registry) = ctx.skill_registry.as_ref() else {
             return false;
         };
-        let Some(enablement_store) =
-            app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
-        else {
+        let enablement_store = ctx.skill_enablement_store.clone().or_else(|| {
+            ctx.app_handle.as_ref().and_then(|app| {
+                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                    .map(|store| store.inner().clone())
+            })
+        });
+        if ctx.app_handle.is_some() && enablement_store.is_none() {
             return false;
+        }
+        let state = match enablement_store.as_ref() {
+            Some(store) => store.load_or_default(),
+            None => crate::plugin::skill::enablement::SkillEnablementState::default(),
         };
-        let state = enablement_store.inner().load_or_default();
         skill_registry
             .lock()
             .map(|reg| reg.get_enabled("find-skills", &state).is_some())
@@ -1046,10 +1063,12 @@ impl ToolRegistry {
                 }
                 let auth_manager = ctx.auth_manager.clone()?;
                 let skill_registry = ctx.skill_registry.clone()?;
-                let enablement_store = ctx.app_handle.as_ref().and_then(|app| {
-                    use tauri::Manager;
-                    app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
-                        .map(|store| store.inner().clone())
+                let enablement_store = ctx.skill_enablement_store.clone().or_else(|| {
+                    ctx.app_handle.as_ref().and_then(|app| {
+                        use tauri::Manager;
+                        app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                            .map(|store| store.inner().clone())
+                    })
                 });
                 Some(Arc::new(
                     builtin::skill_market::SkillMarketSearchRuntimeTool::new(
@@ -1063,19 +1082,37 @@ impl ToolRegistry {
                 if !Self::find_skills_market_tools_enabled(ctx) {
                     return None;
                 }
-                let app = ctx.app_handle.clone()?;
                 let auth_manager = ctx.auth_manager.clone()?;
                 let skill_registry = ctx.skill_registry.clone()?;
-                use tauri::Manager;
-                let enablement_store = app
-                    .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
-                    .map(|store| store.inner().clone());
+                let enablement_store = ctx.skill_enablement_store.clone().or_else(|| {
+                    ctx.app_handle.as_ref().and_then(|app| {
+                        use tauri::Manager;
+                        app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                            .map(|store| store.inner().clone())
+                    })
+                });
+                if let Some(app) = ctx.app_handle.clone() {
+                    use tauri::Manager;
+                    let enablement_store = app
+                        .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                        .map(|store| store.inner().clone())
+                        .or(enablement_store);
+                    return Some(Arc::new(
+                        builtin::skill_market::SkillMarketInstallRuntimeTool::new(
+                            app,
+                            auth_manager,
+                            skill_registry,
+                            enablement_store,
+                        ),
+                    ));
+                }
+                let roots = ctx.skill_market_install_roots.clone()?;
                 Some(Arc::new(
-                    builtin::skill_market::SkillMarketInstallRuntimeTool::new(
-                        app,
+                    builtin::skill_market::SkillMarketInstallRuntimeTool::new_headless(
                         auth_manager,
                         skill_registry,
                         enablement_store,
+                        roots,
                     ),
                 ))
             }

@@ -6,9 +6,9 @@ use crate::llm::gateway::LlmGateway;
 use crate::models::settings::AppSettings;
 use crate::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use crate::plugin::tool_trait::ToolError as LegacyToolError;
+use crate::runtime::agent::AgentRuntime;
 use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::agent::worker_runtime::SubagentWorkerRuntime;
-use crate::runtime::agent::AgentRuntime;
 use crate::runtime::ids::RunId;
 use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::permission::PermissionMode;
@@ -84,6 +84,8 @@ impl SubAgentRuntimeDeps {
             user_scoped_path_resolver: None,
             event_bus: self.event_bus.clone(),
             skill_registry: self.skill_registry.clone(),
+            skill_enablement_store: None,
+            skill_market_install_roots: None,
             authorized_workspace: self.authorized_workspace.clone(),
             read_file_state,
             cancellation,
@@ -155,7 +157,7 @@ mod tests {
     use super::*;
     use crate::plugin::tool_trait::ToolError as LegacyToolError;
     use crate::runtime::tools::permission::{
-        default_permission_ask, PermissionDecision, PermissionReason,
+        PermissionDecision, PermissionReason, default_permission_ask,
     };
     use std::sync::Arc;
 

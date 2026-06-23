@@ -16,11 +16,11 @@ use tracing::Instrument;
 
 use crate::auth::AuthManager;
 use crate::connector::im::shared::app_feedback::{
-    feedback_message, AppFeedbackDecision, IMAppFeedbackCoordinator,
+    AppFeedbackDecision, IMAppFeedbackCoordinator, feedback_message,
 };
 use crate::llm::compact_summary_client::LlmCompactSummaryClient;
 use crate::llm::context_decay::resolve_context_window;
-use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
+use crate::llm::gateway::{LlmGateway, format_llm_error_diagnostics};
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
@@ -31,12 +31,11 @@ use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::chat_turn_driver::{ReasoningMode, RunActivityController};
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::chat::compaction::{
-    append_literal_anchor_hints, append_transcript_path_hint,
-    compact_transcript_path_for_conversation_dir, AutoCompactConfig, AutoCompactState,
-    CompactTrigger,
+    AutoCompactConfig, AutoCompactState, CompactTrigger, append_literal_anchor_hints,
+    append_transcript_path_hint, compact_transcript_path_for_conversation_dir,
 };
 use crate::runtime::chat::preprocess::{
-    prepare_messages_for_llm, PreprocessConfig, PreprocessRuntimeState, PreprocessTrigger,
+    PreprocessConfig, PreprocessRuntimeState, PreprocessTrigger, prepare_messages_for_llm,
 };
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
@@ -46,15 +45,15 @@ use crate::runtime::chat::{
 use crate::runtime::conversation_service;
 use crate::runtime::events::RuntimeEvent;
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
-use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::store::PendingPermissionResolution;
+use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::tools::permission::PermissionDestination;
 use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
 use crate::storage::crypto::SecureStorage;
 use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_manager::FileManager;
-use crate::storage::file_store::types::FileStorageRoot;
 use crate::storage::file_store::AppStorage;
+use crate::storage::file_store::types::FileStorageRoot;
 use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQueue};
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 use crate::transport::tauri_runtime_host::TauriRuntimeHost;
@@ -202,19 +201,21 @@ fn ensure_generated_file_records_from_metas(
             );
             continue;
         };
-        let full_path =
-            match FileManager::resolve_existing_file_under_root(&storage_root.path, &stored_path) {
-                Ok(path) => path,
-                Err(err) => {
-                    log::warn!(
+        let full_path = match FileManager::resolve_existing_file_under_root(
+            &storage_root.path,
+            &stored_path,
+        ) {
+            Ok(path) => path,
+            Err(err) => {
+                log::warn!(
                     "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
                     file_id,
                     stored_path,
                     err
                 );
-                    continue;
-                }
-            };
+                continue;
+            }
+        };
         let file_name = json_str(meta, &["fileName", "file_name"])
             .map(ToString::to_string)
             .or_else(|| {
@@ -874,6 +875,11 @@ impl TauriChatServices {
             auth_manager: self.auth_manager.clone(),
             app: Some(self.app.clone()),
             skill_registry: self.skill_registry.clone(),
+            skill_enablement_store: self
+                .app
+                .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                .map(|store| store.inner().clone()),
+            skill_market_install_roots: None,
             runtime_resolver: self.runtime_resolver.clone(),
             employee_run_overrides: self.employee_run_overrides.clone(),
             authorized_workspace_store: None,
@@ -902,6 +908,9 @@ pub(crate) struct SharedChatRuntimeServices {
     auth_manager: Arc<AuthManager>,
     app: Option<tauri::AppHandle>,
     skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+    skill_enablement_store: Option<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>,
+    skill_market_install_roots:
+        Option<crate::runtime::tools::builtin::skill_market::HeadlessSkillMarketInstallRoots>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
     employee_run_overrides: Arc<std::sync::Mutex<HashMap<String, EmployeeRunOverrides>>>,
     authorized_workspace_store: Option<Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>>,
@@ -981,8 +990,13 @@ impl SharedChatRuntimeServices {
         }
         match self.agent_registry.clone() {
             Some(registry) => {
-                chat_runtime_impl::build_request_scoped_tool_overrides_from_registry(registry, ctx)
-                    .await
+                chat_runtime_impl::build_request_scoped_tool_overrides_from_headless_registry(
+                    registry,
+                    ctx,
+                    Some(self.skill_registry.clone()),
+                    self.skill_enablement_store.clone(),
+                )
+                .await
             }
             None => HashMap::new(),
         }
@@ -1049,6 +1063,8 @@ impl SharedChatRuntimeServices {
             user_scoped_path_resolver: self.user_scoped_path_resolver.clone(),
             event_bus: None,
             skill_registry: Some(self.skill_registry.clone()),
+            skill_enablement_store: self.skill_enablement_store.clone(),
+            skill_market_install_roots: self.skill_market_install_roots.clone(),
             authorized_workspace: self.load_authorized_workspace(&conversation_id),
             read_file_state: None,
             cancellation: None,
@@ -1077,6 +1093,9 @@ pub(crate) struct HeadlessChatRuntimeConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub auth_manager: Arc<AuthManager>,
     pub skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+    pub skill_enablement_store: Option<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>,
+    pub skill_market_install_roots:
+        Option<crate::runtime::tools::builtin::skill_market::HeadlessSkillMarketInstallRoots>,
     pub permission_store: Arc<crate::runtime::store::PermissionStore>,
     pub authorized_workspace_store: Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>,
     pub default_folder: PathBuf,
@@ -1236,6 +1255,8 @@ pub(crate) fn build_headless_chat_runtime(
         auth_manager: config.auth_manager,
         app: None,
         skill_registry: config.skill_registry,
+        skill_enablement_store: config.skill_enablement_store,
+        skill_market_install_roots: config.skill_market_install_roots,
         runtime_resolver: None,
         employee_run_overrides: Arc::new(std::sync::Mutex::new(HashMap::new())),
         authorized_workspace_store: Some(config.authorized_workspace_store.clone()),
@@ -1417,7 +1438,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
         use crate::runtime::events::{RetryReason, RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
-        use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
+        use crate::telemetry::{DiagnosticEvent, DiagnosticSource, record_diagnostic};
         use futures::StreamExt;
 
         let session_id = SessionId::from(input.conversation_id);
@@ -2886,7 +2907,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
-        use crate::runtime::chat::context_builder::{build_env_info, ManagedRuntimeEnvInfo};
+        use crate::runtime::chat::context_builder::{ManagedRuntimeEnvInfo, build_env_info};
 
         let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
 
@@ -2938,12 +2959,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let enablement = self
             .services
-            .app
+            .skill_enablement_store
             .as_ref()
-            .and_then(|app| {
-                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
-            })
             .map(|store| store.load_or_default())
+            .or_else(|| {
+                self.services.app.as_ref().and_then(|app| {
+                    app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                        .map(|store| store.load_or_default())
+                })
+            })
             .unwrap_or_default();
 
         self.services
@@ -2958,12 +2982,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let enablement = self
             .services
-            .app
+            .skill_enablement_store
             .as_ref()
-            .and_then(|app| {
-                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
-            })
             .map(|store| store.load_or_default())
+            .or_else(|| {
+                self.services.app.as_ref().and_then(|app| {
+                    app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                        .map(|store| store.load_or_default())
+                })
+            })
             .unwrap_or_default();
 
         self.services
@@ -4697,6 +4724,12 @@ impl TauriChatCommandAdapter {
             user_scoped_path_resolver: None,
             event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
+            skill_enablement_store: self
+                .services
+                .app
+                .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                .map(|store| store.inner().clone()),
+            skill_market_install_roots: None,
             authorized_workspace: None,
             read_file_state: None,
             cancellation: None,
@@ -4986,6 +5019,12 @@ impl TauriChatCommandAdapter {
             user_scoped_path_resolver: None,
             event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
+            skill_enablement_store: self
+                .services
+                .app
+                .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                .map(|store| store.inner().clone()),
+            skill_market_install_roots: None,
             authorized_workspace: chat_runtime_impl::load_authorized_workspace(
                 &self.services.app,
                 &conversation_id,
@@ -6474,7 +6513,7 @@ mod retry_reason_tests {
 
 #[cfg(test)]
 mod retry_backoff_tests {
-    use super::{stream_retry_backoff_secs, MAX_STREAM_RETRIES, STREAM_RETRY_MAX_BACKOFF_SECS};
+    use super::{MAX_STREAM_RETRIES, STREAM_RETRY_MAX_BACKOFF_SECS, stream_retry_backoff_secs};
 
     /// Sequence: 2, 4, 8, 16, 32, 60, 60, 60, 60, 60 for attempts 1..=10.
     /// Worst case total wait = 2+4+8+16+32+60*5 = 362s (~6 min), well below

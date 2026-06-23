@@ -1,22 +1,24 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 
 use crate::commands::skill_management::{
-    install_marketplace_skill_with_auth, list_marketplace_skills_with_auth, MarketplaceSkillItem,
+    MarketplaceSkillItem, install_marketplace_skill_headless_with_auth,
+    install_marketplace_skill_with_auth, list_marketplace_skills_with_auth,
 };
 use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::registry::SkillRegistry;
-use crate::plugin::skill::types::DiskSkill;
+use crate::plugin::skill::types::{DiskSkill, SkillSource};
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
-use crate::runtime::tools::RuntimeTool;
 
 const SEARCH_TOOL: &str = "SkillMarketSearch";
 const INSTALL_TOOL: &str = "SkillMarketInstall";
@@ -51,10 +53,23 @@ impl SkillMarketSearchRuntimeTool {
 
 #[derive(Clone)]
 pub struct SkillMarketInstallRuntimeTool {
-    app: AppHandle,
+    install_target: SkillMarketInstallTarget,
     auth_manager: Arc<crate::auth::AuthManager>,
     skill_registry: Arc<Mutex<SkillRegistry>>,
     enablement_store: Option<Arc<SkillEnablementStore>>,
+}
+
+#[derive(Clone)]
+enum SkillMarketInstallTarget {
+    Tauri(AppHandle),
+    Headless(HeadlessSkillMarketInstallRoots),
+}
+
+#[derive(Clone)]
+pub struct HeadlessSkillMarketInstallRoots {
+    pub user_skills_dir: PathBuf,
+    pub global_skills_dir: PathBuf,
+    pub tmp_dir: PathBuf,
 }
 
 impl SkillMarketInstallRuntimeTool {
@@ -65,7 +80,21 @@ impl SkillMarketInstallRuntimeTool {
         enablement_store: Option<Arc<SkillEnablementStore>>,
     ) -> Self {
         Self {
-            app,
+            install_target: SkillMarketInstallTarget::Tauri(app),
+            auth_manager,
+            skill_registry,
+            enablement_store,
+        }
+    }
+
+    pub fn new_headless(
+        auth_manager: Arc<crate::auth::AuthManager>,
+        skill_registry: Arc<Mutex<SkillRegistry>>,
+        enablement_store: Option<Arc<SkillEnablementStore>>,
+        roots: HeadlessSkillMarketInstallRoots,
+    ) -> Self {
+        Self {
+            install_target: SkillMarketInstallTarget::Headless(roots),
             auth_manager,
             skill_registry,
             enablement_store,
@@ -313,14 +342,35 @@ impl RuntimeTool for SkillMarketInstallRuntimeTool {
             ));
         }
 
-        let _message = install_marketplace_skill_with_auth(
-            self.app.clone(),
-            self.auth_manager.clone(),
-            package_id,
-            plugin_id.clone(),
-        )
-        .await
-        .map_err(ToolError::ExecutionFailed)?;
+        match &self.install_target {
+            SkillMarketInstallTarget::Tauri(app) => {
+                let _message = install_marketplace_skill_with_auth(
+                    app.clone(),
+                    self.auth_manager.clone(),
+                    package_id,
+                    plugin_id.clone(),
+                )
+                .await
+                .map_err(ToolError::ExecutionFailed)?;
+            }
+            SkillMarketInstallTarget::Headless(roots) => {
+                let _message = install_marketplace_skill_headless_with_auth(
+                    self.auth_manager.clone(),
+                    package_id,
+                    plugin_id.clone(),
+                    roots.user_skills_dir.clone(),
+                    roots.tmp_dir.clone(),
+                )
+                .await
+                .map_err(ToolError::ExecutionFailed)?;
+                if let Some(store) = &self.enablement_store {
+                    store
+                        .clear_override(&plugin_id)
+                        .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                }
+                self.refresh_headless_registry(roots)?;
+            }
+        }
 
         let payload = json!({
             "installed": true,
@@ -374,6 +424,22 @@ impl SkillMarketInstallRuntimeTool {
             .lock()
             .map_err(|e| ToolError::ExecutionFailed(format!("Registry lock failed: {}", e)))?;
         Ok(reg.get(plugin_id).map(|_| enablement.is_enabled(plugin_id)))
+    }
+
+    fn refresh_headless_registry(
+        &self,
+        roots: &HeadlessSkillMarketInstallRoots,
+    ) -> Result<(), ToolError> {
+        let loaded = crate::plugin::skill::loader::load_skill_roots_tagged(&[
+            (roots.user_skills_dir.clone(), SkillSource::User),
+            (roots.global_skills_dir.clone(), SkillSource::Global),
+        ])
+        .map_err(|e| ToolError::ExecutionFailed(format!("load_skill_roots failed: {}", e)))?;
+        self.skill_registry
+            .lock()
+            .map_err(|e| ToolError::ExecutionFailed(format!("Registry lock failed: {}", e)))?
+            .replace_all(loaded.into_values().collect());
+        Ok(())
     }
 }
 
@@ -1047,9 +1113,11 @@ mod tests {
         let ranked = rank_marketplace_candidates(&items, "业务表公平分析和调整建议", &[]);
 
         assert_eq!(ranked[0].item.plugin_id, "analysis-primary");
-        assert!(ranked
-            .iter()
-            .any(|candidate| candidate.item.plugin_id == "analysis-benchmark"));
+        assert!(
+            ranked
+                .iter()
+                .any(|candidate| candidate.item.plugin_id == "analysis-benchmark")
+        );
     }
 
     #[test]
@@ -1076,10 +1144,12 @@ mod tests {
         );
 
         assert_eq!(ranked[0].item.plugin_id, "event-path-lab");
-        assert!(!ranked
-            .iter()
-            .any(|candidate| candidate.item.plugin_id == "benchmark-lab"
-                && candidate.score >= MIN_MATCH_SCORE));
+        assert!(
+            !ranked
+                .iter()
+                .any(|candidate| candidate.item.plugin_id == "benchmark-lab"
+                    && candidate.score >= MIN_MATCH_SCORE)
+        );
     }
 
     #[test]
@@ -1228,13 +1298,15 @@ mod tests {
             .disabled_skill_ids
             .insert("batch-helper".to_string());
 
-        assert!(best_disabled_local_skill_match(
-            &skills,
-            "业务表公平分析和调整建议",
-            &["业务表".to_string(), "公平分析".to_string()],
-            &enablement,
-        )
-        .is_none());
+        assert!(
+            best_disabled_local_skill_match(
+                &skills,
+                "业务表公平分析和调整建议",
+                &["业务表".to_string(), "公平分析".to_string()],
+                &enablement,
+            )
+            .is_none()
+        );
     }
 
     #[test]
