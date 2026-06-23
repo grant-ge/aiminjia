@@ -58,8 +58,8 @@ pub fn finalize_content(
     if iteration_count >= max_iterations {
         log::warn!("[post_process] Hit max_iterations ({})", max_iterations,);
         let notice = format!(
-            "\n\n---\n⚠️ 本步分析较为复杂，已达处理上限（{} 次迭代）。以上是当前阶段的分析结果。\n\
-            如需补充分析，请回复具体要求；如结果已满足需要，请确认继续下一步。",
+            "\n\n---\n⚠️ 已达处理上限（{} 次迭代）。以上内容可能是不完整交付，不代表所有命名文件、配置、脚本、报告或数据结果都已完成。\n\
+            如果原请求包含具体产物，请继续补齐缺失项或明确说明阻塞原因；不要把未验证的分析当成最终完成结果。",
             max_iterations
         );
         full_content.push_str(&notice);
@@ -111,6 +111,8 @@ mod tests {
         assert!(content.starts_with("partial result"));
         assert!(content.contains("处理上限"));
         assert!(content.contains("10"));
+        assert!(content.contains("不完整交付"));
+        assert!(!content.contains("当前阶段的分析结果"));
     }
 
     #[test]
