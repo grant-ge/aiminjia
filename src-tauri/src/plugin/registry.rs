@@ -39,6 +39,13 @@ pub struct RequestScopedRuntimeDeps {
     pub tool_registry: Option<Arc<crate::plugin::registry::ToolRegistry>>,
     pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
     pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
+    pub async_agent_task_store:
+        Option<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>,
+    pub task_notification_queue:
+        Option<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>,
+    pub agent_registry: Option<Arc<crate::runtime::agent::registry::AgentRegistry>>,
+    pub user_scoped_path_resolver:
+        Option<Arc<dyn crate::storage::user_scoped_paths::UserScopedPathResolver>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
     pub skill_registry:
         Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
@@ -76,6 +83,10 @@ impl RequestScopedRuntimeDeps {
             tool_registry: ctx.tool_registry.clone(),
             app_settings: ctx.app_settings.clone(),
             agent_runtime: ctx.agent_runtime.clone(),
+            async_agent_task_store: None,
+            task_notification_queue: None,
+            agent_registry: None,
+            user_scoped_path_resolver: None,
             event_bus: ctx.event_bus.clone(),
             skill_registry: ctx.skill_registry.clone(),
             authorized_workspace: ctx.authorized_workspace.clone(),
@@ -106,6 +117,63 @@ impl RequestScopedRuntimeDeps {
     pub fn with_runtime_resolver(mut self, runtime_resolver: ManagedRuntimeResolver) -> Self {
         self.runtime_resolver = Some(runtime_resolver);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::tools::ToolDescriptionContext;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn find_skills_market_tools_are_request_scoped_and_override_only() {
+        let registry = ToolRegistry::new();
+        let empty = std::collections::HashMap::new();
+
+        let without_overrides = registry
+            .get_schemas_filtered(&ToolFilter::All, &ToolDescriptionContext::empty(), &empty)
+            .await;
+
+        assert!(!without_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketSearch"));
+        assert!(!without_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketInstall"));
+
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert(
+            "SkillMarketSearch".to_string(),
+            ToolDefinition {
+                name: "SkillMarketSearch".to_string(),
+                description: "Search market skills".to_string(),
+                parameters: json!({"type": "object"}),
+            },
+        );
+        overrides.insert(
+            "SkillMarketInstall".to_string(),
+            ToolDefinition {
+                name: "SkillMarketInstall".to_string(),
+                description: "Install market skills".to_string(),
+                parameters: json!({"type": "object"}),
+            },
+        );
+
+        let with_overrides = registry
+            .get_schemas_filtered(
+                &ToolFilter::All,
+                &ToolDescriptionContext::empty(),
+                &overrides,
+            )
+            .await;
+
+        assert!(with_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketSearch"));
+        assert!(with_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketInstall"));
     }
 }
 
@@ -144,7 +212,15 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "list_agenda_occurrences",
     // RefreshSkills — request-scoped because it needs AppHandle from ctx
     "RefreshSkills",
+    // find-skills gated market tools — request-scoped because exposure depends
+    // on the current user's enabled skill catalog and auth/app state.
+    "SkillMarketSearch",
+    "SkillMarketInstall",
 ];
+
+fn request_scoped_tool_requires_override(id: &str) -> bool {
+    matches!(id, "SkillMarketSearch" | "SkillMarketInstall")
+}
 
 /// Info about a registered tool (for management UI).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -380,6 +456,9 @@ impl ToolRegistry {
             if runtime_tools.contains_key(*id) {
                 continue;
             }
+            if request_scoped_tool_requires_override(id) {
+                continue;
+            }
             if let Some(entry) = TOOL_CATALOG.get_entry(id) {
                 schemas.push(ToolDefinition {
                     name: entry.definition.id.clone(),
@@ -505,6 +584,11 @@ impl ToolRegistry {
                         has_emp,
                     );
                     schemas.push(override_def.clone());
+                } else if request_scoped_tool_requires_override(id) {
+                    log::info!(
+                        "[tool-desc-trace] skipped request-scoped tool: id={} reason=requires_override",
+                        id,
+                    );
                 } else if let Some(entry) = TOOL_CATALOG.get_entry(id) {
                     // Fallback: static catalog entry. Used for tools whose
                     // description doesn't depend on session state, or
@@ -862,12 +946,92 @@ impl ToolRegistry {
     /// that cannot be stored in the global singleton registry.
     ///
     /// Returns `None` for unknown tool names (falls through to legacy path).
+    fn find_skills_market_tools_enabled(ctx: &RequestScopedRuntimeDeps) -> bool {
+        use tauri::Manager;
+
+        let Some(app) = ctx.app_handle.as_ref() else {
+            return false;
+        };
+        let Some(skill_registry) = ctx.skill_registry.as_ref() else {
+            return false;
+        };
+        let Some(enablement_store) =
+            app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+        else {
+            return false;
+        };
+        let state = enablement_store.inner().load_or_default();
+        skill_registry
+            .lock()
+            .map(|reg| reg.get_enabled("find-skills", &state).is_some())
+            .unwrap_or(false)
+    }
+
     async fn try_build_request_scoped_tool(
         name: &str,
         ctx: &RequestScopedRuntimeDeps,
     ) -> Option<Arc<dyn crate::runtime::tools::RuntimeTool>> {
         use crate::runtime::tools::builtin;
         use std::sync::Arc;
+
+        if ctx.app_handle.is_none() {
+            match name {
+                "Agent" => {
+                    let agent_registry = ctx.agent_registry.clone()?;
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    let notif_queue = ctx.task_notification_queue.clone()?;
+                    let path_resolver = ctx.user_scoped_path_resolver.clone()?;
+                    return Some(Arc::new(
+                        builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
+                            Arc::new(
+                                crate::llm::tool_executor::DefaultSpawnSubagentLauncher::from_runtime_deps(
+                                    ctx.clone(),
+                                    agent_registry.clone(),
+                                    task_store,
+                                    notif_queue,
+                                    path_resolver,
+                                ),
+                            ),
+                            agent_registry,
+                        ),
+                    ) as Arc<dyn crate::runtime::tools::RuntimeTool>);
+                }
+                "TaskOutput" => {
+                    let resolver = ctx.user_scoped_path_resolver.clone()?;
+                    return Some(
+                        Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
+                            as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    );
+                }
+                "TaskStop" => {
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    return Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool {
+                        store: task_store,
+                    })
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>);
+                }
+                #[cfg(not(windows))]
+                "Bash" => {
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    let notif_queue = ctx.task_notification_queue.clone()?;
+                    return Some(
+                        Arc::new(builtin::bash::BashTool::new(task_store, notif_queue))
+                            as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    );
+                }
+                #[cfg(windows)]
+                "PowerShell" => {
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    let notif_queue = ctx.task_notification_queue.clone()?;
+                    return Some(Arc::new(builtin::powershell::PowerShellTool::new(
+                        task_store,
+                        notif_queue,
+                    ))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>);
+                }
+                _ => {}
+            }
+        }
 
         match name {
             "WebSearch" => {
@@ -876,10 +1040,49 @@ impl ToolRegistry {
                 };
                 Some(Arc::new(builtin::network::WebSearchRuntimeTool::new(deps)))
             }
+            "SkillMarketSearch" => {
+                if !Self::find_skills_market_tools_enabled(ctx) {
+                    return None;
+                }
+                let auth_manager = ctx.auth_manager.clone()?;
+                let skill_registry = ctx.skill_registry.clone()?;
+                let enablement_store = ctx.app_handle.as_ref().and_then(|app| {
+                    use tauri::Manager;
+                    app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                        .map(|store| store.inner().clone())
+                });
+                Some(Arc::new(
+                    builtin::skill_market::SkillMarketSearchRuntimeTool::new(
+                        auth_manager,
+                        skill_registry,
+                        enablement_store,
+                    ),
+                ))
+            }
+            "SkillMarketInstall" => {
+                if !Self::find_skills_market_tools_enabled(ctx) {
+                    return None;
+                }
+                let app = ctx.app_handle.clone()?;
+                let auth_manager = ctx.auth_manager.clone()?;
+                let skill_registry = ctx.skill_registry.clone()?;
+                use tauri::Manager;
+                let enablement_store = app
+                    .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                    .map(|store| store.inner().clone());
+                Some(Arc::new(
+                    builtin::skill_market::SkillMarketInstallRuntimeTool::new(
+                        app,
+                        auth_manager,
+                        skill_registry,
+                        enablement_store,
+                    ),
+                ))
+            }
             "Agent" => {
                 use tauri::Manager;
 
-                // Fail-closed: if app state is missing any of the three Arcs,
+                // Fail-closed: if runtime deps/app state are missing any of the Arcs,
                 // we MUST NOT silently fall back to fresh instances — async
                 // sub-agent updates would write to orphan stores/queues that
                 // nobody else holds, leaving notifications lost and the

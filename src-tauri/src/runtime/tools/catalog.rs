@@ -1015,6 +1015,72 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "SkillMarketSearch",
+            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true)
+        .with_capability_scope(["network"])
+        .with_max_result_size_chars(8_000),
+        json!({
+            "type": "object",
+            "required": ["task"],
+            "additionalProperties": false,
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "用户原始任务描述，例如：访问某网站抓取价格数据"
+                },
+                "capabilityHints": {
+                    "type": "array",
+                    "description": "可选能力提示。直接从用户原始任务中抽取少量业务系统名、业务对象、动作、文件/日志类型或分析目标；不要维护固定能力清单，也不要为了凑数填泛化词。如果用户明确是在处理普通公开网页，才使用 browser_automation 或 web_scraping；如果用户提到具名企业产品或业务系统，不要用泛化 browser/web_scraping 代替原词。",
+                    "items": { "type": "string" },
+                    "maxItems": 5
+                },
+                "maxResults": {
+                    "type": "integer",
+                    "description": "最多返回候选数量，默认 3，最大 5",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "default": 3
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "SkillMarketInstall",
+            "安装 SkillMarketSearch 返回的市场技能。调用前必须确认 packageId 与 pluginId 来自搜索候选；如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_destructive(true)
+        .with_capability_scope(["network"])
+        .with_default_timeout_secs(180)
+        .with_max_result_size_chars(4_000),
+        json!({
+            "type": "object",
+            "required": ["packageId", "pluginId"],
+            "additionalProperties": false,
+            "properties": {
+                "packageId": {
+                    "type": "integer",
+                    "description": "SkillMarketSearch 返回的 packageId"
+                },
+                "pluginId": {
+                    "type": "string",
+                    "description": "SkillMarketSearch 返回的 pluginId / skill id"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "为什么安装这个技能，用于日志和调试"
+                }
+            }
+        }),
+    ));
+
     c
 }
 
@@ -1061,6 +1127,8 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "skip_occurrence",
     "list_agenda_occurrences",
     "RefreshSkills",
+    "SkillMarketSearch",
+    "SkillMarketInstall",
 ];
 
 /// 某个工具在当前编译平台是否可执行。
@@ -1099,5 +1167,54 @@ mod tests {
             assert!(allowed.contains(&"Bash"));
             assert!(!allowed.contains(&"PowerShell"));
         }
+    }
+
+    #[test]
+    fn daily_allowed_tools_include_find_skills_market_tools() {
+        let allowed: Vec<&str> = daily_allowed_tools_for_current_platform().collect();
+
+        assert!(allowed.contains(&"SkillMarketSearch"));
+        assert!(allowed.contains(&"SkillMarketInstall"));
+    }
+
+    #[test]
+    fn skill_market_search_hints_use_task_terms_without_fixed_capability_examples() {
+        let entry = TOOL_CATALOG
+            .get_entry("SkillMarketSearch")
+            .expect("SkillMarketSearch should be registered");
+        let description = entry
+            .json_schema
+            .pointer("/properties/capabilityHints/description")
+            .and_then(serde_json::Value::as_str)
+            .expect("capabilityHints should have a description");
+
+        assert!(description.contains("业务系统"));
+        assert!(description.contains("业务对象"));
+        assert!(description.contains("分析目标"));
+        assert!(description.contains("不要维护固定能力清单"));
+        assert!(description.contains("普通公开网页"));
+        assert!(description.contains("browser_automation"));
+        assert!(description.contains("web_scraping"));
+        assert!(!description.contains(&format!("{}{}", "hr_", "system")));
+        assert!(!description.contains(&format!("{}{}", "salary_", "analysis")));
+        assert!(
+            !description.contains("例如 browser_automation"),
+            "generic browser hints must not be the primary examples: {description}"
+        );
+    }
+
+    #[test]
+    fn skill_market_search_description_keeps_scope_boundary() {
+        let entry = TOOL_CATALOG
+            .get_entry("SkillMarketSearch")
+            .expect("SkillMarketSearch should be registered");
+        let description = &entry.definition.description;
+
+        assert!(description.contains("find-skills"));
+        assert!(description.contains("专项任务"));
+        assert!(description.contains("普通公开网页"));
+        assert!(description.contains("已启用技能明确覆盖"));
+        assert!(!description.contains("不要先问网址"));
+        assert!(!description.contains("直接使用 browser"));
     }
 }

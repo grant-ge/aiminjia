@@ -607,6 +607,7 @@ export function SkillCenterPage() {
                 skillSource={item.scope === 'tenant' ? 'tenant' : 'global'}
                 marketCard
                 marketInstalled={installed}
+                marketPackageId={String(item.id)}
                 onClick={() => setSelectedMarketItem(item)}
                 actionsSlot={
                   installed ? (

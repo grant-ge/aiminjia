@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { copyFileSync, existsSync, linkSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 
 const CARGO_PACKAGE_NAME = 'aijia'
+const EXECUTABLE_EXTENSION = process.platform === 'win32' ? '.exe' : ''
 const appName = process.env.AIJIA_DEV_APP_NAME
 
 if (!appName) {
@@ -30,7 +31,7 @@ if (buildExitCode !== 0) {
 
 const sourceExecutable = resolveCargoExecutable(cargoOptions)
 const executableDir = dirname(sourceExecutable)
-const devExecutable = join(executableDir, sanitizeExecutableName(appName))
+const devExecutable = join(executableDir, `${sanitizeExecutableName(appName)}${EXECUTABLE_EXTENSION}`)
 
 if (sourceExecutable !== devExecutable) {
   replaceDevExecutable(sourceExecutable, devExecutable)
@@ -57,7 +58,7 @@ function resolveCargoExecutable(cargoOptions) {
   const targetDir = process.env.CARGO_TARGET_DIR || 'target'
   const targetTriple = optionValue(cargoOptions, '--target')
   const profile = cargoOptions.includes('--release') ? 'release' : 'debug'
-  return join(process.cwd(), targetDir, targetTriple ?? '', profile, CARGO_PACKAGE_NAME)
+  return join(process.cwd(), targetDir, targetTriple ?? '', profile, `${CARGO_PACKAGE_NAME}${EXECUTABLE_EXTENSION}`)
 }
 
 function optionValue(args, name) {
@@ -76,7 +77,7 @@ function sanitizeExecutableName(name) {
 
 function replaceDevExecutable(source, target) {
   if (existsSync(target)) {
-    unlinkSync(target)
+    unlinkExistingTarget(target)
   }
 
   try {
@@ -85,6 +86,47 @@ function replaceDevExecutable(source, target) {
   } catch {
     copyFileSync(source, target)
   }
+}
+
+function unlinkExistingTarget(target) {
+  const maxAttempts = process.platform === 'win32' ? 20 : 1
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      unlinkSync(target)
+      return
+    } catch (error) {
+      if (!isWindowsFileLock(error) || attempt === maxAttempts - 1) {
+        throw error
+      }
+
+      stopWindowsProcessByPath(target)
+      sleep(100)
+    }
+  }
+}
+
+function isWindowsFileLock(error) {
+  return process.platform === 'win32' && (error?.code === 'EPERM' || error?.code === 'EACCES')
+}
+
+function stopWindowsProcessByPath(target) {
+  const script = [
+    '$target = $env:AIJIA_DEV_REPLACE_TARGET',
+    'Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $target } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }',
+  ].join('; ')
+
+  spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    env: {
+      ...process.env,
+      AIJIA_DEV_REPLACE_TARGET: target,
+    },
+    stdio: 'ignore',
+  })
+}
+
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
 function run(command, args, errorPrefix = `Failed to run ${command}`) {

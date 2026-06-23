@@ -22,6 +22,23 @@
 - 场景 12：点击“更新官方技能”后，用户已经关闭的内置技能仍保持关闭
 - 场景 13：重新开启已关闭技能后，聊天输入框技能选择、slash 候选、详情页使用入口、模型 catalog 与 `Skill` 工具恢复可用
 - 场景 14：`skillsConfig.json` 按当前登录账号 scope 隔离，账号 A 的关闭状态不影响账号 B
+- 场景 15：发现技能作为内置技能同步到本地后默认开启
+- 场景 16：关闭发现技能后，自动发现与安装市场技能的入口不可用
+- 场景 17：用户提出自然任务且本地缺少能力时，可以通过发现技能搜索并安装市场技能
+- 场景 18：发现到唯一高置信候选时，可以自动安装并继续原任务
+- 场景 19：市场无匹配技能时，不能安装无关技能
+- 场景 20：技能已经安装时，不能重复安装同一技能
+- 场景 21：通过自动发现安装的技能，后续关闭后仍然不能被聊天加载
+- 场景 22：已安装的具名企业系统技能应直接加载，不绕市场
+- 场景 23：普通网页任务应直接使用浏览器，不被发现技能过度抢占
+- 场景 24：多个相近候选时，必须先问用户选择
+- 场景 25：用户只描述员工查询目标、没有说技能或系统名时，仍能先发现人事技能
+- 场景 26：用户只描述薪资组业务目标、没有说智能薪酬时，仍能先发现薪酬技能
+- 场景 27：自动安装过的专用技能后续应直接加载，不重复搜索市场
+- 场景 28：用户只说钉钉审批或待办时，已安装钉钉技能应直接生效
+- 场景 29：未知业务系统没有匹配技能时，不能静默安装无关技能
+- 场景 30：普通公开网页抓取仍走浏览器，不被市场发现拦截
+- 场景 31：薪酬分析类候选不唯一时，必须先询问用户选择
 
 ## 执行约束：技能启用状态改造
 
@@ -30,6 +47,29 @@
 - 选择市场测试技能时，必须优先使用 `skill-market-list --json` 中 `installed == false` 的项；如果当前环境没有未添加市场技能，本意图记为环境阻塞/跳过，不要卸载真实用户技能来造数据。
 - 校验模型不可用不能只靠“LLM 没有调用”作为唯一证据；需要同时检查 catalog/技能入口不出现，或使用后端 focused test 证明 `Skill` 工具对 disabled/not-installed id 返回 unavailable。
 - 涉及账号隔离的意图必须使用专用测试账号；如果没有两套可登录测试账号凭据，runner 应标记为环境阻塞/跳过，不得删除或改写当前真实用户的账号文件来造“新账号”现场。
+
+## 执行约束：发现技能自动安装
+
+- 意图 27-45 默认依赖这些 `tauri-pilot aijia` 原子命令：`skill-center-open`、`skill-center-tab`、`skill-center-list --json`、`skill-market-list --json --include-description`、`skill-center-toggle --id --enabled`、`skill-market-add --id`、`skill-picker-open --json`、`slash-suggestions --query --json`、`sync-builtin-skills`、`visible-tools --json`、`wait-agent-idle --timeout`、`pending-action-snapshot`、`dialog-snapshot`。如果命令缺失，runner 应标记为 `CLI gap`，不能把人工点按或肉眼观察当成稳定自动化结果。
+- 自动发现测试需要企业市场中存在测试专用技能包：`find-skills-e2e-web-fetch`、`find-skills-e2e-choice-alpha`、`find-skills-e2e-choice-beta`、`find-skills-e2e-disable-after-install`。这些包缺失时，runner 应标记为环境阻塞，不得拿真实客户技能做安装、关闭或卸载实验。
+- 自动发现测试不得删除整个 `skillsConfig.json`，不得删除用户已有真实技能目录；如需未安装状态，只能选择 `skill-market-list --json --include-description` 中 `installed == false` 的测试专用技能包。
+- 真实市场技能评测只允许验证“搜索、是否询问、是否直接加载已安装技能”；除非意图明确写出目标测试技能并确认 `installed == false`，不得用真实客户技能做关闭、卸载或重复安装实验。
+- 长工具链不能只依赖 `wait-reply` 判断结束；必须使用 `wait-agent-idle --timeout`，或轮询当前会话 `messages.jsonl` 中最后一条 assistant 消息的完成状态。
+- 校验“关闭后不占工具上下文”时，优先使用 `visible-tools --json` 读取当前会话实际注入的工具名；不能只用 UI 开关状态推断。
+
+## 用户视角评测口径
+
+find-skills 的评测不能只测“用户明确说要找技能”或“用户点名 pluginId”。真实用户更常见的是直接说业务目标，所以评测集按下面几类话术覆盖：
+
+| 话术类型 | 用户通常会说 | 期望链路 |
+|---|---|---|
+| 业务目标型 | “查下王小卡在哪个部门，岗位是什么” | 本地没有人事专用技能时，先 `Skill(find-skills)` 搜市场，再安装/加载 `rehcm` |
+| 业务对象型 | “这个月哪些薪资组已经生成了” | 本地没有薪酬专用技能时，先搜索市场，再安装/加载 `smartcb` |
+| 产品别名型 | “睿认识里查一下人” / “智能薪酬看下概览” | 别名、错字、简称能映射到对应市场技能 |
+| 已安装追问型 | “再帮我看一下未生成的薪资组” | 已安装且开启时直接 `Skill(smartcb)`，不再搜市场 |
+| 普通网页型 | “打开这个公开网页，把标题抓出来” | 直接 `Skill(browser)`，不触发 `SkillMarketSearch` |
+| 未知系统型 | “采购星球帮我查采购单” | 找不到匹配时不安装无关技能，向用户说明需要系统入口或更多信息 |
+| 多候选型 | “工资表做薪酬公平性分析和调薪建议” | 搜到多个接近候选时先问用户，不静默安装 |
 
 ---
 
@@ -867,3 +907,589 @@
 - `$SKILL_LIST_A_AGAIN` 中存在 `id == "dingtalk-workspace"` 的技能项
 - `$SKILL_LIST_A_AGAIN` 中 `dingtalk-workspace.enabled == false`
 - `~/.renlijia/global/skillsConfig.json` 不存在
+
+---
+
+## 意图-技能-027：发现技能内置后，默认开启
+
+**场景**
+用户登录后，系统同步必需内置技能。发现技能是一个真实的内置技能包，应该安装到本地、默认开启，并让新对话具备自动发现与安装市场技能的能力。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
+7. 返回首页并新建空对话：`tauri-pilot aijia new-task`
+8. 读取当前会话可见工具快照：`tauri-pilot aijia visible-tools --json`，记为 `$VISIBLE_TOOLS`
+9. 读取 `~/.renlijia/users/{scope}/skillsConfig.json`
+
+**验收标准**
+- `~/.renlijia/skills/find-skills/SKILL.md` 存在
+- `$SKILL_LIST` 中存在 `id == "find-skills"` 的技能项
+- `$SKILL_LIST` 中 `find-skills.source == "builtin"`、`find-skills.source == "global"` 或 `find-skills.category == "builtin"`
+- `$SKILL_LIST` 中 `find-skills.enabled == true`
+- `$VISIBLE_TOOLS` 中存在 `name == "SkillMarketSearch"` 的工具
+- `$VISIBLE_TOOLS` 中存在 `name == "SkillMarketInstall"` 的工具
+- `~/.renlijia/users/{scope}/skillsConfig.json` 不存在，或其中 `disabledSkillIds` 不包含 `find-skills`
+- 技能中心「内置」页中 `find-skills` 的开关为开启状态
+
+---
+
+## 意图-技能-028：关闭发现技能后，自动发现不可用
+
+**场景**
+用户可以关闭发现技能。关闭后不只是技能中心开关变灰，而是新对话不再注入市场搜索和安装工具，聊天入口也不再展示发现技能。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 关闭 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled false`
+7. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+8. 读取当前会话可见工具快照：`tauri-pilot aijia visible-tools --json`，记为 `$VISIBLE_TOOLS`
+9. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
+10. 在输入框输入：`请帮我完成 find-skills-e2e-web-fetch 场景；如果当前没有对应能力，请自己查找可安装技能。`
+11. `tauri-pilot aijia send`
+12. 等待对话结束：`tauri-pilot aijia wait-agent-idle --timeout 180`
+13. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `~/.renlijia/users/{scope}/skillsConfig.json` 中 `disabledSkillIds` 包含 `find-skills`
+- `$CHAT_SKILLS` 中不存在 `id == "find-skills"` 的技能项
+- `$VISIBLE_TOOLS` 中不存在 `name == "SkillMarketSearch"`
+- `$VISIBLE_TOOLS` 中不存在 `name == "SkillMarketInstall"`
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 的调用
+- `~/.renlijia/users/{scope}/skills/find-skills-e2e-web-fetch/SKILL.md` 不存在
+- `~/.renlijia/skills/find-skills-e2e-web-fetch/SKILL.md` 不存在
+
+---
+
+## 意图-技能-029：缺少能力时，自动添加市场技能
+
+**场景**
+用户不会说“有没有浏览器相关技能”，只会提出一个自然任务。当前本地没有对应技能时，Agent 可以先加载发现技能，再搜索企业市场、安装匹配技能，并继续使用新安装的技能完成任务。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 读取市场列表快照：`tauri-pilot aijia skill-market-list --json --include-description`，确认 `find-skills-e2e-web-fetch.installed == false`；如果该测试专用技能不存在或已安装，本意图记为环境阻塞/跳过
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+10. 读取当前会话可见工具快照：`tauri-pilot aijia visible-tools --json`，记为 `$VISIBLE_TOOLS`
+11. 在输入框输入：`请完成 find-skills-e2e-web-fetch 场景：访问示例网页并提取标题。如果当前没有对应能力，请自己查找可安装技能。`
+12. `tauri-pilot aijia send`
+13. 等待对话结束：`tauri-pilot aijia wait-agent-idle --timeout 300`
+14. 读取 `$CONV_ID/messages.jsonl`
+15. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_AFTER`
+
+**验收标准**
+- `$VISIBLE_TOOLS` 中存在 `name == "SkillMarketSearch"` 的工具
+- `$VISIBLE_TOOLS` 中存在 `name == "SkillMarketInstall"` 的工具
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 且参数包含 `find-skills-e2e-web-fetch` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `find-skills-e2e-web-fetch` 的调用
+- `~/.renlijia/users/{scope}/skills/find-skills-e2e-web-fetch/SKILL.md` 存在，或 `~/.renlijia/skills/find-skills-e2e-web-fetch/SKILL.md` 存在
+- `$SKILL_LIST_AFTER` 中存在 `id == "find-skills-e2e-web-fetch"` 的技能项
+- `$SKILL_LIST_AFTER` 中 `find-skills-e2e-web-fetch.enabled == true`
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills-e2e-web-fetch` 的调用
+- `$CONV_ID/messages.jsonl` 中对应的 tool record 内容包含 `[find-skills-e2e-web-fetch]`
+
+---
+
+## 意图-技能-030：候选不唯一时，先询问用户
+
+**场景**
+市场搜索可能返回多个可用技能。候选不唯一时，Agent 不能静默挑一个安装；必须先向用户确认要安装哪个技能。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 读取市场列表快照：`tauri-pilot aijia skill-market-list --json --include-description`，确认 `find-skills-e2e-choice-alpha.installed == false` 且 `find-skills-e2e-choice-beta.installed == false`；如果任一测试专用技能不存在或已安装，本意图记为环境阻塞/跳过
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+10. 在输入框输入：`请完成 find-skills-e2e-choice 场景。这个任务可能有多个市场技能能处理，请在安装前让我选择。`
+11. `tauri-pilot aijia send`
+12. 等待对话进入等待用户确认状态：`tauri-pilot aijia wait-agent-idle --timeout 180`
+13. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 且参数包含 `find-skills-e2e-choice` 的调用
+- `$CONV_ID/messages.jsonl` 中存在面向用户的确认消息，内容同时包含 `find-skills-e2e-choice-alpha` 与 `find-skills-e2e-choice-beta`
+- 在上述确认消息之前，`$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 的调用
+- `~/.renlijia/users/{scope}/skills/find-skills-e2e-choice-alpha/SKILL.md` 不存在
+- `~/.renlijia/users/{scope}/skills/find-skills-e2e-choice-beta/SKILL.md` 不存在
+- `~/.renlijia/skills/find-skills-e2e-choice-alpha/SKILL.md` 不存在
+- `~/.renlijia/skills/find-skills-e2e-choice-beta/SKILL.md` 不存在
+
+---
+
+## 意图-技能-031：市场无匹配时，不安装技能
+
+**场景**
+用户提出一个没有任何市场技能能覆盖的任务。Agent 可以尝试发现技能，但不能把无关技能安装到本地。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+8. 在输入框输入：`请完成 __aijia_find_skills_no_match_9f3b__ 场景；如果本地没有对应能力，请查找市场技能，但不要安装无关技能。`
+9. `tauri-pilot aijia send`
+10. 等待对话结束：`tauri-pilot aijia wait-agent-idle --timeout 180`
+11. 读取 `$CONV_ID/messages.jsonl`
+12. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_AFTER`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 且参数包含 `__aijia_find_skills_no_match_9f3b__` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 的调用
+- `$SKILL_LIST_AFTER` 中不存在 `id` 包含 `__aijia_find_skills_no_match_9f3b__` 的技能项
+- `$CONV_ID/messages.jsonl` 中最后一条 assistant 消息包含 `未找到`、`没有找到` 或 `暂无合适`
+- `~/.renlijia/users/{scope}/skills/__aijia_find_skills_no_match_9f3b__/SKILL.md` 不存在
+- `~/.renlijia/skills/__aijia_find_skills_no_match_9f3b__/SKILL.md` 不存在
+
+---
+
+## 意图-技能-032：技能已安装时，不重复安装
+
+**场景**
+用户已经安装过一个市场技能。之后再次提出匹配该技能的任务时，系统可以直接使用已安装技能，不能再次执行同一个技能包的安装动作。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 通过市场入口添加测试技能：`tauri-pilot aijia skill-market-add --id find-skills-e2e-web-fetch`
+9. 读取 `find-skills-e2e-web-fetch/SKILL.md` 的文件路径与最后修改时间，记为 `$SKILL_FILE_BEFORE`、`$SKILL_MTIME_BEFORE`
+10. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+11. 在输入框输入：`请使用 find-skills-e2e-web-fetch 场景访问示例网页并提取标题。`
+12. `tauri-pilot aijia send`
+13. 等待对话结束：`tauri-pilot aijia wait-agent-idle --timeout 180`
+14. 读取 `$CONV_ID/messages.jsonl`
+15. 再次读取 `find-skills-e2e-web-fetch/SKILL.md` 的最后修改时间，记为 `$SKILL_MTIME_AFTER`
+
+**验收标准**
+- `$SKILL_FILE_BEFORE` 存在
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `find-skills-e2e-web-fetch` 的调用
+- `$SKILL_MTIME_AFTER == $SKILL_MTIME_BEFORE`
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills-e2e-web-fetch` 的调用
+- `$CONV_ID/messages.jsonl` 中对应的 tool record 内容包含 `[find-skills-e2e-web-fetch]`
+- 技能中心列表中 `find-skills-e2e-web-fetch` 只有一个技能项
+
+---
+
+## 意图-技能-033：自动添加后，关闭仍生效
+
+**场景**
+发现技能自动安装市场技能后，该技能仍然受技能中心开关控制。用户关闭这个新技能后，聊天入口、模型 catalog 与 `Skill` 工具都不能绕过关闭状态继续加载它，也不能通过发现技能再次安装同一个已关闭技能来绕过用户选择。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 读取市场列表快照：`tauri-pilot aijia skill-market-list --json --include-description`，确认 `find-skills-e2e-disable-after-install.installed == false`；如果该测试专用技能不存在或已安装，本意图记为环境阻塞/跳过
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记安装会话为 `$INSTALL_CONV_ID`
+10. 在输入框输入：`请完成 find-skills-e2e-disable-after-install 场景：访问示例网页并提取标题。如果当前没有对应能力，请自己查找可安装技能。`
+11. `tauri-pilot aijia send`
+12. 等待安装会话结束：`tauri-pilot aijia wait-agent-idle --timeout 300`
+13. 读取 `$INSTALL_CONV_ID/messages.jsonl`
+14. 打开技能中心：`tauri-pilot aijia skill-center-open`
+15. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`
+16. 关闭 `find-skills-e2e-disable-after-install`：`tauri-pilot aijia skill-center-toggle --id find-skills-e2e-disable-after-install --enabled false`
+17. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
+18. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记验证会话为 `$CONV_ID`
+19. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
+20. 在输入框输入：`请使用 find-skills-e2e-disable-after-install 场景访问示例网页并提取标题；如果不可用，不要重新安装同一个已关闭技能。`
+21. `tauri-pilot aijia send`
+22. 等待验证会话结束：`tauri-pilot aijia wait-agent-idle --timeout 180`
+23. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$INSTALL_CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `find-skills-e2e-disable-after-install` 的调用
+- `$INSTALL_CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills-e2e-disable-after-install` 的调用
+- `~/.renlijia/users/{scope}/skillsConfig.json` 中 `disabledSkillIds` 包含 `find-skills-e2e-disable-after-install`
+- `$SKILL_LIST` 中存在 `id == "find-skills-e2e-disable-after-install"` 的技能项
+- `$SKILL_LIST` 中 `find-skills-e2e-disable-after-install.enabled == false`
+- `$CHAT_SKILLS` 中不存在 `id == "find-skills-e2e-disable-after-install"` 的技能项
+- `$CONV_ID/messages.jsonl` 中不存在 `role == "tool"` 且内容包含 `[find-skills-e2e-disable-after-install]` 的 SKILL.md body 文本
+- 如果 `$CONV_ID/messages.jsonl` 中出现参数包含 `find-skills-e2e-disable-after-install` 的 `Skill` 调用，紧随其后的 tool record `isError == true`
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `find-skills-e2e-disable-after-install` 的调用
+
+---
+
+## 意图-技能-034：睿人事未安装，先发现专用技能
+
+**场景**
+用户说「玩转睿人事」或「睿人事」时，如果本地没有 `rehcm` 专用技能，Agent 不能先问系统网址，也不能退到通用 `browser`；必须先加载发现技能，搜索企业市场里的 `rehcm`。如果搜索结果只有一个高置信 `rehcm` 候选，可以自动安装并继续加载该技能。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 读取市场列表快照：`tauri-pilot aijia skill-market-list --json --include-description`，确认 `rehcm.installed == false`；如果 `rehcm` 不存在或已经安装，本意图记为环境阻塞
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+10. 在输入框输入：`帮我用玩转睿人事查一下王小明现在在哪个部门、岗位是什么，只读查看，不要修改任何数据。`
+11. `tauri-pilot aijia send`
+12. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+13. 读取 `$CONV_ID/messages.jsonl`
+14. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_AFTER`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- 上述 `SkillMarketSearch` 调用参数中包含字符串 `玩转睿人事` 或 `睿人事`
+- `SkillMarketSearch` 对应的 tool record 内容包含 `rehcm`
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketSearch` 调用之前的 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- 如果搜索结果只有一个高置信 `rehcm` 候选，`$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketInstall` 调用之前的 `toolCalls[].name == "AskUserQuestion"` 调用
+- 如果搜索结果只有一个高置信 `rehcm` 候选，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `rehcm` 的调用
+- 如果发生 `SkillMarketInstall(rehcm)`，`$SKILL_LIST_AFTER` 中存在 `id == "rehcm"` 的技能项且 `rehcm.enabled == true`
+- 如果发生 `SkillMarketInstall(rehcm)`，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `rehcm` 的调用
+- `$CONV_ID/messages.jsonl` 中最后一条 assistant 文本不包含 `网址`、`登录地址` 或 `怎么访问睿人事`
+
+---
+
+## 意图-技能-035：钉钉已安装，直接加载专用技能
+
+**场景**
+用户只会说「看看钉钉今天有哪些待办」。如果 `dingtalk-workspace` 已安装并开启，Agent 应直接加载钉钉专用技能，不需要通过 `find-skills` 搜市场，也不应先用 `browser` 或 `PowerShell` 试探。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`
+6. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，确认 `dingtalk-workspace.enabled == true`；如果 `dingtalk-workspace` 未安装或关闭，本意图记为环境阻塞
+7. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+8. 在输入框输入：`帮我看看钉钉今天有哪些待办，只读查看，不要发消息，也不要修改任何内容。`
+9. `tauri-pilot aijia send`
+10. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+11. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `dingtalk-workspace` 的调用
+- `Skill(dingtalk-workspace)` 对应的 tool record 内容包含字符串 `dingtalk-workspace-cli`
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `Skill(dingtalk-workspace)` 调用之前的 `toolCalls[].name == "SkillMarketSearch"` 调用
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `Skill(dingtalk-workspace)` 调用之前的 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+
+---
+
+## 意图-技能-036：普通网页任务，直接使用浏览器
+
+**场景**
+发现技能不能过度抢占普通网页任务。用户只是让 AI 打开公开网页并提取标题时，已安装的 `browser` 就是明确可用技能，Agent 应直接加载浏览器技能，不需要搜索市场。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 确认 `browser` 已开启：`tauri-pilot aijia skill-center-toggle --id browser --enabled true`
+8. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+9. 在输入框输入：`帮我打开 https://example.com，把页面标题和第一段文字抓出来。`
+10. `tauri-pilot aijia send`
+11. 等待对话结束：`tauri-pilot aijia wait-agent-idle --timeout 240`
+12. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 的调用
+- `$CONV_ID/messages.jsonl` 中最后一条 assistant 文本包含 `Example Domain`
+
+---
+
+## 意图-技能-037：智能薪酬未安装，自动安装后加载
+
+**场景**
+用户不会说“去市场找 smartcb 技能”，只会说“用智能薪酬查一下薪资组概览”。当 `smartcb` 尚未安装时，如果市场搜索只返回一个高置信候选，Agent 可以直接安装该技能并继续加载它，不需要额外询问用户。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 读取市场列表快照：`tauri-pilot aijia skill-market-list --json --include-description`，确认 `smartcb.installed == false`；如果该技能不存在或已经安装，本意图记为环境阻塞
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+10. 在输入框输入：`帮我用智能薪酬查一下本月薪资组概览，只读查看，不要修改任何数据。`
+11. `tauri-pilot aijia send`
+12. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 300`
+13. 读取 `$CONV_ID/messages.jsonl`
+14. 读取当前对话的待处理动作快照：`tauri-pilot aijia pending-action-snapshot --json`
+15. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_AFTER`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 且参数包含 `智能薪酬` 或 `薪资组概览`
+- `SkillMarketSearch` 对应的 tool record 内容包含 `smartcb`
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketInstall` 调用之前的 `toolCalls[].name == "AskUserQuestion"` 调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `smartcb` 的调用
+- `$SKILL_LIST_AFTER` 中存在 `id == "smartcb"` 的技能项
+- `$SKILL_LIST_AFTER` 中 `smartcb.enabled == true`
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `smartcb` 的调用
+
+---
+
+## 意图-技能-038：薪酬市场任务，先发现候选技能
+
+**场景**
+用户询问某岗位薪酬市场区间时，本地没有明显专用技能。Agent 应先加载发现技能并搜索市场，返回薪酬相关候选；如果候选不唯一或置信度不足，先询问用户，不静默安装一个可能不合适的技能。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，确认 `salary-query` 与 `salary-benchmarking` 都不在已安装且启用的技能列表中；如果任一已安装且开启，本意图记为环境阻塞
+8. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+9. 在输入框输入：`帮我看一下杭州高级 Java 工程师现在的薪酬市场区间，给我一个可用于招聘报价的参考。`
+10. `tauri-pilot aijia send`
+11. 等待对话结束或等待用户确认状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+12. 读取 `$CONV_ID/messages.jsonl`
+13. 读取当前对话的待处理动作快照：`tauri-pilot aijia pending-action-snapshot --json`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- 上述 `SkillMarketSearch` 调用参数中包含字符串 `杭州高级 Java` 或 `薪酬市场`
+- `SkillMarketSearch` 对应的 tool record 内容包含 `salary-query` 或 `salary-benchmarking`
+- 如果搜索结果中同时包含 `salary-query` 与 `salary-benchmarking`，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "AskUserQuestion"` 的调用
+- 如果搜索结果中只包含一个高置信薪酬候选，允许出现 `SkillMarketInstall` 调用，但该调用参数必须等于搜索返回的薪酬候选 `pluginId`
+
+---
+
+## 意图-技能-039：只问员工归属，先发现人事技能
+
+**场景**
+用户不会说“安装睿人事技能”，甚至可能不知道系统叫睿人事，只会直接问员工的部门和岗位。当本地没有 `rehcm` 专用技能时，Agent 不能先问用户系统入口，也不能先用通用浏览器尝试；应先通过发现技能搜索人事类市场技能。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 读取市场列表快照：`tauri-pilot aijia skill-market-list --json --include-description`，确认 `rehcm.installed == false`；如果 `rehcm` 不存在或已经安装，本意图记为环境阻塞
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+10. 在输入框输入：`帮我查一下王小卡现在属于哪个部门，岗位是什么，只看信息，不要改任何资料。`
+11. `tauri-pilot aijia send`
+12. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 300`
+13. 读取 `$CONV_ID/messages.jsonl`
+14. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_AFTER`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- 上述 `SkillMarketSearch` 调用参数中包含字符串 `王小卡`、`部门` 或 `岗位`
+- `SkillMarketSearch` 对应的 tool record 内容包含 `rehcm`
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketSearch` 调用之前的 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- 如果搜索结果只有一个高置信 `rehcm` 候选，`$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketInstall` 调用之前的 `toolCalls[].name == "AskUserQuestion"` 调用
+- 如果搜索结果只有一个高置信 `rehcm` 候选，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `rehcm` 的调用
+- 如果发生 `SkillMarketInstall(rehcm)`，`$SKILL_LIST_AFTER` 中存在 `id == "rehcm"` 的技能项且 `rehcm.enabled == true`
+- 如果发生 `SkillMarketInstall(rehcm)`，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `rehcm` 的调用
+
+---
+
+## 意图-技能-040：只问薪资组进度，先发现薪酬技能
+
+**场景**
+用户不会说“用 smartcb”或“去技能市场”，只会问薪资组生成情况。当本地没有 `smartcb` 专用技能时，Agent 应把“薪资组”识别为智能薪酬业务线索，先搜索市场里的薪酬专用技能。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`
+8. 读取市场列表快照：`tauri-pilot aijia skill-market-list --json --include-description`，确认 `smartcb.installed == false`；如果 `smartcb` 不存在或已经安装，本意图记为环境阻塞
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+10. 在输入框输入：`这个月哪些薪资组已经生成了？帮我汇总一下总数、已生成数量和未生成数量，只读查看。`
+11. `tauri-pilot aijia send`
+12. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 300`
+13. 读取 `$CONV_ID/messages.jsonl`
+14. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_AFTER`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 且参数包含 `薪资组`
+- `SkillMarketSearch` 对应的 tool record 内容包含 `smartcb`
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketSearch` 调用之前的 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- 如果搜索结果只有一个高置信 `smartcb` 候选，`$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketInstall` 调用之前的 `toolCalls[].name == "AskUserQuestion"` 调用
+- 如果搜索结果只有一个高置信 `smartcb` 候选，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `smartcb` 的调用
+- 如果发生 `SkillMarketInstall(smartcb)`，`$SKILL_LIST_AFTER` 中存在 `id == "smartcb"` 的技能项且 `smartcb.enabled == true`
+- 如果发生 `SkillMarketInstall(smartcb)`，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `smartcb` 的调用
+
+---
+
+## 意图-技能-041：薪酬技能已安装，追问直接加载
+
+**场景**
+用户已经通过自动发现安装过智能薪酬能力，后续不会再说“请搜索技能”。当 `smartcb` 已安装并开启时，Agent 应直接加载 `smartcb`，不能每次遇到薪资组都重新走市场搜索。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`
+5. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，确认 `smartcb.enabled == true`；如果 `smartcb` 未安装或关闭，本意图记为环境阻塞
+6. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+7. 在输入框输入：`再帮我看一下本月还有哪些薪资组没生成，只读查看，不要修改。`
+8. `tauri-pilot aijia send`
+9. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 300`
+10. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `smartcb` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `Skill(smartcb)` 调用之前的 `toolCalls[].name == "SkillMarketSearch"` 调用
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `Skill(smartcb)` 调用之前的 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `smartcb` 的调用
+
+---
+
+## 意图-技能-042：只问钉钉审批，直接加载钉钉
+
+**场景**
+用户不会区分钉钉待办、审批、工作台技能，只会说“看看钉钉里有没有要处理的审批”。当 `dingtalk-workspace` 已安装并开启时，Agent 应直接加载钉钉技能，不应再搜索市场或先用浏览器。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`
+5. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，确认 `dingtalk-workspace.enabled == true`；如果 `dingtalk-workspace` 未安装或关闭，本意图记为环境阻塞
+6. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+7. 在输入框输入：`看看钉钉里今天有没有等我处理的审批，先只汇总，不要处理。`
+8. `tauri-pilot aijia send`
+9. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+10. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `dingtalk-workspace` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `Skill(dingtalk-workspace)` 调用之前的 `toolCalls[].name == "SkillMarketSearch"` 调用
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `Skill(dingtalk-workspace)` 调用之前的 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 的调用
+
+---
+
+## 意图-技能-043：未知系统无匹配，不安装无关
+
+**场景**
+用户提到一个市场里不存在的业务系统时，Agent 可以搜索市场，但不能为了完成任务静默安装看起来沾边的无关技能。找不到匹配时，应向用户说明当前没有合适技能，并请求入口、账号或更多系统信息。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+8. 在输入框输入：`帮我去采购星球看一下上周采购单都到哪一步了，我不知道入口在哪里。`
+9. `tauri-pilot aijia send`
+10. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+11. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- 上述 `SkillMarketSearch` 调用参数中包含字符串 `采购星球` 或 `采购单`
+- 如果 `SkillMarketSearch` 对应的 tool record 为 `no_match`、不含采购系统候选或仅含中低置信候选，`$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在位于首次 `SkillMarketSearch` 调用之前的 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- `$CONV_ID/messages.jsonl` 中最后一条 assistant 文本包含 `没有找到`、`入口`、`地址` 或 `更多信息`
+
+---
+
+## 意图-技能-044：公开网页抓取，直接加载浏览器
+
+**场景**
+用户说“把这个公开网页内容抓出来”时，这不是企业技能市场问题。即使 `find-skills` 已开启，Agent 也应直接加载浏览器技能，避免把普通网页抓取误判为市场技能发现。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+5. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+6. 开启 `browser`：`tauri-pilot aijia skill-center-toggle --id browser --enabled true`
+7. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+8. 在输入框输入：`把 https://example.com 这个页面的标题和正文第一段提取出来。`
+9. `tauri-pilot aijia send`
+10. 等待对话结束：`tauri-pilot aijia wait-agent-idle --timeout 240`
+11. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `browser` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 的调用
+- `$CONV_ID/messages.jsonl` 中最后一条 assistant 文本包含 `Example Domain`
+
+---
+
+## 意图-技能-045：薪酬分析多候选，先询问用户
+
+**场景**
+用户提出“工资表公平性分析、调薪建议”这类复合诉求时，市场可能存在多个薪酬相关技能。Agent 应先搜索市场；如果候选不唯一或置信度不足，必须先问用户选择目标分析方向，不能静默安装任意一个技能。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+6. 开启 `find-skills`：`tauri-pilot aijia skill-center-toggle --id find-skills --enabled true`
+7. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，确认 `comp-analysis-v2`、`salary-benchmarking`、`salary-query` 都不在已安装且启用的技能列表中；如果任一已安装且开启，本意图记为环境阻塞
+8. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+9. 在输入框输入：`我有一张工资表，想看看薪酬是不是公平，再给一个调薪建议。`
+10. `tauri-pilot aijia send`
+11. 等待对话结束或等待用户确认状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+12. 读取 `$CONV_ID/messages.jsonl`
+13. 读取当前对话的待处理动作快照：`tauri-pilot aijia pending-action-snapshot --json`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "SkillMarketSearch"` 的调用
+- 上述 `SkillMarketSearch` 调用参数中包含字符串 `工资表`、`薪酬`、`公平` 或 `调薪`
+- `SkillMarketSearch` 对应的 tool record 内容包含 `comp-analysis-v2`、`salary-benchmarking` 或 `salary-query`
+- 如果搜索结果包含两个及以上薪酬相关候选，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "AskUserQuestion"` 的调用
+- 如果搜索结果包含两个及以上薪酬相关候选，`$CONV_ID/messages.jsonl` 中不存在位于首次 `AskUserQuestion` 调用之前的 `toolCalls[].name == "SkillMarketInstall"` 调用

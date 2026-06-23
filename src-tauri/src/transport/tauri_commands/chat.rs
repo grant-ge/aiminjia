@@ -3,7 +3,7 @@
 // Tauri commands and the legacy PluginContext-based tool chain.
 // Migrate to CapabilityContext when the command layer is refactored.
 #![allow(deprecated)]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -861,10 +861,415 @@ impl TauriChatServices {
     fn db(&self) -> Arc<AppStorage> {
         self.cus.get_or(&self.root_db)
     }
+
+    fn runtime_services(&self) -> SharedChatRuntimeServices {
+        SharedChatRuntimeServices {
+            cus: self.cus.clone(),
+            root_db: self.root_db.clone(),
+            gateway: self.gateway.clone(),
+            file_mgr: self.file_mgr.clone(),
+            assistant_write_queue: self.assistant_write_queue.clone(),
+            crypto: self.crypto.clone(),
+            tool_registry: self.tool_registry.clone(),
+            auth_manager: self.auth_manager.clone(),
+            app: Some(self.app.clone()),
+            skill_registry: self.skill_registry.clone(),
+            runtime_resolver: self.runtime_resolver.clone(),
+            employee_run_overrides: self.employee_run_overrides.clone(),
+            authorized_workspace_store: None,
+            permission_ctx: None,
+            task_store: None,
+            task_notification_queue: None,
+            agent_registry: None,
+            agent_runtime: None,
+            user_scoped_path_resolver: None,
+            system_prompt_override: None,
+            max_iterations_override: None,
+            model_override: None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct SharedChatRuntimeServices {
+    cus: Arc<CurrentUserStorage>,
+    root_db: Arc<AppStorage>,
+    gateway: Arc<LlmGateway>,
+    file_mgr: Arc<FileManager>,
+    assistant_write_queue: Arc<MessageWriteQueue>,
+    crypto: Option<Arc<SecureStorage>>,
+    tool_registry: Arc<ToolRegistry>,
+    auth_manager: Arc<AuthManager>,
+    app: Option<tauri::AppHandle>,
+    skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+    runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
+    employee_run_overrides: Arc<std::sync::Mutex<HashMap<String, EmployeeRunOverrides>>>,
+    authorized_workspace_store: Option<Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>>,
+    permission_ctx: Option<Arc<crate::runtime::path_auth::ToolPermissionContext>>,
+    task_store: Option<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>,
+    task_notification_queue:
+        Option<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>,
+    agent_registry: Option<Arc<crate::runtime::agent::registry::AgentRegistry>>,
+    agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
+    user_scoped_path_resolver: Option<Arc<dyn crate::storage::UserScopedPathResolver>>,
+    system_prompt_override: Option<String>,
+    max_iterations_override: Option<usize>,
+    model_override: Option<String>,
+}
+
+impl SharedChatRuntimeServices {
+    fn db(&self) -> Arc<AppStorage> {
+        self.cus.get_or(&self.root_db)
+    }
+
+    fn load_authorized_workspace(
+        &self,
+        conversation_id: &str,
+    ) -> Option<crate::runtime::store::AuthorizedWorkspaceRef> {
+        if let Some(app) = self.app.as_ref() {
+            return chat_runtime_impl::load_authorized_workspace(app, conversation_id);
+        }
+        self.authorized_workspace_store
+            .as_ref()
+            .and_then(|store| {
+                store
+                    .get_current_for_session(
+                        conversation_id,
+                        &SessionId::new(conversation_id.to_string()),
+                    )
+                    .ok()
+                    .flatten()
+            })
+            .map(|aw| crate::runtime::store::AuthorizedWorkspaceRef {
+                id: aw.id,
+                root_path: aw.root_path,
+                display_name: aw.display_name,
+            })
+    }
+
+    async fn tool_description_context(&self) -> crate::runtime::tools::ToolDescriptionContext {
+        if let Some(app) = self.app.as_ref() {
+            return chat_runtime_impl::build_tool_description_context(app).await;
+        }
+        let agents = self
+            .agent_registry
+            .as_ref()
+            .map(|registry| {
+                registry
+                    .list()
+                    .into_iter()
+                    .map(|def| crate::runtime::tools::AgentDefSummary {
+                        name: def.name,
+                        description: chat_runtime_impl::first_sentence(&def.description, 120),
+                        source: def.source,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        crate::runtime::tools::ToolDescriptionContext {
+            agents,
+            mcp_servers: Vec::new(),
+        }
+    }
+
+    async fn request_scoped_tool_overrides(
+        &self,
+        ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> HashMap<String, crate::llm::streaming::ToolDefinition> {
+        if let Some(app) = self.app.as_ref() {
+            return chat_runtime_impl::build_request_scoped_tool_overrides(app, ctx).await;
+        }
+        match self.agent_registry.clone() {
+            Some(registry) => {
+                chat_runtime_impl::build_request_scoped_tool_overrides_from_registry(registry, ctx)
+                    .await
+            }
+            None => HashMap::new(),
+        }
+    }
+
+    fn load_app_settings(&self) -> Arc<AppSettings> {
+        let map = self.db().get_all_settings().unwrap_or_default();
+        let mut settings = if map.is_empty() {
+            AppSettings::default()
+        } else {
+            AppSettings::from_string_map(&map)
+        };
+        if let Some(ss) = self.crypto.as_ref() {
+            settings.primary_api_key = decrypt_api_key(ss, &settings.primary_api_key);
+        }
+        if let Some(model) = self
+            .model_override
+            .as_deref()
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+        {
+            settings.primary_model = model.to_string();
+            settings.cloud_model = model.to_string();
+            settings.custom_model_name = model.to_string();
+        }
+        Arc::new(settings)
+    }
+
+    async fn runtime_for_request(
+        &self,
+        runtime: &SessionRuntime,
+        request: &ChatTurnRequest,
+    ) -> SessionRuntime {
+        let conversation_id = request.conversation_id.as_str().to_string();
+        let workspace_path = self.file_mgr.workspace_path();
+        let active_persona_id: Option<String> = match request.persona_id_override.as_deref() {
+            Some(id) => Some(id.to_string()),
+            None => self.db().get_active_persona_id().ok(),
+        };
+        let agent_runtime = self.agent_runtime.clone().or_else(|| {
+            self.app.as_ref().and_then(|app| {
+                app.try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
+                    .map(|v| v.inner().clone())
+            })
+        });
+        let deps = crate::plugin::registry::RequestScopedRuntimeDeps {
+            storage: self.db(),
+            file_manager: self.file_mgr.clone(),
+            workspace_path: workspace_path.clone(),
+            conversation_id: conversation_id.clone(),
+            session_id: request.conversation_id.clone(),
+            run_id: Some(request.run_id.clone()),
+            agent_id: None,
+            app_handle: self.app.clone(),
+            auth_manager: Some(self.auth_manager.clone()),
+            model: String::new(),
+            gateway: Some(self.gateway.clone()),
+            tool_registry: Some(self.tool_registry.clone()),
+            app_settings: Some(self.load_app_settings()),
+            agent_runtime,
+            async_agent_task_store: self.task_store.clone(),
+            task_notification_queue: self.task_notification_queue.clone(),
+            agent_registry: self.agent_registry.clone(),
+            user_scoped_path_resolver: self.user_scoped_path_resolver.clone(),
+            event_bus: None,
+            skill_registry: Some(self.skill_registry.clone()),
+            authorized_workspace: self.load_authorized_workspace(&conversation_id),
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: request.permission_mode,
+            runtime_resolver: self.runtime_resolver.clone(),
+            permission_ctx: self.permission_ctx.clone(),
+            current_persona_id: active_persona_id,
+        };
+        let dispatcher = self.tool_registry.to_runtime_dispatcher(deps).await;
+        let mut query_engine = QueryEngine::with_dispatcher(dispatcher)
+            .with_workspace_path(workspace_path)
+            .with_runtime_resolver(self.runtime_resolver.clone());
+        if let Some(permission_ctx) = self.permission_ctx.clone() {
+            query_engine = query_engine.with_permission_ctx(permission_ctx);
+        }
+        runtime.clone().with_query_engine(query_engine)
+    }
+}
+
+pub(crate) struct HeadlessChatRuntimeConfig {
+    pub cus: Arc<CurrentUserStorage>,
+    pub root_db: Arc<AppStorage>,
+    pub gateway: Arc<LlmGateway>,
+    pub file_mgr: Arc<FileManager>,
+    pub crypto: Option<Arc<SecureStorage>>,
+    pub tool_registry: Arc<ToolRegistry>,
+    pub auth_manager: Arc<AuthManager>,
+    pub skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+    pub permission_store: Arc<crate::runtime::store::PermissionStore>,
+    pub authorized_workspace_store: Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>,
+    pub default_folder: PathBuf,
+    pub permission_ctx: Arc<crate::runtime::path_auth::ToolPermissionContext>,
+    pub task_store: Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>,
+    pub task_notification_queue:
+        Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>,
+    pub team_registry: Arc<crate::runtime::agent::TeamRegistry>,
+    pub agent_names: Arc<crate::runtime::agent::AgentNameRegistry>,
+    pub inbox_registry: Arc<crate::runtime::agent::InboxRegistry>,
+    pub lead_idle: Arc<crate::runtime::agent::LeadIdleSupervisor>,
+    pub cancellation_registry: Arc<crate::runtime::agent::CancellationRegistry>,
+    pub agent_registry: Arc<crate::runtime::agent::registry::AgentRegistry>,
+    pub agent_runtime: Arc<crate::runtime::agent::AgentRuntime>,
+    pub user_scoped_path_resolver: Arc<dyn crate::storage::UserScopedPathResolver>,
+    pub system_prompt_override: Option<String>,
+    pub max_iterations_override: Option<usize>,
+    pub model_override: Option<String>,
+    pub bus: RuntimeEventBus,
+}
+
+pub(crate) struct HeadlessChatRuntime {
+    runtime: SessionRuntime,
+    services: SharedChatRuntimeServices,
+}
+
+impl HeadlessChatRuntime {
+    pub(crate) async fn run_chat_request(&self, request: ChatTurnRequest) -> Result<(), String> {
+        let conversation_id = request.conversation_id.as_str().to_string();
+        let run_id = request.run_id.clone();
+        self.services
+            .gateway
+            .set_busy_for_run(&conversation_id, run_id.clone())?;
+        let runtime = self
+            .services
+            .runtime_for_request(&self.runtime, &request)
+            .await;
+        let result = runtime.run_chat_request(request).await;
+        self.services
+            .gateway
+            .clear_task_for_run(&conversation_id, &run_id);
+        result
+    }
+
+    pub(crate) async fn visible_tool_names(&self, conversation_id: &str) -> Vec<String> {
+        let authorized_workspace = self.services.load_authorized_workspace(conversation_id);
+        let tool_desc_ctx = self.services.tool_description_context().await;
+        let request_scoped_overrides = self
+            .services
+            .request_scoped_tool_overrides(&tool_desc_ctx)
+            .await;
+        chat_runtime_impl::build_visible_tool_defs(
+            self.services.tool_registry.as_ref(),
+            authorized_workspace.is_some(),
+            chat_runtime_impl::ToolSchemaFilter::DailyWhitelist,
+            &tool_desc_ctx,
+            &request_scoped_overrides,
+        )
+        .await
+        .into_iter()
+        .map(|def| def.name)
+        .collect()
+    }
+}
+
+struct SharedSessionRuntimeConfig {
+    services: SharedChatRuntimeServices,
+    bus: RuntimeEventBus,
+    permission_store: Arc<crate::runtime::store::PermissionStore>,
+    authorized_workspace_store: Option<Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>>,
+    default_folder: Option<PathBuf>,
+    permission_ctx: Option<Arc<crate::runtime::path_auth::ToolPermissionContext>>,
+    task_notification_queue:
+        Option<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>,
+    team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
+    agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
+    inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
+    lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
+    cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
+    host: Option<Arc<dyn crate::transport::runtime_host::RuntimeHost>>,
+    subscriber_anchor: Option<Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>>,
+}
+
+fn build_session_runtime_from_shared(config: SharedSessionRuntimeConfig) -> SessionRuntime {
+    let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
+        services: config.services.clone(),
+        agents_md_loader: Arc::new(tokio::sync::Mutex::new(
+            crate::runtime::agents_md::AgentsMdLoader::new(),
+        )),
+    });
+    let mut runtime = SessionRuntime::with_llm_executor(
+        QueryEngine::new()
+            .with_workspace_path(config.services.file_mgr.workspace_path().to_path_buf())
+            .with_runtime_resolver(config.services.runtime_resolver.clone()),
+        config.bus,
+        llm_executor,
+    )
+    .with_permission_store(config.permission_store);
+    if let Some(store) = config.authorized_workspace_store {
+        runtime = runtime.with_authorized_workspace_store(store);
+    }
+    if let Some(default_folder) = config.default_folder {
+        runtime = runtime.with_default_folder(default_folder);
+    }
+    if let Some(permission_ctx) = config.permission_ctx {
+        runtime = runtime.with_permission_ctx(permission_ctx);
+    }
+    if let Some(queue) = config.task_notification_queue {
+        runtime = runtime.with_task_notification_queue(queue);
+    }
+    if let Some(registry) = config.team_registry {
+        runtime = runtime.with_team_registry(registry);
+    }
+    if let Some(registry) = config.agent_names {
+        runtime = runtime.with_agent_names(registry);
+    }
+    if let Some(registry) = config.inbox_registry {
+        runtime = runtime.with_inbox_registry(registry);
+    }
+    if let Some(sup) = config.lead_idle {
+        runtime = runtime.with_lead_idle(sup);
+    }
+    if let Some(registry) = config.cancellation_registry {
+        runtime = runtime.with_cancellation_registry(registry);
+    }
+    let compact_client: Arc<dyn CompactSummaryClient> = Arc::new(LlmCompactSummaryClient::new(
+        config.services.gateway.clone(),
+    ));
+    runtime = runtime.with_compact_client(compact_client);
+    runtime = runtime.with_run_activity_controller(Arc::new(GatewayRunActivityController::new(
+        config.services.gateway.clone(),
+    )));
+    if let Some(host) = config.host {
+        runtime = runtime.with_host(host);
+    }
+    if let Some(subscriber) = config.subscriber_anchor {
+        runtime.anchor_subscriber(subscriber);
+    }
+    runtime
+}
+
+pub(crate) fn build_headless_chat_runtime(
+    config: HeadlessChatRuntimeConfig,
+) -> HeadlessChatRuntime {
+    let assistant_write_queue = Arc::new(MessageWriteQueue::new(Arc::new(DynamicWriteTarget {
+        cus: config.cus.clone(),
+        root_db: config.root_db.clone(),
+    })));
+    let services = SharedChatRuntimeServices {
+        cus: config.cus,
+        root_db: config.root_db,
+        gateway: config.gateway,
+        file_mgr: config.file_mgr,
+        assistant_write_queue,
+        crypto: config.crypto,
+        tool_registry: config.tool_registry,
+        auth_manager: config.auth_manager,
+        app: None,
+        skill_registry: config.skill_registry,
+        runtime_resolver: None,
+        employee_run_overrides: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        authorized_workspace_store: Some(config.authorized_workspace_store.clone()),
+        permission_ctx: Some(config.permission_ctx.clone()),
+        task_store: Some(config.task_store.clone()),
+        task_notification_queue: Some(config.task_notification_queue.clone()),
+        agent_registry: Some(config.agent_registry.clone()),
+        agent_runtime: Some(config.agent_runtime.clone()),
+        user_scoped_path_resolver: Some(config.user_scoped_path_resolver.clone()),
+        system_prompt_override: config.system_prompt_override,
+        max_iterations_override: config.max_iterations_override,
+        model_override: config.model_override,
+    };
+    let runtime = build_session_runtime_from_shared(SharedSessionRuntimeConfig {
+        services: services.clone(),
+        bus: config.bus,
+        permission_store: config.permission_store,
+        authorized_workspace_store: Some(config.authorized_workspace_store),
+        default_folder: Some(config.default_folder),
+        permission_ctx: Some(config.permission_ctx),
+        task_notification_queue: Some(config.task_notification_queue),
+        team_registry: Some(config.team_registry),
+        agent_names: Some(config.agent_names),
+        inbox_registry: Some(config.inbox_registry),
+        lead_idle: Some(config.lead_idle),
+        cancellation_registry: Some(config.cancellation_registry),
+        host: None,
+        subscriber_anchor: None,
+    });
+    HeadlessChatRuntime { runtime, services }
 }
 
 struct TauriLegacyTurnExecutor {
-    services: TauriChatServices,
+    services: SharedChatRuntimeServices,
     agents_md_loader: Arc<tokio::sync::Mutex<crate::runtime::agents_md::AgentsMdLoader>>,
 }
 
@@ -1733,6 +2138,17 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         if let Some(ss) = self.services.crypto.as_ref() {
             settings.primary_api_key = decrypt_api_key(ss, &settings.primary_api_key);
         }
+        if let Some(model) = self
+            .services
+            .model_override
+            .as_deref()
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+        {
+            settings.primary_model = model.to_string();
+            settings.cloud_model = model.to_string();
+            settings.custom_model_name = model.to_string();
+        }
         apply_reasoning_mode_override(&mut settings, request.reasoning_mode);
 
         Ok(ResolvedLlmSettings {
@@ -1955,13 +2371,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // --- Build content JSON, attaching generated files when present ---
         let mut content_value = if !generated_file_ids.is_empty() {
-            ensure_generated_file_records_from_metas(
-                self.services.db().as_ref(),
-                &self.services.app,
-                &self.services.file_mgr,
-                conversation_id,
-                file_metas,
-            );
+            if let Some(app) = self.services.app.as_ref() {
+                ensure_generated_file_records_from_metas(
+                    self.services.db().as_ref(),
+                    app,
+                    &self.services.file_mgr,
+                    conversation_id,
+                    file_metas,
+                );
+            }
             match self
                 .services
                 .db()
@@ -2226,8 +2644,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         content: &str,
         attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
     ) -> Result<String, TurnError> {
-        let authorized_workspace =
-            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
+        let authorized_workspace = self.services.load_authorized_workspace(conversation_id);
         Ok(chat_runtime_impl::build_llm_content(
             content,
             attachments,
@@ -2280,12 +2697,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let max_iterations = employee_overrides
             .as_ref()
             .map(|ov| ov.max_iterations)
+            .or(self.services.max_iterations_override)
             .unwrap_or(300);
 
-        let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
-            &self.services.app,
-            request.conversation_id.as_str(),
-        );
+        let authorized_workspace = self
+            .services
+            .load_authorized_workspace(request.conversation_id.as_str());
         let is_expert_team_conversation = {
             let base = self.services.db().base_dir().to_path_buf();
             match crate::storage::file_store::conversations::read_conversation_source(
@@ -2316,8 +2733,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // `Agent`, which must list dispatchable subagent types and hired
         // employees) read from this.  Mirrors claude-code-best's
         // `tool.prompt({ agents, tools, ... })` pipeline.
-        let tool_desc_ctx =
-            chat_runtime_impl::build_tool_description_context(&self.services.app).await;
+        let tool_desc_ctx = self.services.tool_description_context().await;
         let employee_count_in_ctx = tool_desc_ctx
             .agents
             .iter()
@@ -2341,11 +2757,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // AgentRegistry + EmployeeStore handles via app state) and
         // render its description once so the emp-id catalog actually
         // reaches the LLM.
-        let request_scoped_overrides = chat_runtime_impl::build_request_scoped_tool_overrides(
-            &self.services.app,
-            &tool_desc_ctx,
-        )
-        .await;
+        let request_scoped_overrides = self
+            .services
+            .request_scoped_tool_overrides(&tool_desc_ctx)
+            .await;
         {
             let keys: Vec<&str> = request_scoped_overrides
                 .keys()
@@ -2390,7 +2805,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .collect();
 
         Ok(TurnConfigOverrides {
-            system_prompt: None, // P0 修复：让 PromptAssembler 产物真正进入 LLM
+            system_prompt: self.services.system_prompt_override.clone(), // P0 修复：让 PromptAssembler 产物真正进入 LLM
             tool_defs: Some(json_defs),
             allowed_tools: Some(runtime_allowed_tools),
             max_iterations: Some(max_iterations),
@@ -2403,8 +2818,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         conversation_id: &str,
     ) -> Result<Vec<serde_json::Value>, TurnError> {
-        let authorized_workspace =
-            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
+        let authorized_workspace = self.services.load_authorized_workspace(conversation_id);
         let chat_messages = load_history_via_runtime_history(
             &self.services.db(),
             conversation_id,
@@ -2476,8 +2890,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
 
-        let authorized =
-            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
+        let authorized = self.services.load_authorized_workspace(conversation_id);
         let authorized_tuple = authorized.as_ref().map(|aw| {
             (
                 aw.root_path.to_string_lossy().into_owned(),
@@ -2526,7 +2939,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let enablement = self
             .services
             .app
-            .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            .as_ref()
+            .and_then(|app| {
+                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            })
             .map(|store| store.load_or_default())
             .unwrap_or_default();
 
@@ -2543,7 +2959,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let enablement = self
             .services
             .app
-            .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            .as_ref()
+            .and_then(|app| {
+                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            })
             .map(|store| store.load_or_default())
             .unwrap_or_default();
 
@@ -3581,35 +4000,16 @@ impl TauriChatCommandAdapter {
             });
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter.clone());
-        let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
-            services: services.clone(),
-            agents_md_loader: Arc::new(tokio::sync::Mutex::new(
-                crate::runtime::agents_md::AgentsMdLoader::new(),
-            )),
-        });
-        // NOTE: request-scoped dispatcher is built per-call in send_message() to avoid
-        // calling nested blocking init inside the sync new() which panics ("Cannot start a runtime
-        // from within a runtime") because Tauri's setup closure already runs in tokio.
-        let mut runtime = SessionRuntime::with_llm_executor(
-            QueryEngine::new()
-                .with_workspace_path(services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(services.runtime_resolver.clone()),
-            bus,
-            llm_executor,
-        )
-        .with_permission_store(permission_store)
-        .with_run_activity_controller(Arc::new(GatewayRunActivityController::new(
-            services.gateway.clone(),
-        )));
-        if let Some(home) = services.app.try_state::<Arc<crate::storage::AiJiaHome>>() {
-            runtime = runtime.with_default_folder(home.default_folder());
-        }
-        if let Some(facade) = services
+        let runtime_services = services.runtime_services();
+        let default_folder = services
+            .app
+            .try_state::<Arc<crate::storage::AiJiaHome>>()
+            .map(|home| home.default_folder());
+        let authorized_workspace_store = if let Some(facade) = services
             .app
             .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
         {
-            runtime = runtime
-                .with_authorized_workspace_store(facade.inner().clone_authorized_workspace_store());
+            Some(facade.inner().clone_authorized_workspace_store())
         } else {
             log::warn!(
                 "[TauriChatCommandAdapter] RuntimeRepositoryFacade not registered when \
@@ -3617,12 +4017,13 @@ impl TauriChatCommandAdapter {
                  Check initialization order in lib.rs — facade must be managed before \
                  TauriChatCommandAdapter::new() is called."
             );
-        }
-        if let Some(queue) = services
+            None
+        };
+        let task_notification_queue = if let Some(queue) = services
             .app
             .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>()
         {
-            runtime = runtime.with_task_notification_queue(queue.inner().clone());
+            Some(queue.inner().clone())
         } else {
             // Fail-closed: log error and leave the queue as None (no notifications this session).
             // This is symmetric with spawn_subagent's fail-closed path in plugin/registry.rs —
@@ -3633,47 +4034,44 @@ impl TauriChatCommandAdapter {
                  will not be surfaced this session; cross-check with spawn_subagent registration \
                  which should also be disabled"
             );
-        }
-        // LTR (P1.8): wire per-process Team / AgentName registries so
-        // cancel_session can drop their per-session entries.
-        if let Some(team_reg) = services
+            None
+        };
+        let team_registry = services
             .app
             .try_state::<Arc<crate::runtime::agent::TeamRegistry>>()
-        {
-            runtime = runtime.with_team_registry(team_reg.inner().clone());
-        }
-        if let Some(name_reg) = services
+            .map(|registry| registry.inner().clone());
+        let agent_names = services
             .app
             .try_state::<Arc<crate::runtime::agent::AgentNameRegistry>>()
-        {
-            runtime = runtime.with_agent_names(name_reg.inner().clone());
-        }
-        if let Some(inbox_reg) = services
+            .map(|registry| registry.inner().clone());
+        let inbox_registry = services
             .app
             .try_state::<Arc<crate::runtime::agent::InboxRegistry>>()
-        {
-            runtime = runtime.with_inbox_registry(inbox_reg.inner().clone());
-        }
-        if let Some(sup) = services
+            .map(|registry| registry.inner().clone());
+        let lead_idle = services
             .app
             .try_state::<Arc<crate::runtime::agent::LeadIdleSupervisor>>()
-        {
-            runtime = runtime.with_lead_idle(sup.inner().clone());
-        }
-        if let Some(reg) = services
+            .map(|sup| sup.inner().clone());
+        let cancellation_registry = services
             .app
             .try_state::<Arc<crate::runtime::agent::CancellationRegistry>>()
-        {
-            runtime = runtime.with_cancellation_registry(reg.inner().clone());
-        }
-        // Phase R1.1: wire production CompactSummaryClient backed by LlmGateway.
-        // The client is stateless; each compact request receives the turn's
-        // resolved LLM settings from RuntimeChatTurnDriver.
-        let compact_client: Arc<dyn crate::runtime::chat::compact_client::CompactSummaryClient> =
-            Arc::new(LlmCompactSummaryClient::new(services.gateway.clone()));
-        runtime = runtime.with_compact_client(compact_client);
-        runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
-        runtime.anchor_subscriber(adapter);
+            .map(|registry| registry.inner().clone());
+        let runtime = build_session_runtime_from_shared(SharedSessionRuntimeConfig {
+            services: runtime_services,
+            bus,
+            permission_store,
+            authorized_workspace_store,
+            default_folder,
+            permission_ctx: None,
+            task_notification_queue,
+            team_registry,
+            agent_names,
+            inbox_registry,
+            lead_idle,
+            cancellation_registry,
+            host: Some(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>),
+            subscriber_anchor: Some(adapter),
+        });
         // Path C wake (LTR B-gap1) is now wired by `wire_path_c_wake_to_self`
         // after the adapter is wrapped in `Arc<Self>` (see lib.rs).  We can't
         // wire it here because the wake closure needs to call
@@ -3878,7 +4276,7 @@ impl TauriChatCommandAdapter {
 
     fn legacy_turn_executor(&self) -> TauriLegacyTurnExecutor {
         TauriLegacyTurnExecutor {
-            services: self.services.clone(),
+            services: self.services.runtime_services(),
             agents_md_loader: Arc::new(tokio::sync::Mutex::new(
                 crate::runtime::agents_md::AgentsMdLoader::new(),
             )),
@@ -4293,6 +4691,10 @@ impl TauriChatCommandAdapter {
             tool_registry: Some(self.services.tool_registry.clone()),
             app_settings: Some(Arc::new(AppSettings::default())),
             agent_runtime,
+            async_agent_task_store: None,
+            task_notification_queue: None,
+            agent_registry: None,
+            user_scoped_path_resolver: None,
             event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
             authorized_workspace: None,
@@ -4578,6 +4980,10 @@ impl TauriChatCommandAdapter {
             tool_registry: Some(self.services.tool_registry.clone()),
             app_settings: Some(app_settings_arc),
             agent_runtime,
+            async_agent_task_store: None,
+            task_notification_queue: None,
+            agent_registry: None,
+            user_scoped_path_resolver: None,
             event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
             authorized_workspace: chat_runtime_impl::load_authorized_workspace(

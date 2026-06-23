@@ -26,6 +26,16 @@ pub const REQUIRED_BUILTIN_SKILLS: &[RequiredBuiltinSkill] = &[
         display_alias: "dws",
         default_enabled: true,
     },
+    RequiredBuiltinSkill {
+        id: "browser",
+        display_alias: "browser",
+        default_enabled: true,
+    },
+    RequiredBuiltinSkill {
+        id: "find-skills",
+        display_alias: "find-skills",
+        default_enabled: true,
+    },
 ];
 
 pub fn is_required_builtin_skill(id: &str) -> bool {
@@ -45,7 +55,14 @@ mod tests {
 
         assert_eq!(
             ids,
-            vec!["create-skill", "skill-creator", "dws", "dingtalk-workspace"]
+            vec![
+                "create-skill",
+                "skill-creator",
+                "dws",
+                "dingtalk-workspace",
+                "browser",
+                "find-skills"
+            ]
         );
         assert!(REQUIRED_BUILTIN_SKILLS
             .iter()
@@ -56,6 +73,8 @@ mod tests {
     fn required_builtin_check_rejects_market_skills() {
         assert!(is_required_builtin_skill("dingtalk-workspace"));
         assert!(is_required_builtin_skill("create-skill"));
+        assert!(is_required_builtin_skill("browser"));
+        assert!(is_required_builtin_skill("find-skills"));
         assert!(!is_required_builtin_skill("market-only"));
     }
 }

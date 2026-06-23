@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const DEFAULT_PORT = 5173
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const projectDir = resolve(scriptDir, '..')
 
 function parsePort(argv) {
   for (let index = 0; index < argv.length; index += 1) {
@@ -31,9 +35,21 @@ function parsePortValue(value) {
 
 const port = parsePort(process.argv.slice(2))
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+const viteArgs = ['--host', '0.0.0.0', '--port', String(port), '--strictPort']
+const command = process.platform === 'win32' ? process.execPath : pnpmCommand
+const commandArgs =
+  process.platform === 'win32'
+    ? [resolve(projectDir, 'node_modules/vite/bin/vite.js'), ...viteArgs]
+    : ['exec', 'vite', ...viteArgs]
+
+if (process.env.AIJIA_VITE_DEV_DRY_RUN === '1') {
+  console.log(JSON.stringify({ command, args: commandArgs, port }, null, 2))
+  process.exit(0)
+}
+
 const child = spawn(
-  pnpmCommand,
-  ['exec', 'vite', '--host', '0.0.0.0', '--port', String(port), '--strictPort'],
+  command,
+  commandArgs,
   {
     cwd: process.cwd(),
     env: {
