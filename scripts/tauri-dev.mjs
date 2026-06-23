@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const projectDir = dirname(scriptDir)
 const ensureRuntimeScript = join(scriptDir, 'ensure-bundled-runtime.mjs')
+const tauriCliScript = resolve(projectDir, 'node_modules/@tauri-apps/cli/tauri.js')
 const DEFAULT_PORT = 5173
 
 function parsePort(argv) {
@@ -91,6 +92,10 @@ const { port, passthrough } = parsePort(tauriArgs)
 const productName = String(port)
 const identifier = `com.aijia.app.dev.${port}`
 const devUrl = `http://127.0.0.1:${port}`
+const runnerPath =
+  process.platform === 'win32'
+    ? resolve(projectDir, 'scripts/tauri-dev-runner.cmd')
+    : resolve(projectDir, 'scripts/tauri-dev-runner.mjs')
 const devCsp = [
   "default-src 'self'",
   `connect-src 'self' http://localhost:${port} ws://localhost:${port} http://127.0.0.1:${port} ws://127.0.0.1:${port} ipc: http://ipc.localhost https://*`,
@@ -120,21 +125,24 @@ const args = [
   '--config',
   portOverride,
   '--runner',
-  resolve(projectDir, 'scripts/tauri-dev-runner.mjs'),
+  runnerPath,
   ...passthrough,
 ]
 
+const command = process.platform === 'win32' ? process.execPath : 'tauri'
+const commandArgs = process.platform === 'win32' ? [tauriCliScript, ...args] : args
+
 if (process.env.AIJIA_TAURI_DEV_DRY_RUN === '1') {
-  console.log(JSON.stringify({ command: 'tauri', args, port, productName, identifier }, null, 2))
+  console.log(JSON.stringify({ command, args: commandArgs, port, productName, identifier }, null, 2))
   process.exit(0)
 }
 
 env.AIJIA_DEV_APP_NAME = productName
+env.AIJIA_DEV_NODE = process.execPath
 
-const child = spawn('tauri', args, {
+const child = spawn(command, commandArgs, {
   cwd: projectDir,
   env,
-  shell: process.platform === 'win32',
   stdio: 'inherit',
 })
 
