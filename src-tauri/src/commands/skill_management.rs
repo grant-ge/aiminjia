@@ -824,9 +824,8 @@ fn read_marketplace_archive_skill_md(
 }
 
 /// List skill packages from the cloud marketplace.
-#[tauri::command]
-pub async fn list_marketplace_skills(
-    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+pub async fn list_marketplace_skills_with_auth(
+    auth: Arc<crate::auth::AuthManager>,
     page: u32,
     size: u32,
     category: Option<String>,
@@ -889,13 +888,24 @@ pub async fn list_marketplace_skills(
     parse_marketplace_response(body, page, size)
 }
 
+/// List skill packages from the cloud marketplace.
+#[tauri::command]
+pub async fn list_marketplace_skills(
+    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+    page: u32,
+    size: u32,
+    category: Option<String>,
+    search: Option<String>,
+) -> Result<MarketplaceResponse, String> {
+    list_marketplace_skills_with_auth(auth.inner().clone(), page, size, category, search).await
+}
+
 /// Download and install a skill package from the marketplace.
 /// Downloads the zip from `package_url` and installs it under the current
 /// user's `~/.renlijia/users/{scope}/skills/{plugin_id}/`.
-#[tauri::command]
-pub async fn install_marketplace_skill(
+pub async fn install_marketplace_skill_with_auth(
     app: AppHandle,
-    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+    auth: Arc<crate::auth::AuthManager>,
     package_id: i64,
     plugin_id: String,
 ) -> Result<String, String> {
@@ -966,6 +976,19 @@ pub async fn install_marketplace_skill(
     clear_enablement_override_for_skill(&app, &plugin_id)?;
     refresh_skill_registry(&app)?;
     Ok(format!("Installed '{}'", plugin_id))
+}
+
+/// Download and install a skill package from the marketplace.
+/// Downloads the zip from `package_url` and installs it under the current
+/// user's `~/.renlijia/users/{scope}/skills/{plugin_id}/`.
+#[tauri::command]
+pub async fn install_marketplace_skill(
+    app: AppHandle,
+    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+    package_id: i64,
+    plugin_id: String,
+) -> Result<String, String> {
+    install_marketplace_skill_with_auth(app, auth.inner().clone(), package_id, plugin_id).await
 }
 
 /// Download a marketplace skill package and return its SKILL.md without

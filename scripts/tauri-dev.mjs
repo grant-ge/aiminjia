@@ -1,13 +1,55 @@
 #!/usr/bin/env node
-// Tauri dev 启动封装：保留内置 runtime 自检，同时默认启用 Cargo 增量编译来缩短日常重启时间。
+// Tauri dev 启动封装：保留内置 runtime 自检、Cargo 增量编译，并按端口隔离 dev 身份。
 
 import { spawn, spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const projectDir = dirname(scriptDir)
 const ensureRuntimeScript = join(scriptDir, 'ensure-bundled-runtime.mjs')
+const tauriCliScript = resolve(projectDir, 'node_modules/@tauri-apps/cli/tauri.js')
+const DEFAULT_PORT = 5173
+
+function parsePort(argv) {
+  let port = DEFAULT_PORT
+  const passthrough = []
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]
+    if (arg === '--port' || arg === '-p') {
+      const value = argv[index + 1]
+      if (!value) {
+        throw new Error(`${arg} requires a port value`)
+      }
+      port = parsePortValue(value)
+      index += 1
+      continue
+    }
+
+    if (arg.startsWith('--port=')) {
+      port = parsePortValue(arg.slice('--port='.length))
+      continue
+    }
+
+    passthrough.push(arg)
+  }
+
+  return { port, passthrough }
+}
+
+function parsePortValue(value) {
+  if (!/^[0-9]+$/.test(value)) {
+    throw new Error(`Invalid port "${value}"`)
+  }
+
+  const port = Number(value)
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Port must be between 1 and 65535, got "${value}"`)
+  }
+
+  return port
+}
 
 const ensureResult = spawnSync(process.execPath, [ensureRuntimeScript], {
   cwd: projectDir,
@@ -46,10 +88,61 @@ if (tauriArgs[0] === '--') {
   tauriArgs.shift()
 }
 
-const child = spawn('tauri', ['dev', ...tauriArgs], {
+const { port, passthrough } = parsePort(tauriArgs)
+const productName = String(port)
+const identifier = `com.aijia.app.dev.${port}`
+const devUrl = `http://127.0.0.1:${port}`
+const runnerPath =
+  process.platform === 'win32'
+    ? resolve(projectDir, 'scripts/tauri-dev-runner.cmd')
+    : resolve(projectDir, 'scripts/tauri-dev-runner.mjs')
+const devCsp = [
+  "default-src 'self'",
+  `connect-src 'self' http://localhost:${port} ws://localhost:${port} http://127.0.0.1:${port} ws://127.0.0.1:${port} ipc: http://ipc.localhost https://*`,
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline'",
+  `img-src 'self' data: asset: http://localhost:${port} http://127.0.0.1:${port} https:`,
+].join('; ')
+
+const portOverride = JSON.stringify({
+  productName,
+  identifier,
+  build: {
+    devUrl,
+    beforeDevCommand: `node scripts/vite-dev.mjs --port ${port}`,
+  },
+  app: {
+    security: {
+      devCsp,
+    },
+  },
+})
+
+const args = [
+  'dev',
+  '--config',
+  'src-tauri/tauri.dev.conf.json',
+  '--config',
+  portOverride,
+  '--runner',
+  runnerPath,
+  ...passthrough,
+]
+
+const command = process.platform === 'win32' ? process.execPath : 'tauri'
+const commandArgs = process.platform === 'win32' ? [tauriCliScript, ...args] : args
+
+if (process.env.AIJIA_TAURI_DEV_DRY_RUN === '1') {
+  console.log(JSON.stringify({ command, args: commandArgs, port, productName, identifier }, null, 2))
+  process.exit(0)
+}
+
+env.AIJIA_DEV_APP_NAME = productName
+env.AIJIA_DEV_NODE = process.execPath
+
+const child = spawn(command, commandArgs, {
   cwd: projectDir,
   env,
-  shell: process.platform === 'win32',
   stdio: 'inherit',
 })
 

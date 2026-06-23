@@ -10,6 +10,7 @@ use crate::commands::skill_management::{list_skills_from_registry_with_enablemen
 use crate::plugin::skill::enablement::SkillEnablementStore;
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::plugin::{ToolInfo, ToolRegistry};
+use tauri::AppHandle;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,10 +34,65 @@ pub struct SkillDetailInfo {
     pub raw_content: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisibleToolInfo {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
 /// List all registered tools.
 #[tauri::command]
 pub async fn list_tools(registry: State<'_, Arc<ToolRegistry>>) -> Result<Vec<ToolInfo>, String> {
     Ok(registry.list().await)
+}
+
+/// E2E-only style read endpoint: return the tool schemas a normal chat request
+/// would expose for the current conversation/request context.
+#[tauri::command]
+pub async fn get_visible_tools_for_current_request(
+    app: AppHandle,
+    registry: State<'_, Arc<ToolRegistry>>,
+    conversation_id: Option<String>,
+) -> Result<Vec<VisibleToolInfo>, String> {
+    let conversation_id = conversation_id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or("__aijia_visible_tools_probe__");
+    let tool_ctx =
+        crate::transport::tauri_commands::chat::chat_runtime_impl::build_tool_description_context(
+            &app,
+        )
+        .await;
+    let request_scoped_overrides =
+        crate::transport::tauri_commands::chat::chat_runtime_impl::build_request_scoped_tool_overrides(
+            &app,
+            &tool_ctx,
+        )
+        .await;
+    let authorized_workspace =
+        crate::transport::tauri_commands::chat::chat_runtime_impl::load_authorized_workspace(
+            &app,
+            conversation_id,
+        );
+    let defs = crate::transport::tauri_commands::chat::chat_runtime_impl::build_visible_tool_defs(
+        registry.inner().as_ref(),
+        authorized_workspace.is_some(),
+        crate::transport::tauri_commands::chat::chat_runtime_impl::ToolSchemaFilter::DailyWhitelist,
+        &tool_ctx,
+        &request_scoped_overrides,
+    )
+    .await;
+
+    Ok(defs
+        .into_iter()
+        .map(|def| VisibleToolInfo {
+            name: def.name,
+            description: def.description,
+            input_schema: def.parameters,
+        })
+        .collect())
 }
 
 /// List all SKILL.md-backed skills.

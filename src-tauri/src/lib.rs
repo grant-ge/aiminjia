@@ -741,7 +741,15 @@ pub fn run() {
                     // there shows up as a nameless entry. Seed it with the product
                     // name; brandingStore refines it to the tenant productName once
                     // the webview loads.
-                    let _ = win.set_title("AIjia");
+                    let native_title = app
+                        .config()
+                        .product_name
+                        .clone()
+                        .filter(|value| !value.trim().is_empty())
+                        .or_else(|| std::env::var("AIJIA_DEV_APP_NAME").ok())
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| "AIjia".to_string());
+                    let _ = win.set_title(&native_title);
 
                     // macOS: `titleBarStyle: Overlay` floats the traffic lights over
                     // content but does NOT hide the native title text — it would
@@ -1411,6 +1419,7 @@ pub fn run() {
             transport::tauri_commands::logging::set_log_level,
             // Plugin commands
             commands::plugin::list_tools,
+            commands::plugin::get_visible_tools_for_current_request,
             commands::plugin::list_skills,
             commands::plugin::get_skill_detail,
             commands::plugin::get_plugin_info,

@@ -274,7 +274,8 @@ function resolveLogoUrl(raw: string): string {
 // ---------- Window title ----------
 
 function setWindowTitle(title: string) {
-  const fullTitle = `${title} — ${i18n.t('welcome.defaultSubtitle')}`
+  const nativeTitle = devNativeWindowTitle() ?? title
+  const fullTitle = `${nativeTitle} — ${i18n.t('welcome.defaultSubtitle')}`
   document.title = fullTitle
   // 原生 window title 设为产品名（而非空格）：titleBarStyle: Overlay 不在窗口内
   // 渲染标题文字（已由后端 hide_window_title 调 setTitleVisibility 隐藏），所
@@ -282,9 +283,19 @@ function setWindowTitle(title: string) {
   // 取的是原生 title，留空会显示成无名条目。
   import('@tauri-apps/api/webviewWindow')
     .then(({ getCurrentWebviewWindow }) => {
-      getCurrentWebviewWindow().setTitle(title).catch(() => {})
+      getCurrentWebviewWindow().setTitle(nativeTitle).catch(() => {})
     })
     .catch(() => {})
+}
+
+function devNativeWindowTitle(): string | null {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return null
+
+  const envTitle = import.meta.env.VITE_AIJIA_DEV_APP_NAME
+  if (envTitle) return envTitle
+
+  const port = window.location.port
+  return port || 'AIjia Dev'
 }
 
 // ---------- Store ----------

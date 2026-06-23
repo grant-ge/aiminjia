@@ -7,6 +7,8 @@ export const REQUIRED_BUILTIN_SKILL_IDS = new Set([
   'skill-creator',
   'dws',
   'dingtalk-workspace',
+  'browser',
+  'find-skills',
 ])
 
 export const NON_TOGGLEABLE_BUILTIN_SKILL_IDS = new Set([
