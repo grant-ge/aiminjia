@@ -18,6 +18,7 @@ pub mod refresh_skills;
 pub mod send_message;
 pub mod shell_common;
 pub mod shell_task;
+pub mod skill_market;
 pub mod spawn_subagent;
 pub mod task_output;
 pub mod task_stop;

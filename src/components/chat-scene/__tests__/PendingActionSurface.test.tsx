@@ -541,6 +541,49 @@ describe("PendingActionSurface", () => {
     );
   });
 
+  it("exposes stable e2e selectors for the active AskUserQuestion surface", () => {
+    renderSurface({ kind: "user-question", interaction: userQuestion() });
+
+    const surface = document.querySelector(
+      '[data-aijia-pending-action="user-question"]',
+    );
+    expect(surface).toBeTruthy();
+    expect(surface).toHaveAttribute(
+      "data-aijia-pending-action-tool",
+      "AskUser",
+    );
+    expect(surface).toHaveAttribute(
+      "data-aijia-pending-action-interaction-id",
+      "ask-1",
+    );
+    expect(
+      surface?.querySelector("[data-aijia-pending-action-title]"),
+    ).toHaveTextContent("Which branch?");
+
+    const options = Array.from(
+      surface?.querySelectorAll(
+        '[data-aijia-pending-action-action="option"]',
+      ) ?? [],
+    );
+    expect(options).toHaveLength(3);
+    expect(options[0]).toHaveAttribute(
+      "data-aijia-pending-action-option-label",
+      "main",
+    );
+    expect(options[0]).toHaveAttribute(
+      "data-aijia-pending-action-question-index",
+      "0",
+    );
+    expect(options[0]).toHaveAttribute(
+      "data-aijia-pending-action-option-index",
+      "0",
+    );
+    expect(options[2]).toHaveAttribute(
+      "data-aijia-pending-action-option-label",
+      "__other__",
+    );
+  });
+
   it("advances to the next AskUserQuestion after selecting a single-choice option", async () => {
     const user = userEvent.setup();
 

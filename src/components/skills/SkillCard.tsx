@@ -25,9 +25,10 @@ interface SkillCardProps {
   skillEnabled?: boolean
   marketCard?: boolean
   marketInstalled?: boolean
+  marketPackageId?: string
 }
 
-export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(--primary-rgb),0.10)] text-primary', onClick, size = 'office', actionsSlot, layout = 'card', version, sourceLabel, skillId, skillSource, skillEnabled, marketCard, marketInstalled }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(--primary-rgb),0.10)] text-primary', onClick, size = 'office', actionsSlot, layout = 'card', version, sourceLabel, skillId, skillSource, skillEnabled, marketCard, marketInstalled, marketPackageId }: SkillCardProps) {
   const isHot = size === 'hot'
   const height = isHot ? 'min-h-32' : 'min-h-28'
   const isRow = layout === 'row'
@@ -58,6 +59,8 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(
       data-aijia-skill-enabled={skillEnabled === undefined ? undefined : String(skillEnabled)}
       data-aijia-skill-market-card={marketCard ? 'true' : undefined}
       data-aijia-skill-installed={marketInstalled === undefined ? undefined : String(marketInstalled)}
+      data-aijia-skill-market-package-id={marketPackageId}
+      data-aijia-skill-description={desc}
       {...interactiveProps}
       data-aijia-skill-card-layout={layout}
       className={`group relative flex rounded-md border border-border/65 bg-card shadow-[var(--shadow-skill-card)] transition-[border-color,background-color,box-shadow] duration-150 ${isRow ? 'min-h-20 flex-row items-center gap-3 px-3 py-3' : `${height} flex-col p-3`} ${interactiveClass}`}

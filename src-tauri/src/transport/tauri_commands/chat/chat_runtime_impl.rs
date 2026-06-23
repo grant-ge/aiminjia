@@ -143,6 +143,25 @@ pub async fn build_tool_description_context(
     }
 }
 
+fn find_skills_market_tools_enabled(app: &AppHandle) -> bool {
+    let Some(skill_registry) =
+        app.try_state::<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>()
+    else {
+        return false;
+    };
+    let Some(enablement_store) =
+        app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+    else {
+        return false;
+    };
+    let state = enablement_store.inner().load_or_default();
+    skill_registry
+        .inner()
+        .lock()
+        .map(|reg| reg.get_enabled("find-skills", &state).is_some())
+        .unwrap_or(false)
+}
+
 /// Build per-turn description overrides for request-scoped tools.
 ///
 /// Currently handles `Agent` only — its description must list available
@@ -248,6 +267,57 @@ pub async fn build_request_scoped_tool_overrides(
                 parameters,
             },
         );
+    }
+
+    if find_skills_market_tools_enabled(app) {
+        if let (Some(auth_manager), Some(skill_registry), Some(enablement_store)) = (
+            app.try_state::<Arc<crate::auth::AuthManager>>(),
+            app.try_state::<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>(),
+            app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>(),
+        ) {
+            let search_tool: Arc<dyn RuntimeTool> = Arc::new(
+                crate::runtime::tools::builtin::skill_market::SkillMarketSearchRuntimeTool::new(
+                    auth_manager.inner().clone(),
+                    skill_registry.inner().clone(),
+                    Some(enablement_store.inner().clone()),
+                ),
+            );
+            let rendered = search_tool.definition(ctx).await;
+            let parameters = crate::runtime::tools::TOOL_CATALOG
+                .get_entry("SkillMarketSearch")
+                .map(|e| e.json_schema.clone())
+                .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+            out.insert(
+                "SkillMarketSearch".to_string(),
+                crate::llm::streaming::ToolDefinition {
+                    name: rendered.id,
+                    description: rendered.description,
+                    parameters,
+                },
+            );
+
+            let install_tool: Arc<dyn RuntimeTool> = Arc::new(
+                crate::runtime::tools::builtin::skill_market::SkillMarketInstallRuntimeTool::new(
+                    app.clone(),
+                    auth_manager.inner().clone(),
+                    skill_registry.inner().clone(),
+                    Some(enablement_store.inner().clone()),
+                ),
+            );
+            let rendered = install_tool.definition(ctx).await;
+            let parameters = crate::runtime::tools::TOOL_CATALOG
+                .get_entry("SkillMarketInstall")
+                .map(|e| e.json_schema.clone())
+                .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+            out.insert(
+                "SkillMarketInstall".to_string(),
+                crate::llm::streaming::ToolDefinition {
+                    name: rendered.id,
+                    description: rendered.description,
+                    parameters,
+                },
+            );
+        }
     }
 
     log::debug!("[tool-desc-trace] returning {} overrides", out.len());

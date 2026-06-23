@@ -1418,6 +1418,7 @@ pub fn run() {
             transport::tauri_commands::logging::set_log_level,
             // Plugin commands
             commands::plugin::list_tools,
+            commands::plugin::get_visible_tools_for_current_request,
             commands::plugin::list_skills,
             commands::plugin::get_skill_detail,
             commands::plugin::get_plugin_info,

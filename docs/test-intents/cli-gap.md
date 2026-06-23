@@ -63,6 +63,31 @@ selector 前置要求：
 - `sync-builtin-skills` 可以点击 UI 入口或包装已有可见同步入口，但不能直接伪造后端返回。
 - 账号隔离意图 026 可复用现有 `aijia login` / `logout`，但仍依赖上表的技能开关和列表读取命令；没有两套专用测试账号时标记环境阻塞。
 
+### 场景 Q：发现技能自动发现与市场安装（技能 task 意图 27-33）— ⏳ 环境前置缺失
+
+2026-06-17 补充：`docs/test-intents/spec/tasks/技能/rules.md` 已新增 find-skills 相关意图 27-33，覆盖“默认开启、可关闭、关闭后不注入市场工具、自然任务触发搜索安装、候选歧义先问用户、无匹配不安装、已安装不重复安装、关闭已安装技能后不能绕过”。这些场景需要比普通技能中心 UI 更接近 Agent 运行时的快照能力，不能只看开关样式。
+
+2026-06-17 跑测补充：下列 CLI 能力已补齐并可跑通。当前阻塞不是 CLI，而是企业市场/内置同步数据中没有 `find-skills` 包，也没有 e2e 专用测试包。真实环境返回市场包 34 个，其中有 `browser`，无 `find-skills` 和 `find-skills-e2e-*`。
+
+| CLI | 原子动作 | 参数 | 返回/断言字段 |
+|---|---|---|---|
+| `aijia visible-tools` | 读取当前会话实际注入给 LLM 的工具名和 schema 快照 | `--json` | `[{name, description, inputSchema}]`；必须来自当前会话运行时组装结果，不是静态写死列表 |
+| `aijia wait-agent-idle` | 等待当前 Agent turn 真正结束，或进入等待用户选择状态 | `--timeout <seconds>` | `{ok, idle, waitingForUser, pendingActionKind, messageCount, lastAssistantId}`；语义是 AgentIdle/用户确认边界，不是 `isStreaming == false` 的短暂间隙 |
+| `aijia pending-action-snapshot` | 读取当前会话底部待处理动作快照 | `--json` | `{pendingAction: {kind, tool, title, actions}}`；用于 AskUserQuestion 底部面板，不再误用旧弹窗快照 |
+| `aijia skill-market-list` | 读取市场卡片快照并带上检索所需描述 | `--json --include-description` | `[{id, packageId, title, description, capabilities, installed, actionLabel}]` |
+
+环境前置：
+
+- 企业市场需要上架测试专用技能包：`find-skills-e2e-web-fetch`、`find-skills-e2e-choice-alpha`、`find-skills-e2e-choice-beta`、`find-skills-e2e-disable-after-install`。
+- 测试专用技能包的 `SKILL.md` body 需要包含稳定标记，例如 `[find-skills-e2e-web-fetch]`，便于从 `messages.jsonl` 验证是否真的被 `Skill` 工具加载。
+- 如果当前市场没有这些测试包，runner 应把意图 29-33 标记为环境阻塞，不得安装、关闭或删除真实客户技能来造测试现场。
+
+边界：
+
+- `visible-tools` 只读当前会话实际工具快照，不得为了测试临时注入/移除工具。
+- `skill-market-list --include-description` 只读 UI 或产品已暴露的市场卡片信息，不得绕过登录态直连网关。
+- `wait-agent-idle` 可以复用既有 AgentIdle 事件；修复后也能替代下方“wait-reply 长工具链误判”的人工绕路。
+
 ### 按场景列：跑测时被卡住的 CLI 缺口（2026-05-21 收口，按 `test-intents-cli-author` skill 铁则审计）
 
 > **铁则**（再次强调）：每条 CLI = 一个原子 UI 动作（点一个按钮 / 填一个字段 / 等一个状态 / 读一段状态）；多步流程由 rules.md 串联，**不许写一体命令**；走 webview DOM eval，**不走 IPC**；selector 优先级 `data-aijia-*` > id > aria-label > textContent。
