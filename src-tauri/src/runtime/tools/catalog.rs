@@ -538,7 +538,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Skill",
-            "加载一个专项技能的详细指令到当前对话。无副作用：不改变系统提示、不限制工具、不持久化。",
+            "加载一个专项技能的详细指令作为内部参考。只用于理解任务和补充处理规范，不限制工具、不持久化。调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)

@@ -491,7 +491,7 @@ parent cancellation → child token 继承。
 测试意图：
 - 直接构造 `SubAgentResult { output, files, iterations_used }`
 - 验证 parent 侧格式化逻辑会：
-  - 生成 `Browser agent completed in ...` 的父工具输出
+  - 生成 `Browser automation completed in ...` 的父工具输出
   - 把 child 产物重新落到 parent 的 `generated/`
   - 在 parent storage 记录 generated file，而不是让 child 直接污染 parent message/state
 

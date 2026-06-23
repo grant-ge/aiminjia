@@ -142,8 +142,9 @@ impl RuntimeTool for LoadSkillRuntimeTool {
         };
 
         let description = format!(
-            "加载一个专项技能的详细指令到当前对话。当用户需求匹配技能目录中的某个专项技能时，\
-             调用此工具并传入 skill_id。无副作用：不改变系统提示、不限制工具、不持久化。\
+            "加载一个专项技能的详细指令作为内部参考。当用户需求匹配技能目录中的某个专项技能时，\
+             调用此工具并传入 skill_id。只用于理解任务和补充处理规范，不限制工具、不持久化。\
+             调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。\
              可用 skill_id：{}。",
             available
         );
@@ -212,12 +213,12 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             }
         };
 
-        // Check for fork mode (placeholder — full sub-agent wiring in follow-up)
+        // Check for fork-context skills (placeholder — full sub-agent wiring in follow-up)
         if skill.frontmatter.context.as_deref() == Some("fork") {
             // TODO: wire to AgentRuntime in follow-up
             let placeholder = format_fork_result(
                 &skill.frontmatter.name,
-                "fork mode: subagent dispatch will be wired in a follow-up task. Returning a placeholder body so the call doesn't fail.",
+                "fork-context subagent dispatch will be wired in a follow-up task. Returning a placeholder body so the call doesn't fail.",
             );
             return Ok(ToolResult::new(
                 "Skill",

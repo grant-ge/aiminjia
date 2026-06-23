@@ -1,4 +1,4 @@
-use crate::llm::prompts::{self, PromptMode};
+use crate::llm::prompts;
 
 use super::{PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId};
 
@@ -37,7 +37,6 @@ impl PromptSectionSpec {
 
 #[derive(Debug, Clone)]
 pub struct PromptBuildContext<'a> {
-    pub mode: PromptMode,
     pub persona: Option<&'a crate::storage::file_store::persona::Persona>,
     pub product_name: Option<&'a str>,
 }
@@ -77,24 +76,19 @@ impl PromptAssembler {
             }
         }
 
-        match ctx.mode {
-            PromptMode::Daily => {
-                let daily = fragments.daily;
-                if !daily.trim().is_empty() {
-                    let has_persona_memory =
-                        ctx.persona.is_some_and(|p| !p.memory_hints.is_empty());
-                    let daily = if has_persona_memory {
-                        strip_memory_section(&daily)
-                    } else {
-                        daily
-                    };
-                    if !daily.trim().is_empty() {
-                        blocks.push(PromptBlock::dynamic_block(
-                            PromptSectionId::new("daily"),
-                            daily,
-                        ));
-                    }
-                }
+        let daily = fragments.daily;
+        if !daily.trim().is_empty() {
+            let has_persona_memory = ctx.persona.is_some_and(|p| !p.memory_hints.is_empty());
+            let daily = if has_persona_memory {
+                strip_memory_section(&daily)
+            } else {
+                daily
+            };
+            if !daily.trim().is_empty() {
+                blocks.push(PromptBlock::dynamic_block(
+                    PromptSectionId::new("daily"),
+                    daily,
+                ));
             }
         }
 

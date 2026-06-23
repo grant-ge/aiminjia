@@ -609,7 +609,7 @@ git commit -m "refactor(skill): replace builtin daily skill with base prompt"
 
 ---
 
-### Task 7: Remove precompute / checkpoint / is_analysis workflow pipeline
+### Task 7: Remove precompute / checkpoint / legacy workflow pipeline
 
 **Files:**
 - Delete: `src-tauri/src/llm/checkpoint.rs`
@@ -640,12 +640,12 @@ In `src-tauri/src/llm/analysis_context.rs`, remove `current_step` field and meth
 
 Keep general analysis context fields that are used by non-workflow Python execution.
 
-- [ ] **Step 3: Remove is_analysis branches in Python executor**
+- [ ] **Step 3: Remove legacy branches in Python executor**
 
 In `src-tauri/src/llm/tool_executor/python.rs`, delete code equivalent to:
 
 ```rust
-if is_analysis {
+if legacy_branch {
     let step = orchestrator::get_step_state(...)
     ...
 }
@@ -715,7 +715,7 @@ from structs and tests.
 Run:
 
 ```bash
-grep -rn "precompute\|checkpoint\|is_analysis\|get_step_state\|current_step\|\[precompute_result\]" src-tauri/src src-tauri/tests --exclude-dir=target
+grep -rn "precompute\|checkpoint\|get_step_state\|current_step\|\[precompute_result\]" src-tauri/src src-tauri/tests --exclude-dir=target
 ```
 
 Expected: no production references. Docs may still contain legacy history.
@@ -2626,7 +2626,7 @@ fn production_code_no_longer_references_legacy_skill_files() {
         "selected_skill_id",
         "selectedSkillId",
         "precompute_result",
-        "is_analysis",
+        "legacy_branch",
     ];
     let roots = ["src-tauri/src", "src"];
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");

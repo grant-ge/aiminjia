@@ -27,7 +27,7 @@ const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
 /// All recognized prompt names.
 const PROMPT_NAMES: &[&str] = &["base", "daily"];
 
-// 工具选择偏好章节——静态内容，写入 static_section，所有 mode 均包含。
+// 工具选择偏好章节——静态内容，写入 static_section。
 const TOOL_PREFERENCE_SECTION: &str = r#"
 
 【工具选择偏好】
@@ -101,17 +101,10 @@ const MEMORY_MECHANICS_SECTION: &str = r#"
 - 用户说“忽略记忆”时，视作当前没有可用记忆，不引用也不比较旧记忆
 "#;
 
-/// System prompt 构建模式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PromptMode {
-    /// 日常助手模式（base + 工具偏好 + daily.md + persona）
-    Daily,
-}
-
 /// System prompt 的分层结构。
 ///
 /// `static_section`：可跨会话复用的稳定内容（base + 工具偏好）。
-/// `dynamic_section`：会话级动态内容（persona + mode-specific prompt）。
+/// `dynamic_section`：会话级动态内容（persona + daily.md）。
 #[derive(Debug, Clone)]
 pub struct SystemPromptParts {
     /// 稳定前缀（base.md 品牌替换后 + 工具选择偏好章节）
@@ -204,7 +197,7 @@ impl PromptStore {
             return (BASE_FALLBACK.to_string(), PromptSource::Fallback);
         }
 
-        // Other prompts: empty string (mode will just have BASE)
+        // Other prompts: empty string (prompt will just have BASE)
         (String::new(), PromptSource::Fallback)
     }
 
@@ -314,19 +307,17 @@ pub fn memory_mechanics_section() -> &'static str {
 /// 构建分层 system prompt（section 化版本）。
 ///
 /// - `static_section` = base.md（品牌替换后）+ TOOL_PREFERENCE_SECTION
-/// - `dynamic_section` = persona 段 + mode-specific prompt（Analysis 时无 daily.md）
+/// - `dynamic_section` = persona 段 + daily.md
 ///
 /// **注意：** 不再注入当前日期——日期改为首条 user message `<system-reminder>` 注入。
 /// build_system_prompt_parts 是 system prompt 的唯一组装入口；
 /// 其他调用方若需要完整字符串，应通过 `get_system_prompt` 这个兼容 shim
 /// 间接调用，而不是自行拼接 base / daily 片段。
 pub fn build_system_prompt_parts(
-    mode: PromptMode,
     persona: Option<&crate::storage::file_store::persona::Persona>,
     product_name: Option<&str>,
 ) -> SystemPromptParts {
     let assembly = PromptAssembler::default().build_system_prompt(PromptBuildContext {
-        mode,
         persona,
         product_name,
     });
@@ -367,7 +358,7 @@ pub fn get_system_prompt(
     persona: Option<&crate::storage::file_store::persona::Persona>,
     product_name: Option<&str>,
 ) -> String {
-    let parts = build_system_prompt_parts(PromptMode::Daily, persona, product_name);
+    let parts = build_system_prompt_parts(persona, product_name);
     if parts.dynamic_section.is_empty() {
         parts.static_section
     } else {
@@ -546,7 +537,7 @@ mod tests {
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
-        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        let parts = build_system_prompt_parts(None, None);
         assert!(
             parts.static_section.contains("AI小家 base"),
             "static_section must contain base prompt"
@@ -579,7 +570,7 @@ mod tests {
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
-        let parts = build_system_prompt_parts(PromptMode::Daily, None, Some("智能办公"));
+        let parts = build_system_prompt_parts(None, Some("智能办公"));
         assert!(
             parts.static_section.contains("智能办公"),
             "product_name replacement must work in static_section"
@@ -618,7 +609,7 @@ mod tests {
             updated_at: "2026-01-01".to_string(),
         };
 
-        let parts = build_system_prompt_parts(PromptMode::Daily, Some(&persona), None);
+        let parts = build_system_prompt_parts(Some(&persona), None);
         assert!(
             parts.dynamic_section.contains("你是专业 HR 顾问"),
             "persona identity must appear in dynamic_section"
@@ -677,7 +668,7 @@ mod tests {
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
-        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        let parts = build_system_prompt_parts(None, None);
         assert!(
             parts.static_section.contains("优先使用专用能力"),
             "must mention dedicated capabilities in context"
@@ -714,7 +705,7 @@ mod tests {
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
-        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        let parts = build_system_prompt_parts(None, None);
         let must_announce = "每次调用工具之前，必须先用一句话告诉用户你要做什么。无一例外。即使是单步、简单的调用也要说。";
         let no_colon = "不要用冒号引出工具调用；应使用句号，因为工具调用本身可能以独立状态展示。";
 
@@ -748,7 +739,7 @@ mod tests {
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
-        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        let parts = build_system_prompt_parts(None, None);
         for retired_tool in ["save_memory", "load_core_memory", "distill_memories"] {
             assert!(
                 !parts.static_section.contains(retired_tool),
@@ -768,7 +759,7 @@ mod tests {
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
-        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        let parts = build_system_prompt_parts(None, None);
         assert!(
             parts.static_section.contains("WriteMemory"),
             "static section must mention WriteMemory guidance"

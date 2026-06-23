@@ -106,7 +106,7 @@ pnpm test
 |----|------|---------|
 | D1 | `plugin/registry.rs` `get_all_schemas` | `TOOL_CATALOG` 条目和 `runtime_tools` HashMap 独立维护。`get_all_schemas` 中对 runtime_tools 迭代：若某工具在 `runtime_tools` 注册但 catalog 缺失条目，`TOOL_CATALOG.get_entry(id)` 返回 `None`，该工具的 schema 被静默丢弃，LLM 看不到它。反向亦然：catalog 有条目但无 runtime 注册时，schema 不会暴露给 LLM（除非通过 REQUEST_SCOPED 列表覆盖）。启动期无任何校验。 |
 | D4 | `runtime/tools/permission.rs` | `CapabilityPermissionPipeline::authorize` 和 `StorePolicyPipeline::authorize` 各自内联了相同的 scope 匹配逻辑（`workspace:read/write`、`browser`、`python:exec`、`network`、unknown）。两段逻辑高度相似但有细微差异（`StorePolicyPipeline` 将 `python:exec` 与 workspace 合并为同一分支；`CapabilityPermissionPipeline` 单独处理），未来新增 scope 时需同步修改两处。 |
-| D8 | `llm/prompts.rs` + `runtime/chat/context_builder.rs` | `llm/prompts.rs` 的 `build_system_prompt_parts` 承担完整的 system prompt 组装（base + 工具偏好 + persona + mode-specific prompt）。`context_builder.rs` 负责 dynamic context（iteration context + env info）。分工已经较清晰，但 `prompts.rs` 既是文本片段仓库又是组装入口，职责未分层。`get_system_prompt` shim 是向后兼容的外观，可保留但需标注。 |
+| D8 | `llm/prompts.rs` + `runtime/chat/context_builder.rs` | `llm/prompts.rs` 的 `build_system_prompt_parts` 承担完整的 system prompt 组装（base + 工具偏好 + persona + daily prompt）。`context_builder.rs` 负责 dynamic context（iteration context + env info）。分工已经较清晰，但 `prompts.rs` 既是文本片段仓库又是组装入口，职责未分层。`get_system_prompt` shim 是向后兼容的外观，可保留但需标注。 |
 | D11 | `transport/tauri_commands/chat.rs` `run_llm_step` (L148-165) | `TauriLegacyTurnExecutor::run_llm_step` 每次被调用时都执行 `db.get_all_settings()` + 解密 API key。该函数在 agent loop 的每一次 LLM step 都会被调用（最多 30 次）。settings 在一个 turn 期间不会改变，重复读取是纯粹的性能浪费，也是不必要的 I/O。`TurnConfig` 结构体中有 `conversation_id`、`run_id`，但没有 `resolved_settings`。 |
 | F1 | `src/stores/chatStore.ts` | 单一 store 管理两类关注点：会话/消息 CRUD（`conversations`、`messages`、`activeConversationId`、`setConversations`、`setMessages`、`addMessage`、`updateMessage`）和流式/工具执行状态（`streamStates`、`busyConversations`、`taskStates`）。`deriveLegacy` 函数混杂两者。随功能增长，测试和维护难度上升。 |
 | F3 | `src/hooks/useTauriEvent.ts` | `setup().then(fn => ...)` 的 Promise resolve 路径在组件已 unmount 时会立即调用 `fn()` 清理。但若 `setup()` reject（例如 Tauri listen 失败），`mounted = false` + `unlisten = undefined`，cleanup 函数中 `unlisten?.()` 是空操作，错误被静默吞掉。`useStreaming.ts` 中 11 个独立的 `useTauriEvent` 调用串行注册，任一失败均无 error boundary。 |
@@ -392,10 +392,10 @@ pnpm test
 ## Task F3：Prompt 构建职责分层（对应 D8）
 
 **现状澄清：** 经过阅读代码，`llm/prompts.rs` 和 `runtime/chat/context_builder.rs` 的职责实际上已经较清晰分工：
-- `prompts.rs`：负责 system prompt（base + 工具偏好 + persona + mode-specific）的组装，`build_system_prompt_parts` 是组装入口
+- `prompts.rs`：负责 system prompt（base + 工具偏好 + persona + daily prompt）的组装，`build_system_prompt_parts` 是组装入口
 - `context_builder.rs`：负责 dynamic context（每次迭代注入的上下文），`build_iteration_context` 和 `build_env_info` 是入口
 
-真正的问题是 `prompts.rs` 把"片段存储"（`PromptStore`、`get_base_prompt`、`get_browser_agent_prompt`）和"组装逻辑"（`build_system_prompt_parts`）混在同一文件中，没有明确的分层边界。
+真正的问题是 `prompts.rs` 把"片段存储"（`PromptStore`、`get_base_prompt`）和"组装逻辑"（`build_system_prompt_parts`）混在同一文件中，没有明确的分层边界。
 
 **修复目标：**
 1. 在 `prompts.rs` 中以 doc comment 明确标注 `PromptStore` 的"纯片段仓库"职责和 `build_system_prompt_parts` 的"唯一组装入口"职责
@@ -425,9 +425,9 @@ pnpm test
 
   #[test]
   fn review_build_system_prompt_parts_is_sole_assembler() {
-      // build_system_prompt_parts 必须包含 base + TOOL_PREFERENCE_SECTION + mode content
-      use lotus_app::llm::prompts::{build_system_prompt_parts, PromptMode};
-      let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+      // build_system_prompt_parts 必须包含 base + TOOL_PREFERENCE_SECTION + daily content
+      use lotus_app::llm::prompts::build_system_prompt_parts;
+      let parts = build_system_prompt_parts(None, None);
       assert!(parts.static_section.contains("工具选择偏好"), 
           "static_section must contain TOOL_PREFERENCE_SECTION");
       // dynamic_section 不应重复 static_section 的内容
@@ -911,7 +911,7 @@ setup().then((fn) => {
       pub content: String,
       pub file_ids: Vec<String>,
       pub run_id: RunId,
-      pub is_analysis: bool,
+      pub legacy_branch_removed: bool,
   }
 
   impl ChatTurnRequest {

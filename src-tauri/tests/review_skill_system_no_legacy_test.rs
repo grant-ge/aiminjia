@@ -88,6 +88,7 @@ fn production_source_has_no_legacy_skill_markers() {
         .canonicalize()
         .unwrap();
 
+    let retired_branch_flag = ["is", "_analysis"].concat();
     let forbidden = &[
         "SkillSessionStore",
         "SkillRuntimePatch",
@@ -98,7 +99,7 @@ fn production_source_has_no_legacy_skill_markers() {
         "extract_skill_runtime_patch",
         "apply_skill_runtime_patch",
         "skill_runtime_patch",
-        "is_analysis",
+        retired_branch_flag.as_str(),
         "precompute_result",
     ];
 

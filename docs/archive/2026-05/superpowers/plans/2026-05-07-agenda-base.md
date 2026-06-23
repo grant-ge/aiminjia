@@ -4352,7 +4352,7 @@ pnpm exec tsc --noEmit
   - `cd src-tauri && cargo test` 失败：`llm::streaming::tests::test_llm_request_default` 仍期望旧默认 `4096`，当前实现默认 `100_000`。
   - `storage::file_store::messages::*` legacy shard 单测读出 0 条，因为 `get_messages()` 已改为只读 v2 单文件，未 fallback legacy shards。
   - 完整集成测试继续暴露 `bash_merges_stdout_and_stderr` 失败：stdout pipe 一次性读完后才读取 stderr pipe，无��保留同一 shell 命令的 stdout/stderr 写入顺序。
-  - `plan_e_tool_migration_test::execute_python_runtime_tool_preserves_missing_run_id_analysis_error` 与 `python_run_scope_test::analysis_execute_python_requires_run_id` 仍锁定旧的 analysis-mode persistent session 契约；2026-04-28 skill rewrite 已删除 `is_analysis` / precompute workflow pipeline，`execute_python` 现在应统一走 one-shot 路径。
+  - 旧的 Python persistent session 相关回归仍锁定已废弃契约；2026-04-28 skill rewrite 已删除旧分支 / precompute workflow pipeline，`execute_python` 现在应统一走 one-shot 路径。
   - `plan_w_runtime_recovery_test` 的 max_tokens recovery 断言用第一个 `MessagePersisted` 事件取内容；当前 driver 会先发 user `MessagePersisted`，测试应筛选 assistant 事件。
   - 只读 review 发现 `get_messages_v2` 仍只覆盖单文件不存在的 legacy fallback；如果 `messages.jsonl` 存在但没有有效记录，仍会跳过 legacy shards。
   - 完整 `cargo test` 继续暴露 `review_single_loop_owner_test::review_send_message_clears_gateway_busy_after_runtime_returns` 失败；旧 review 测试仍查找 `clear_task`，当前实现已改为 run-scoped `clear_task_for_run` 并已有 run_id 顺序断言。
@@ -4368,7 +4368,7 @@ pnpm exec tsc --noEmit
   - 更新 `test_llm_request_default` 期望为当前 `100_000`。
   - `get_messages_v2` 在单文件不存在或为空时 fallback 读取 legacy shard 并走 `_seq/_rev` dedup；增加 `messages.jsonl` 存在但为空时 fallback legacy shards 的回归测试。
   - BashTool 执行用户命令时在 shell 层把 stderr 重定向进 stdout，保留写入顺序；权限判断、返回的 `command` 字段和退出码语义仍使用原始用户命令。
-  - 将两个旧 analysis/run_id 测试改为验证 legacy analysis state 不再强制 run-scoped execution，避免把已删除 workflow pipeline 加回实现。
+  - 将两个旧 run_id 测试改为验证 legacy state 不再强制 run-scoped execution，避免把已删除 workflow pipeline 加回实现。
   - 将 `plan_w_runtime_recovery_test` 的持久化事件断言改为筛选 `role == "assistant"` 的 `MessagePersisted`。
   - 将旧 gateway busy cleanup review 测试同步为 run-scoped cleanup 字符串断言。
   - 将 `workflow.toml` 注释改为不引用旧文件名。
@@ -4393,8 +4393,8 @@ pnpm exec tsc --noEmit
 cd src-tauri && cargo test --lib llm::streaming::tests::test_llm_request_default
 cd src-tauri && cargo test --lib storage::file_store::messages::tests
 cd src-tauri && cargo test --test bash_tool_test bash_merges_stdout_and_stderr
-cd src-tauri && cargo test --test plan_e_tool_migration_test execute_python_runtime_tool_ignores_legacy_analysis_state_without_run_id
-cd src-tauri && cargo test --test python_run_scope_test execute_python_ignores_legacy_analysis_state_without_run_id
+cd src-tauri && cargo test --test plan_e_tool_migration_test execute_python_runtime_tool_ignores_legacy_state_without_run_id
+cd src-tauri && cargo test --test python_run_scope_test execute_python_ignores_legacy_state_without_run_id
 cd src-tauri && cargo test --test plan_w_runtime_recovery_test w2_max_tokens
 cd src-tauri && cargo test --lib storage::file_store::messages::tests::get_messages_v2_falls_back_to_legacy_shards_when_single_file_is_empty
 cd src-tauri && cargo test --test review_single_loop_owner_test review_send_message_clears_gateway_busy_after_runtime_returns

@@ -123,10 +123,10 @@
 **当前状态**：
 - `src-tauri/src/python/session.rs` 已提供 `session_key_for_run(...)`、`execute_for_run(...)`、`interrupt_run(...)`、`destroy_run(...)`。
 - 主分析路径已经大量使用 per-run API，例如 `chat_runtime_impl.rs` 的 precompute 执行。
-- 仍残留的风险点是 `src-tauri/src/llm/tool_executor/python.rs`：在 analysis 模式下若 `ctx.run_id` 缺失，会 fallback 到 `session_manager.execute(&ctx.conversation_id, ...)`，重新退化为 conversation scope。
+- 仍残留的风险点是 `src-tauri/src/llm/tool_executor/python.rs`：旧持久 Python 分支若 `ctx.run_id` 缺失，会 fallback 到 `session_manager.execute(&ctx.conversation_id, ...)`，重新退化为 conversation scope。
 
 **目标状态**：
-- analysis 模式的生产路径必须显式要求 `run_id`，不能再悄悄退回到 conversation scope。
+- 旧持久 Python 分支的生产路径必须显式要求 `run_id`，不能再悄悄退回到 conversation scope。
 - conversation-scope 的 `execute / interrupt / destroy` 仅保留给 legacy / 非 run-aware 调用者，不再被分析主路径依赖。
 
 **迁移路径**：
@@ -311,7 +311,7 @@ cd /Users/a20250311/IdeaProjects/lotus-app && \
 
 ---
 
-## Task A4：analysis 模式强制使用 run-scoped Python session
+## Task A4：旧持久 Python 分支强制使用 run-scoped Python session
 
 **Files:**
 - Modify: `src-tauri/src/llm/tool_executor/python.rs`
@@ -327,7 +327,7 @@ cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
 
 - [ ] **Step A4-2: 先写失败测试**
   - 测试 1：`session_key_for_run(...)` 与已有 `python_run_scope_test` 继续锁住 run scope
-  - 测试 2：analysis 模式下若缺少 `run_id`，不允许再静默回退到 conversation-scoped session
+  - 测试 2：旧持久 Python 分支若缺少 `run_id`，不允许再静默回退到 conversation-scoped session
 
 - [ ] **Step A4-3: 验证测试失败**
 ```bash
@@ -473,6 +473,6 @@ cd /Users/a20250311/IdeaProjects/lotus-app && \
 | A1 | `runtime/chat/chat_turn_driver.rs` | 保留 assistant `toolCalls` 并在 cancel 时补齐缺失 tool result | 防止进入下一轮时出现残缺 tool trajectory |
 | A2 | `runtime/events.rs` / `transport/tauri_event_adapter.rs` / `runtime/chat/chat_turn_driver.rs` | AskRequired 到前端事件桥接 | 本期只通知，不阻塞等待用户点击 |
 | A3 | `runtime/run_registry.rs` | poison recovery，避免 `.unwrap()` 连锁 panic | 保持同步 API，避免 async 化 blast radius |
-| A4 | `llm/tool_executor/python.rs` | analysis 模式禁止退回 conversation-scoped session | 强制主路径 run 隔离 |
+| A4 | `llm/tool_executor/python.rs` | 旧持久 Python 分支禁止退回 conversation-scoped session | 强制主路径 run 隔离 |
 | A5 | `python/sandbox.rs` | `_safe_open` 增加路径边界判断 | 防止 `/workspace.backup` 前缀绕过 |
 | A6 | `runtime/chat/context_builder.rs` / `transport/tauri_commands/chat.rs` | git 子进程异步化 | 避免阻塞 tokio worker |

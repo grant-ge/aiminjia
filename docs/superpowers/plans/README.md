@@ -120,7 +120,7 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 |---------|------|------|------|
 | [2026-04-19-plan-u1-mcp-runtime-closure.md](./2026-04-19-plan-u1-mcp-runtime-closure.md) | U1：MCP 真闭环与工具暴露收口 | 📝 待执行 | Plan-U |
 | [2026-04-19-plan-u2-permission-governance.md](./2026-04-19-plan-u2-permission-governance.md) | U2：权限治理与 Ask/Remember 语义统一 | 📝 待执行 | Plan-U |
-| [2026-04-19-plan-u3-context-pipeline.md](./2026-04-19-plan-u3-context-pipeline.md) | U3：长会话上下文预处理管道补齐 | 📝 待执行 | Plan-U / Plan-AI（若 analysis mode 仍在） |
+| [2026-04-19-plan-u3-context-pipeline.md](./2026-04-19-plan-u3-context-pipeline.md) | U3：长会话上下文预处理管道补齐 | 📝 待执行 | Plan-U / Plan-AI（若旧分支仍在） |
 | [2026-04-19-plan-u4-memory-runtime-native.md](./2026-04-19-plan-u4-memory-runtime-native.md) | U4：本地记忆 Runtime-Native 化 | 📝 待执行 | Plan-U / Plan-U3 |
 | [2026-04-19-plan-u6-plugin-context-bridge-exit.md](./2026-04-19-plan-u6-plugin-context-bridge-exit.md) | U6：PluginContext 热路径退出与 Request-Scoped Tool 运行时化 | 📝 待执行 | Plan-U / Plan-AI（若 tool surface 仍双轨） |
 | [2026-04-19-plan-u5-subagent-worker-runtime.md](./2026-04-19-plan-u5-subagent-worker-runtime.md) | U5：Subagent 一等 Worker Runtime 收口 | 📝 待执行 | Plan-U / Plan-U2 / Plan-U6 |
@@ -142,7 +142,7 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 | 计划文件 | 目标 | 状态 |
 |---------|------|------|
 | [2026-04-18-plan-i-runtime-parity.md](./2026-04-18-plan-i-runtime-parity.md) | I：SessionRuntime cancel root owner + subagent transcript parity | ✅ 已关闭（2026-04-19） |
-| [2026-04-18-plan-j-python-analysis-parity.md](./2026-04-18-plan-j-python-analysis-parity.md) | J：ExecutePythonRuntimeTool analysis 模式 Python binary 缺口 | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-j-python-analysis-parity.md](./2026-04-18-plan-j-python-analysis-parity.md) | J：ExecutePythonRuntimeTool 旧分支 Python binary 缺口 | ✅ 已关闭（2026-04-19） |
 | [2026-04-18-plan-k-autocompact.md](./2026-04-18-plan-k-autocompact.md) | K：LLM 辅助自动 compact + compact_boundary 持久化 | ✅ 已关闭（2026-04-19） |
 | [2026-04-18-plan-l-input-schema-validation.md](./2026-04-18-plan-l-input-schema-validation.md) | L：执行时 Input Schema Validation（safeParse + validateInput） | ✅ 已关闭（2026-04-19） |
 | [2026-04-18-plan-m-hook-system.md](./2026-04-18-plan-m-hook-system.md) | M：Hook 系统（PreToolUse / PostToolUse / Stop hooks） | ✅ 已关闭（2026-04-19） |

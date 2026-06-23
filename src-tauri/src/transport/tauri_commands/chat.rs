@@ -2579,11 +2579,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .tenant
             .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
 
-        let parts = prompts::build_system_prompt_parts(
-            prompts::PromptMode::Daily,
-            persona.as_ref(),
-            product_name.as_deref(),
-        );
+        let parts = prompts::build_system_prompt_parts(persona.as_ref(), product_name.as_deref());
         let prompt = if parts.dynamic_section.is_empty() {
             parts.static_section
         } else {
@@ -2626,7 +2622,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
 
         let assembly = PromptAssembler::default().build_system_prompt(PromptBuildContext {
-            mode: prompts::PromptMode::Daily,
             persona: persona.as_ref(),
             product_name: product_name.as_deref(),
         });

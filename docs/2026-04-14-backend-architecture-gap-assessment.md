@@ -241,7 +241,7 @@ lotus-app 已具备明确的 runtime-first 结构雏形：`SessionRuntime` / `Qu
 | | S3 | AppStorage 全局写锁，多会话并发锁竞争 | 🟠 | 可信（P4） |
 | **LLM 集成** | M2 | LlmGateway 无 trait，无法 mock | 🟠 | 可信（P4） |
 | | M3 | Token 计数用字符数，中文误差 3-4 倍 | 🟠 | 可信 |
-| | M4 | 关键词路由过度匹配（"薪酬"触发 Analysis 模式） | 🟡 | 可信 |
+| | M4 | 关键词路由过度匹配（"薪酬"触发分析任务路由） | 🟡 | 可信 |
 | | M5 | temperature 硬编码 0.7 | 🟡 | 可信 |
 | | M6 | 仅输出端防护，无输入端 prompt injection 检测 | 🟡 | 可信 |
 | **Python 沙箱** | PY1 | 静态检查可被绕过（3 行代码绕过） | 🔴 | 可信（P4：废弃沙箱） |
