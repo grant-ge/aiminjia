@@ -2371,13 +2371,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // --- Build content JSON, attaching generated files when present ---
         let mut content_value = if !generated_file_ids.is_empty() {
-            ensure_generated_file_records_from_metas(
-                self.services.db().as_ref(),
-                &self.services.app,
-                &self.services.file_mgr,
-                conversation_id,
-                file_metas,
-            );
+            if let Some(app) = self.services.app.as_ref() {
+                ensure_generated_file_records_from_metas(
+                    self.services.db().as_ref(),
+                    app,
+                    &self.services.file_mgr,
+                    conversation_id,
+                    file_metas,
+                );
+            }
             match self
                 .services
                 .db()
@@ -2942,7 +2944,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let enablement = self
             .services
             .app
-            .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            .as_ref()
+            .and_then(|app| {
+                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            })
             .map(|store| store.load_or_default())
             .unwrap_or_default();
 
@@ -2959,7 +2964,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let enablement = self
             .services
             .app
-            .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            .as_ref()
+            .and_then(|app| {
+                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            })
             .map(|store| store.load_or_default())
             .unwrap_or_default();
 

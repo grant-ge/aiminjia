@@ -866,6 +866,14 @@ pub async fn build_headless_driver(options: HeadlessBuildOptions) -> Result<Head
     }
 
     let global_store = Arc::new(GlobalConfigStore::new(home.global_dir()));
+    #[cfg(debug_assertions)]
+    {
+        let persisted = global_store
+            .get_setting(crate::environment::dev::CONFIG_KEY)
+            .ok()
+            .flatten();
+        crate::environment::dev::load(persisted.as_deref());
+    }
     let auth_manager = Arc::new(AuthManager::new(
         global_store,
         secure_storage.clone(),
@@ -1231,6 +1239,7 @@ fn permission_mode_to_external(mode: PermissionMode) -> &'static str {
         PermissionMode::Plan => "plan",
         PermissionMode::DontAsk => "dontAsk",
         PermissionMode::AcceptEdits => "acceptEdits",
+        PermissionMode::FullAccess => "fullAccess",
     }
 }
 
