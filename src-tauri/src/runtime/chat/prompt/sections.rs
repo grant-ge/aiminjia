@@ -47,24 +47,17 @@ pub struct PromptAssembler;
 impl PromptAssembler {
     pub fn build_system_prompt(&self, ctx: PromptBuildContext<'_>) -> PromptAssembly {
         let fragments = prompts::get_prompt_fragment_snapshot();
-        let base = match ctx.product_name {
+        let system = match ctx.product_name {
             Some(name) if !name.is_empty() && name != "AI小家" => {
-                fragments.base.replace("AI小家", name)
+                fragments.system.replace("AI小家", name)
             }
-            _ => fragments.base,
+            _ => fragments.system,
         };
 
-        let mut blocks = vec![
-            PromptBlock::static_block(PromptSectionId::new("base"), base),
-            PromptBlock::static_block(
-                PromptSectionId::new("tool_preference"),
-                fragments.tool_preference,
-            ),
-            PromptBlock::static_block(
-                PromptSectionId::new("memory_mechanics"),
-                fragments.memory_mechanics,
-            ),
-        ];
+        let mut blocks = vec![PromptBlock::static_block(
+            PromptSectionId::new("system"),
+            system,
+        )];
 
         if let Some(persona) = ctx.persona {
             let persona_text = render_persona_section(persona);
@@ -72,22 +65,6 @@ impl PromptAssembler {
                 blocks.push(PromptBlock::dynamic_block(
                     PromptSectionId::new("persona"),
                     persona_text,
-                ));
-            }
-        }
-
-        let daily = fragments.daily;
-        if !daily.trim().is_empty() {
-            let has_persona_memory = ctx.persona.is_some_and(|p| !p.memory_hints.is_empty());
-            let daily = if has_persona_memory {
-                strip_memory_section(&daily)
-            } else {
-                daily
-            };
-            if !daily.trim().is_empty() {
-                blocks.push(PromptBlock::dynamic_block(
-                    PromptSectionId::new("daily"),
-                    daily,
                 ));
             }
         }
@@ -114,28 +91,4 @@ fn render_persona_section(persona: &crate::storage::file_store::persona::Persona
         parts.push(format!("【记忆管理（白名单制）】\n{hints}"));
     }
     parts.join("\n\n")
-}
-
-fn strip_memory_section(prompt: &str) -> String {
-    let mut result = Vec::new();
-    let mut skip = false;
-
-    for line in prompt.lines() {
-        if line.contains("记忆管理") && line.contains("白名单") {
-            skip = true;
-            continue;
-        }
-
-        if skip {
-            if !line.trim().is_empty() && !line.trim().starts_with("- ") {
-                skip = false;
-            } else {
-                continue;
-            }
-        }
-
-        result.push(line);
-    }
-
-    result.join("\n")
 }

@@ -3,7 +3,9 @@
 //! Prompts are loaded from external .md files with a priority chain:
 //! 1. User override: `{data_root}/prompts/{name}.md`
 //! 2. Bundled default: `{resource_dir}/prompts/{name}.md`
-//! 3. Hardcoded fallback (base only)
+//! 3. Legacy fallback: `base.md` is accepted only when loading `system`
+//! 4. Source-bundled fallback for `system.md`
+//! 5. Hardcoded fallback for `system`
 //!
 //! The public API (`get_system_prompt`) remains unchanged. This module is a raw
 //! prompt store plus compatibility shim; new production assembly lives under
@@ -20,93 +22,36 @@ use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, PromptCa
 #[cfg(test)]
 pub(crate) static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-/// Minimal hardcoded fallback for `base` — used only when both
-/// override and bundled files are missing.
-const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
+/// Minimal hardcoded fallback for `system` — used only when all file fallbacks
+/// are missing.
+const SYSTEM_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
 
 /// All recognized prompt names.
-const PROMPT_NAMES: &[&str] = &["base", "daily"];
+const PROMPT_NAMES: &[&str] = &["system"];
 
-// 工具选择偏好章节——静态内容，写入 static_section。
-const TOOL_PREFERENCE_SECTION: &str = r#"
-
-【工具选择偏好】
-- 优先使用专用能力：遇到文件读取、搜索、分析等任务时，优先使用当前可用的专门能力，不要用脚本能力硬凑流程
-- 文件操作：描述文件内容时先基于实际读取结果；需要批量计算、转换或生成衍生结果时，再使用脚本或计算能力
-- 搜索：涉及外部事实、法规、政策、行情、时事或产品信息时，必须先执行真实搜索，不要伪造搜索结果
-- 记忆：不要假设系统一定提供长期记忆能力；若上下文里没有明确事实，就基于当前对话和已加载内容作答
-- 分析：任何数据分析、统计或结论都必须来自实际执行结果，不得编造
-
-【工具调用沟通】
-- 每次调用工具之前，必须先用一句话告诉用户你要做什么。无一例外。即使是单步、简单的调用也要说。
-- 不要用冒号引出工具调用；应使用句号，因为工具调用本身可能以独立状态展示。
-- 多步操作时，每一步开始前也要用一句话说明这一步要做什么。
-- 解释一句话即可，不要长篇大论；用户更看重知道你在做什么，而不是细节描述。
-
-【产物标记】
-- 当你通过任何方式（Write工具、Bash、脚本、MCP工具等）创建了最终产物文件时，在回复中用标记声明：`![artifact](文件绝对路径)`
-  示例：`![artifact](/Users/xxx/workspace/reports/销售报告.xlsx)`
-- 每个产物文件单独一行标记，放在回复末尾。只有最终产物标记，中间临时文件不标记
-- 标记会被系统自动识别并渲染为可交互的产物卡片，无需在正文中重复描述产物内容
-
-【引用链接】
-- 当回复中提到已使用的本地文件、网络地址、参考文档或依据来源时，优先用 Markdown 链接格式 `[名称](路径或URL)`，不要仅用行内代码展示路径。
-- 本地文件可使用相对路径、绝对路径或 file:// URL；网络地址使用 http/https URL。
-- 只有在强调命令、代码片段、字段名或路径本身作为纯文本说明时，才使用行内代码。"#;
-
-/// Memory mechanics section — 对标 claude-code-best 的记忆写回/召回指导。
-const MEMORY_MECHANICS_SECTION: &str = r#"
-
-【记忆管理】
-你拥有跨对话持久化记忆能力，可通过 `WriteMemory` 与 `SearchMemory` 操作项目记忆。
-
-何时调用 `WriteMemory`
-- 用户明确要求“记住”“下次也这样”
-- 用户纠正你的行为或确认一个长期适用的做法
-- 识别到稳定的用户偏好、项目约束、外部系统指针
-
-何时调用 `SearchMemory`
-- 当前问题明显依赖历史偏好、既有项目约束、过去确认过的做法
-- 回答前需要确认是否已有相关记忆，避免重复追问
-
-不要保存
-- 可从当前文件直接推导的信息
-- 只在本次对话临时有效的状态
-- 项目记忆不能替代本地文件、命令或工具权限；如果你通过 `WriteMemory` 记录了用户偏好，不要声称已经获得或持久化了文件访问授权，只有系统权限审批通过后才算授权生效
-
-类型约定
-- `user_preference`：用户偏好
-- `project_constraint`：项目约束
-- `reference_info`：外部系统指针
-- `feedback`：AI 行为纠正或确认
-
-`feedback` 建议写法：规则本体 + `**Why:**` + `**How to apply:**`
-
-引用记忆前要防漂移
-- 涉及文件路径先确认文件仍存在
-- 涉及函数名、变量名先在代码里确认仍存在
-- 用户说“忽略记忆”时，视作当前没有可用记忆，不引用也不比较旧记忆
-"#;
+fn bundled_prompt_fallback(name: &str) -> Option<&'static str> {
+    match name {
+        "system" => Some(include_str!("../../prompts/system.md")),
+        _ => None,
+    }
+}
 
 /// System prompt 的分层结构。
 ///
-/// `static_section`：可跨会话复用的稳定内容（base + 工具偏好）。
-/// `dynamic_section`：会话级动态内容（persona + daily.md）。
+/// `static_section`：可跨会话复用的稳定内容（system.md）。
+/// `dynamic_section`：会话级动态内容（persona 等运行时注入）。
 #[derive(Debug, Clone)]
 pub struct SystemPromptParts {
-    /// 稳定前缀（base.md 品牌替换后 + 工具选择偏好章节）
+    /// 稳定前缀（system.md 品牌替换后）
     pub static_section: String,
-    /// 动态后缀（persona 段 + daily.md）
+    /// 动态后缀（persona 段等运行时内容）
     pub dynamic_section: String,
 }
 
 /// Raw prompt fragments captured under one PromptStore read lock.
 #[derive(Debug, Clone)]
 pub struct PromptFragmentSnapshot {
-    pub base: String,
-    pub daily: String,
-    pub tool_preference: String,
-    pub memory_mechanics: String,
+    pub system: String,
 }
 
 /// Source from which a prompt was loaded (for logging).
@@ -129,8 +74,8 @@ impl std::fmt::Display for PromptSource {
 
 /// PromptStore 是纯文本片段仓库。
 ///
-/// 它只负责按名字加载/缓存 base、daily 等原始 prompt
-/// 片段，不承担 system prompt 组装逻辑。新增 prompt 片段时修改这里；
+/// 它只负责按名字加载/缓存 system.md 等原始 prompt
+/// 片段，不承担 system prompt 组装逻辑。新增静态 prompt 入口时修改这里；
 /// 组装策略统一放在 `build_system_prompt_parts`。
 struct PromptStore {
     prompts: HashMap<String, String>,
@@ -179,9 +124,27 @@ impl PromptStore {
             return (content, PromptSource::Bundled);
         }
 
-        // 3. Hardcoded fallback (base only)
-        if name == "base" {
-            return (BASE_FALLBACK.to_string(), PromptSource::Fallback);
+        // 3. Legacy compatibility: old installs may still override base.md.
+        if name == "system" {
+            let legacy_override = override_dir.join("base.md");
+            if let Some(content) = Self::read_non_empty(&legacy_override) {
+                return (content, PromptSource::Override);
+            }
+
+            let legacy_bundled = bundled_dir.join("base.md");
+            if let Some(content) = Self::read_non_empty(&legacy_bundled) {
+                return (content, PromptSource::Bundled);
+            }
+        }
+
+        // 4. Bundled source fallback for prompt fragments that live in markdown.
+        if let Some(content) = bundled_prompt_fallback(name) {
+            return (content.to_string(), PromptSource::Fallback);
+        }
+
+        // 5. Hardcoded fallback (system only)
+        if name == "system" {
+            return (SYSTEM_FALLBACK.to_string(), PromptSource::Fallback);
         }
 
         // Other prompts: empty string (prompt will just have BASE)
@@ -197,7 +160,11 @@ impl PromptStore {
     }
 
     fn get(&self, name: &str) -> &str {
-        self.prompts.get(name).map(|s| s.as_str()).unwrap_or("")
+        let normalized = if name == "base" { "system" } else { name };
+        self.prompts
+            .get(normalized)
+            .map(|s| s.as_str())
+            .unwrap_or("")
     }
 
     /// Reload all prompts from disk.
@@ -225,15 +192,7 @@ static PROMPT_STORE: LazyLock<RwLock<PromptStore>> = LazyLock::new(|| {
     if manifest_dir.join("prompts").is_dir() {
         RwLock::new(PromptStore::new(&manifest_dir, &empty))
     } else {
-        RwLock::new(PromptStore {
-            prompts: {
-                let mut m = HashMap::new();
-                m.insert("base".to_string(), BASE_FALLBACK.to_string());
-                m
-            },
-            bundled_dir: PathBuf::new(),
-            override_dir: PathBuf::new(),
-        })
+        RwLock::new(PromptStore::new(&empty, &empty))
     }
 });
 
@@ -255,10 +214,10 @@ pub fn reload_prompts() {
     guard.reload();
 }
 
-/// Get the base prompt content (for plugin composition).
+/// Get the system prompt content (legacy name kept for plugin composition).
 pub fn get_base_prompt() -> String {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
-    guard.get("base").to_string()
+    guard.get("system").to_string()
 }
 
 /// Get any raw prompt fragment by name.
@@ -271,21 +230,8 @@ pub fn get_prompt_fragment(name: &str) -> String {
 pub fn get_prompt_fragment_snapshot() -> PromptFragmentSnapshot {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
     PromptFragmentSnapshot {
-        base: guard.get("base").to_string(),
-        daily: guard.get("daily").to_string(),
-        tool_preference: TOOL_PREFERENCE_SECTION.to_string(),
-        memory_mechanics: MEMORY_MECHANICS_SECTION.to_string(),
+        system: guard.get("system").to_string(),
     }
-}
-
-/// Get the static tool preference guidance section.
-pub fn tool_preference_section() -> &'static str {
-    TOOL_PREFERENCE_SECTION
-}
-
-/// Get the static memory mechanics guidance section.
-pub fn memory_mechanics_section() -> &'static str {
-    MEMORY_MECHANICS_SECTION
 }
 
 /// Compatibility shim for old callers.
@@ -293,13 +239,13 @@ pub fn memory_mechanics_section() -> &'static str {
 ///
 /// 构建分层 system prompt（section 化版本）。
 ///
-/// - `static_section` = base.md（品牌替换后）+ TOOL_PREFERENCE_SECTION
-/// - `dynamic_section` = persona 段 + daily.md
+/// - `static_section` = system.md（品牌替换后）
+/// - `dynamic_section` = persona 段等运行时动态内容
 ///
 /// **注意：** 不再注入当前日期——日期改为首条 user message `<system-reminder>` 注入。
 /// build_system_prompt_parts 是 system prompt 的唯一组装入口；
 /// 其他调用方若需要完整字符串，应通过 `get_system_prompt` 这个兼容 shim
-/// 间接调用，而不是自行拼接 base / daily 片段。
+/// 间接调用，而不是自行拼接 prompt 片段。
 pub fn build_system_prompt_parts(
     persona: Option<&crate::storage::file_store::persona::Persona>,
     product_name: Option<&str>,
@@ -339,7 +285,7 @@ pub fn build_system_prompt_parts(
 /// 调用 `build_system_prompt_parts` 后拼接 static + dynamic。
 /// **不再注入当前日期**——日期改为 `run_chat_turn_s4` 的首条 user message 注入。
 ///
-/// `step` 参数保留仅为兼容旧调用点；现在所有调用都走统一 daily prompt。
+/// `step` 参数保留仅为兼容旧调用点；现在所有调用都走统一 system prompt。
 pub fn get_system_prompt(
     _step: Option<u32>,
     persona: Option<&crate::storage::file_store::persona::Persona>,
@@ -376,16 +322,12 @@ mod tests {
         fs::create_dir_all(&bundled).unwrap();
         fs::create_dir_all(&user).unwrap();
 
-        setup_prompts(
-            &bundled,
-            &[("base", "Test base prompt"), ("daily", "Test daily prompt")],
-        );
+        setup_prompts(&bundled, &[("system", "Test system prompt")]);
 
         init_prompts(&bundled, &user);
 
         let prompt = get_system_prompt(None, None, None);
-        assert!(prompt.contains("Test base prompt"));
-        assert!(prompt.contains("Test daily prompt"));
+        assert!(prompt.contains("Test system prompt"));
     }
 
     #[test]
@@ -395,22 +337,19 @@ mod tests {
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(
-            &bundled,
-            &[("base", "Bundled base"), ("daily", "Bundled daily")],
-        );
-        setup_prompts(&user, &[("base", "Custom base")]);
+        setup_prompts(&bundled, &[("system", "Bundled system")]);
+        setup_prompts(&user, &[("system", "Custom system")]);
 
         init_prompts(&bundled, &user);
 
         let prompt = get_system_prompt(None, None, None);
         assert!(
-            prompt.contains("Custom base"),
+            prompt.contains("Custom system"),
             "User override should take priority"
         );
         assert!(
-            prompt.contains("Bundled daily"),
-            "Non-overridden should use bundled"
+            !prompt.contains("Bundled system"),
+            "Overridden system prompt should not include bundled system prompt"
         );
     }
 
@@ -421,15 +360,15 @@ mod tests {
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(&bundled, &[("base", "Bundled base")]);
+        setup_prompts(&bundled, &[("system", "Bundled system")]);
         // Empty override file should be ignored
-        setup_prompts(&user, &[("base", "   ")]);
+        setup_prompts(&user, &[("system", "   ")]);
 
         init_prompts(&bundled, &user);
 
         let prompt = get_system_prompt(None, None, None);
         assert!(
-            prompt.contains("Bundled base"),
+            prompt.contains("Bundled system"),
             "Empty override should fall through to bundled"
         );
     }
@@ -448,7 +387,7 @@ mod tests {
         let prompt = get_system_prompt(None, None, None);
         assert!(
             prompt.contains("AI小家"),
-            "Should fall back to hardcoded base"
+            "Should fall back to hardcoded system prompt"
         );
     }
 
@@ -459,32 +398,27 @@ mod tests {
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(
-            &bundled,
-            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
-        );
+        setup_prompts(&bundled, &[("system", "AI小家 system")]);
         fs::create_dir_all(&user).unwrap();
 
         init_prompts(&bundled, &user);
 
-        // Daily mode works
-        assert!(get_system_prompt(None, None, None).contains("日常工作助手"));
+        // Unified system prompt works
+        assert!(get_system_prompt(None, None, None).contains("AI小家 system"));
 
-        // Step variants now reuse the same unified daily prompt.
+        // Step variants now reuse the same unified system prompt.
         let step0 = get_system_prompt(Some(0), None, None);
-        assert!(step0.contains("AI小家 base"));
-        assert!(step0.contains("日常工作助手"));
+        assert!(step0.contains("AI小家 system"));
 
         // Invalid step also returns the same unified prompt
         let step99 = get_system_prompt(Some(99), None, None);
-        assert!(step99.contains("AI小家 base"));
-        assert!(step99.contains("日常工作助手"));
+        assert!(step99.contains("AI小家 system"));
 
-        // Base always included
+        // System always included
         for step in [None, Some(0), Some(1), Some(5)] {
             assert!(
-                get_system_prompt(step, None, None).contains("AI小家 base"),
-                "Step {:?} should include base prompt",
+                get_system_prompt(step, None, None).contains("AI小家 system"),
+                "Step {:?} should include system prompt",
                 step,
             );
         }
@@ -497,53 +431,52 @@ mod tests {
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(&bundled, &[("base", "Original base")]);
+        setup_prompts(&bundled, &[("system", "Original system")]);
         fs::create_dir_all(&user).unwrap();
 
         // Test reload on a standalone PromptStore instance to avoid global state races
         let mut store = PromptStore::new(&bundled, &user);
-        assert!(store.get("base").contains("Original base"));
+        assert!(store.get("system").contains("Original system"));
 
         // Write user override
-        setup_prompts(&user, &[("base", "Updated base")]);
+        setup_prompts(&user, &[("system", "Updated system")]);
 
         store.reload();
-        assert!(store.get("base").contains("Updated base"));
+        assert!(store.get("system").contains("Updated system"));
     }
 
     #[test]
-    fn test_build_system_prompt_parts_daily_has_static_and_dynamic() {
+    fn test_build_system_prompt_parts_has_single_static_system() {
         let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
         setup_prompts(
             &bundled,
-            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
+            &[(
+                "system",
+                "AI小家 system\n\n<tool_use_protocol>\n优先使用专用能力\n</tool_use_protocol>",
+            )],
         );
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
         let parts = build_system_prompt_parts(None, None);
         assert!(
-            parts.static_section.contains("AI小家 base"),
-            "static_section must contain base prompt"
+            parts.static_section.contains("AI小家 system"),
+            "static_section must contain system prompt"
         );
         assert!(
-            parts.static_section.contains("工具选择偏好"),
-            "static_section must contain tool preference section"
+            parts.static_section.contains("优先使用专用能力"),
+            "static_section must contain tool guidance"
         );
         assert!(
             !parts.static_section.contains("今天是"),
             "static_section must NOT contain date"
         );
         assert!(
-            parts.dynamic_section.contains("日常工作助手"),
-            "dynamic_section must contain daily prompt"
-        );
-        assert!(
-            !parts.dynamic_section.contains("AI小家 base"),
-            "dynamic_section must NOT repeat base prompt"
+            parts.dynamic_section.is_empty(),
+            "dynamic_section must be empty without persona or runtime dynamic content"
         );
     }
 
@@ -553,7 +486,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(&bundled, &[("base", "你是 AI小家"), ("daily", "")]);
+        setup_prompts(&bundled, &[("system", "你是 AI小家")]);
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
@@ -575,7 +508,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "日常")]);
+        setup_prompts(&bundled, &[("system", "AI小家")]);
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
@@ -617,27 +550,19 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(
-            &bundled,
-            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
-        );
+        setup_prompts(&bundled, &[("system", "AI小家 system")]);
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
         let prompt = get_system_prompt(None, None, None);
-        assert!(prompt.contains("AI小家 base"), "shim: base must be present");
         assert!(
-            prompt.contains("日常工作助手"),
-            "shim: daily must be present for step=None"
+            prompt.contains("AI小家 system"),
+            "shim: system must be present"
         );
         let prompt_step = get_system_prompt(Some(0), None, None);
         assert!(
-            prompt_step.contains("AI小家 base"),
-            "shim: base must be present for step"
-        );
-        assert!(
-            prompt_step.contains("日常工作助手"),
-            "shim: step=Some must reuse unified daily prompt"
+            prompt_step.contains("AI小家 system"),
+            "shim: step=Some must reuse unified system prompt"
         );
         assert!(
             !prompt.contains("今天是"),
@@ -646,12 +571,15 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_preference_section_content() {
+    fn test_system_prompt_contains_tool_and_delivery_guidance() {
         let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        setup_prompts(
+            &bundled,
+            &[("system", include_str!("../../prompts/system.md"))],
+        );
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
@@ -669,7 +597,21 @@ mod tests {
             "must mention memory capability limits in context"
         );
         assert!(
-            parts.static_section.contains("【引用链接】"),
+            parts.static_section.contains("<file_creation_protocol>"),
+            "must include deliverable discipline guidance"
+        );
+        assert!(
+            parts.static_section.contains("必须创建或更新对应文件"),
+            "must require file creation when the user asks for deliverables"
+        );
+        assert!(
+            parts
+                .static_section
+                .contains("验证最终产物存在、非空、路径正确"),
+            "must require final deliverable verification"
+        );
+        assert!(
+            parts.static_section.contains("<sharing_files>"),
             "must include markdown link guidance for referenced files and URLs"
         );
         assert!(
@@ -684,13 +626,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        setup_prompts(
+            &bundled,
+            &[("system", include_str!("../../prompts/system.md"))],
+        );
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
         let parts = build_system_prompt_parts(None, None);
-        let must_announce = "每次调用工具之前，必须先用一句话告诉用户你要做什么。无一例外。即使是单步、简单的调用也要说。";
-        let no_colon = "不要用冒号引出工具调用；应使用句号，因为工具调用本身可能以独立状态展示。";
+        let must_announce = "调用工具前，只简短说明当前具体动作或新的观察。";
+        let no_colon = "不要用冒号引出工具调用。";
 
         assert_eq!(
             parts.static_section.matches(must_announce).count(),
@@ -705,12 +650,15 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_preference_section_omits_retired_tool_names() {
+    fn test_system_prompt_omits_retired_tool_names() {
         let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        setup_prompts(
+            &bundled,
+            &[("system", include_str!("../../prompts/system.md"))],
+        );
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
@@ -725,12 +673,15 @@ mod tests {
     }
 
     #[test]
-    fn test_memory_mechanics_section_mentions_runtime_memory_tools_only() {
+    fn test_system_prompt_mentions_runtime_memory_tools_only() {
         let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        setup_prompts(
+            &bundled,
+            &[("system", include_str!("../../prompts/system.md"))],
+        );
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 

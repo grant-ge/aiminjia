@@ -37,13 +37,14 @@ fn review_context_builder_remains_dynamic_only() {
 
 #[test]
 fn review_get_system_prompt_is_a_compatibility_shim_over_parts() {
-    let daily_parts = build_system_prompt_parts(None, None);
-    let expected_daily = format!(
-        "{}\n\n{}",
-        daily_parts.static_section, daily_parts.dynamic_section
-    );
-    assert_eq!(get_system_prompt(None, None, None), expected_daily);
-    assert_eq!(get_system_prompt(Some(0), None, None), expected_daily);
+    let parts = build_system_prompt_parts(None, None);
+    let expected = if parts.dynamic_section.is_empty() {
+        parts.static_section
+    } else {
+        format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
+    };
+    assert_eq!(get_system_prompt(None, None, None), expected);
+    assert_eq!(get_system_prompt(Some(0), None, None), expected);
 }
 
 #[test]
@@ -59,8 +60,8 @@ fn review_prompts_module_documents_single_assembly_boundary() {
         "prompts.rs must document build_system_prompt_parts as the single assembly entrypoint"
     );
     assert!(
-        source.contains("工具选择偏好章节——静态内容，写入 static_section"),
-        "TOOL_PREFERENCE_SECTION comment should explain it is a static section"
+        source.contains("\"system\"") && !source.contains("\"tool-preference\""),
+        "static prompt guidance must be loaded through the single system.md entrypoint"
     );
 }
 

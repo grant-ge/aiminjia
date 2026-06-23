@@ -174,7 +174,7 @@ fn mock_executor_implements_trait() {
 
 // ── S4-T6: safeguard 模块 ──────────────────────────────────────────────────
 
-use app_lib::runtime::chat::safeguard::{check_iteration, SafeguardAction};
+use app_lib::runtime::chat::safeguard::{SafeguardAction, check_iteration};
 
 #[test]
 fn safeguard_continues_when_not_near_limit() {
@@ -185,10 +185,13 @@ fn safeguard_continues_when_not_near_limit() {
 #[test]
 fn safeguard_daily_injects_when_near_limit_no_content() {
     let action = check_iteration(7, 10, "");
-    assert!(matches!(
-        action,
-        SafeguardAction::InjectPromptAndContinue(_)
-    ));
+    match action {
+        SafeguardAction::InjectPromptAndContinue(message) => {
+            assert!(message.contains("优先交付用户要求的最终产物"));
+            assert!(message.contains("验证文件存在、非空、路径正确"));
+        }
+        SafeguardAction::Continue => panic!("expected safeguard prompt near iteration limit"),
+    }
 }
 
 // ── S4-T7: post_process 模块 ──────────────────────────────────────────────
@@ -1019,7 +1022,7 @@ use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::chat::TurnConfigOverrides;
 use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::transport::tauri_commands::chat::chat_runtime_impl::{
-    build_visible_tool_defs, ToolSchemaFilter,
+    ToolSchemaFilter, build_visible_tool_defs,
 };
 
 struct ToolDefsCapturingExecutor {

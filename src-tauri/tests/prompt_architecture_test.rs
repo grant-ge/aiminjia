@@ -4,8 +4,8 @@ use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, Remind
 use app_lib::runtime::tools::catalog::ToolCatalog;
 
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc, LazyLock, Mutex,
+    atomic::{AtomicUsize, Ordering},
 };
 
 use app_lib::runtime::chat::prompt::{
@@ -106,15 +106,14 @@ fn prompt_diagnostics_reports_section_lengths_and_cache_policy() {
 }
 
 #[test]
-fn prompt_assembler_places_base_before_dynamic_daily_prompt() {
+fn prompt_assembler_uses_system_prompt_as_static_prefix() {
     let _guard = PROMPT_TEST_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let bundled = tmp.path().join("bundled");
     let user = tmp.path().join("user");
     std::fs::create_dir_all(bundled.join("prompts")).unwrap();
     std::fs::create_dir_all(&user).unwrap();
-    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
-    std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
+    std::fs::write(bundled.join("prompts/system.md"), "AI小家 system").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let assembler = PromptAssembler::default();
@@ -124,30 +123,20 @@ fn prompt_assembler_places_base_before_dynamic_daily_prompt() {
     });
 
     let blocks = assembly.blocks();
-    assert!(blocks[0].text.contains("AI小家 base"));
+    assert!(blocks[0].text.contains("AI小家 system"));
     assert_eq!(blocks[0].cache_policy, PromptCachePolicy::StaticPrefix);
-    assert!(blocks
-        .iter()
-        .any(|block| block.text.contains("daily prompt")));
-    assert!(blocks
-        .iter()
-        .any(|block| block.cache_policy == PromptCachePolicy::SessionDynamic));
+    assert_eq!(blocks.len(), 1);
 }
 
 #[test]
-fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exist() {
+fn prompt_assembler_places_persona_memory_hints_in_dynamic_section() {
     let _guard = PROMPT_TEST_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let bundled = tmp.path().join("bundled");
     let user = tmp.path().join("user");
     std::fs::create_dir_all(bundled.join("prompts")).unwrap();
     std::fs::create_dir_all(&user).unwrap();
-    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
-    std::fs::write(
-        bundled.join("prompts/daily.md"),
-        "daily intro\n记忆管理（白名单制）\n- old memory hint\n- another old hint\n\n后续章节\nkeep this section",
-    )
-    .unwrap();
+    std::fs::write(bundled.join("prompts/system.md"), "AI小家 system").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let persona = app_lib::storage::file_store::persona::Persona {
@@ -169,23 +158,20 @@ fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exis
 
     let parts = prompts::build_system_prompt_parts(Some(&persona), None);
 
-    assert!(parts.dynamic_section.contains("daily intro"));
     assert!(parts.dynamic_section.contains("new memory hint"));
-    assert!(!parts.dynamic_section.contains("old memory hint"));
-    assert!(parts.dynamic_section.contains("后续章节"));
-    assert!(parts.dynamic_section.contains("keep this section"));
+    assert!(parts.dynamic_section.contains("【记忆管理（白名单制）】"));
+    assert!(parts.static_section.contains("AI小家 system"));
 }
 
 #[test]
-fn prompt_assembler_matches_legacy_daily_prompt_parts() {
+fn prompt_assembler_matches_system_prompt_parts() {
     let _guard = PROMPT_TEST_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let bundled = tmp.path().join("bundled");
     let user = tmp.path().join("user");
     std::fs::create_dir_all(bundled.join("prompts")).unwrap();
     std::fs::create_dir_all(&user).unwrap();
-    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
-    std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
+    std::fs::write(bundled.join("prompts/system.md"), "AI小家 system").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let assembler = PromptAssembler::default();

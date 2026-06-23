@@ -22,7 +22,7 @@ pub fn check_iteration(
 ) -> SafeguardAction {
     if full_content.is_empty() && iteration >= max_iterations.saturating_sub(3) {
         return SafeguardAction::InjectPromptAndContinue(
-            "请停止调用工具，直接用文字向用户总结目前的分析结果。".to_string(),
+            "已接近处理上限。请停止扩展探索，优先交付用户要求的最终产物；如果用户要求文件、报告、脚本、配置或数据输出，请立即创建或更新对应文件，并验证文件存在、非空、路径正确。只有无法交付时，才用文字说明阻塞原因和已完成的部分。".to_string(),
         );
     }
 
@@ -43,10 +43,13 @@ mod tests {
     fn daily_injects_when_near_limit_and_no_content() {
         // iteration 7 >= max_iterations(10) - 3 = 7, full_content empty
         let action = check_iteration(7, 10, "");
-        assert!(matches!(
-            action,
-            SafeguardAction::InjectPromptAndContinue(_)
-        ));
+        match action {
+            SafeguardAction::InjectPromptAndContinue(message) => {
+                assert!(message.contains("优先交付用户要求的最终产物"));
+                assert!(message.contains("验证文件存在、非空、路径正确"));
+            }
+            SafeguardAction::Continue => panic!("expected safeguard prompt near iteration limit"),
+        }
     }
 
     #[test]
