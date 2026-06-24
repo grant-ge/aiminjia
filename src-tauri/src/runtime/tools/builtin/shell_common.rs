@@ -113,6 +113,11 @@ pub fn format_command_failure(
     let mut message = semantic_message
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("Command failed with exit code {exit_code}"));
+    if exit_code == 127 {
+        message.push_str(
+            ". The command is not available in this shell; use an installed alternative, a small script in an available runtime, or continue with already verified evidence instead of retrying the same missing command.",
+        );
+    }
     if semantic_message.is_some() {
         message.push_str(&format!(" (exit code {exit_code})"));
     }

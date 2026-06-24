@@ -65,6 +65,7 @@ pub fn build_persisted_tool_result_message(record: &ToolResultArtifactRef) -> St
             "Full output saved to: {}\n",
             "Original chars: {}\n",
             "Sha256: {}\n",
+            "Note: Preview is incomplete. If omitted output matters, read the saved file before relying on this result.\n",
             "Preview:\n",
             "{}\n",
             "</persisted-tool-result>"

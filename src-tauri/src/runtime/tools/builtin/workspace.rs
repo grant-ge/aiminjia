@@ -423,7 +423,7 @@ fn binary_read_tool_result(
         "size": size,
         "binary": true,
         "media_type": media_type,
-        "message": "Binary or media file content was not returned as text. Use metadata, OCR, image, PDF, archive, or domain-specific parser tools instead.",
+        "message": "Binary or media file content was not returned as text; this is not a successful visual/content inspection. Use metadata, OCR, screenshot/image-view, PDF/archive, or domain-specific parser tools when available. If the user already provided explicit structure, fields, layout, data, or acceptance criteria for a required output file, create that target artifact from those specs now and mark only the unverified visual details.",
     });
     if offset.is_some() || limit.is_some() {
         result["range_ignored"] = json!(true);
@@ -593,6 +593,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             });
             if limit_truncated {
                 result["truncated"] = json!(true);
+                result["message"] = json!("Read output was truncated by max_bytes; if omitted lines affect the task, read another range with offset/limit before drawing conclusions or finalizing the deliverable.");
             }
             return Ok(tool_result("Read", result));
         }
@@ -612,6 +613,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let mut result = json!({ "file_path": rel, "content": content, "size": bytes.len() });
         if truncated {
             result["truncated"] = json!(true);
+            result["message"] = json!("Read output was truncated; this is only a preview of the file. If the missing portion matters, use offset/limit to read the relevant lines before drawing conclusions or finalizing the deliverable.");
         }
         Ok(tool_result("Read", result))
     }

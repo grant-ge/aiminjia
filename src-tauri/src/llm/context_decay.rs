@@ -231,7 +231,7 @@ pub fn apply_decay_with_policy(messages: &[ChatMessage], policy: &DecayPolicy) -
                     let mut truncated = msg.clone();
                     let end = truncate_at_char_boundary(&msg.content, limit);
                     truncated.content = format!(
-                        "{}...\n[decayed: {} → {} chars]",
+                        "{}...\n[decayed: {} → {} chars; this is an incomplete older tool-result preview. If omitted content matters, re-read the source file or rerun a targeted command before relying on it.]",
                         &msg.content[..end],
                         msg.content.len(),
                         end

@@ -235,3 +235,30 @@ Expected effect:
 - Improve media-to-artifact tasks that currently stop after binary/metadata probing.
 - Reduce zero-score outcomes where a requested `output/output.html` or similar artifact is never created.
 - Avoid increasing deep reading loops; the first version should be valid, inspectable, and later refinable if visual evidence becomes available.
+
+## 2026-06-24 tool-description and tool-error prompt alignment
+
+Follow-up adjustment after commit `bde63fbf`:
+
+- Changed the `Read` tool description so binary media limitations are visible before the model calls the tool: media files do not return raw content, so the model should use metadata/OCR/screenshot/parser paths or explicit user specs.
+- Changed the binary `Read` tool result message so it says the read was not a successful visual/content inspection, and gives the next action: if the user already supplied explicit structure, fields, layout, data, or acceptance criteria for a required output file, create that artifact now and mark only unverified visual details.
+- Changed the `ImageTask` tool description to state that it creates/edits images but is not an image viewer, OCR tool, chart parser, or visual QA tool.
+- Changed shell command-not-found feedback (`exit_code=127`) so the next step is to use an installed alternative, a small script in an available runtime, or continue from verified evidence rather than retrying the same missing command.
+- Added truncation-aware hints to the `Read` tool description, truncated `Read` results, context-decayed older tool results, and persisted large tool-result previews. These tell the model that previews are incomplete and that relevant omitted content must be read before relying on the result.
+
+QoderWork reference pattern:
+
+- QoderWork separates global behavior from tool-local protocols. Its prompt explicitly describes tool selection preference, shell path semantics, artifact creation rules, and file-sharing behavior near the relevant tool section rather than relying only on one global instruction block.
+- The lotus change follows that pattern at a smaller scope: keep the global system prompt as the general contract, but make tool descriptions and tool error messages carry the immediate recovery instruction at the point where the model is most likely to branch incorrectly.
+
+Boundary:
+
+- This is a generic tool-usability improvement, not a PawBench task-specific adaptation. It does not mention any task id, sample file, benchmark path, or fixed answer.
+- It changes prompt/error text only. It does not alter tool execution, grading, permissions, or file detection behavior.
+
+Expected effect:
+
+- Reduce loops after missing local commands such as `file` or `identify`.
+- Reduce misuse of image-generation tooling as a viewing/OCR mechanism.
+- Improve artifact tasks where the user has already supplied enough concrete content to produce a useful first output even when independent media viewing is unavailable.
+- Reduce false conclusions from truncated file or tool-output previews by making the recovery action explicit at the point of truncation.

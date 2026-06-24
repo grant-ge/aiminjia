@@ -136,7 +136,10 @@ fn build_default_catalog() -> ToolCatalog {
 
     // ── Primitive: workspace tools ──────────────────────────────────
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("Read", "读取授权工作目录中的文本文件内容")
+        ToolDefinition::new(
+            "Read",
+            "读取授权工作目录中的文本文件内容。PNG/JPG/PDF/音视频/压缩包等二进制媒体不会返回原始内容；遇到这类文件应改用元数据、OCR、截图、专用解析器或用户已给出的明确规格推进交付。大文件可能返回 truncated=true；若被截断部分影响结论，应使用 offset/limit 继续读取，不要把预览当完整证据。",
+        )
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(16_000)
@@ -361,6 +364,8 @@ fn build_default_catalog() -> ToolCatalog {
             \n- 文生图使用 action=image.create，可不传 input_images。\
             \n- 图生图、参考图编辑、风格迁移或变体使用 action=image.edit 或 image.variation，并传 input_images。\
             \n- input_images 可使用用户附件中的 filePath/fileId；不要传 provider 字段如 image、response_format、model。\
+            \n- 本工具不是图片查看、OCR、图表解析或视觉问答工具；它返回生成/编辑后的图片文件，不代表已经理解了输入图内容。\
+            \n- 如果只是需要从图片/视频/页面生成报告、HTML、SVG、代码或数据文件，优先使用查看、OCR、截图、元数据或专用解析工具；没有这些能力但用户已给出明确规格时，直接基于规格创建目标产物并标明未验证细节。\
             \n- 工具会把生成图片保存为当前会话的 generated file，并返回 fileId。",
         )
         .with_kind(ToolKind::Power)

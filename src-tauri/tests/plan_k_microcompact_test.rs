@@ -29,6 +29,7 @@ fn persisted_tool_result_ref(tool_call_id: &str) -> String {
             "Full output saved to: /tmp/{}.txt\n",
             "Original chars: 90000\n",
             "Sha256: {}\n",
+            "Note: Preview is incomplete. If omitted output matters, read the saved file before relying on this result.\n",
             "Preview:\n",
             "{}\n",
             "</persisted-tool-result>"
