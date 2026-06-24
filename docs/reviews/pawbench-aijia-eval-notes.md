@@ -154,6 +154,15 @@ Follow-up verification after commit `e6fb7c67`:
 - Key improvement: the agent read `post-history.json` and `config.json` before writing the final report.
 - Remaining miss: it compared the rate-limit timestamps incorrectly, concluding the opposite of the expected `148 minutes < 180 minutes` result.
 
-Prompt adjustment:
+Prompt adjustment experiment:
 
 - Add an explicit time-window calculation contract to `system.md`: normalize time zones, write `last_event_time`, `current_time`, `elapsed`, `required_interval`, `remaining_wait`, and `next_eligible_time`, then derive the rate-limit/cooldown conclusion from `elapsed >= required_interval`.
+
+Regression check after commit `10eb36f5`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\10eb36f5_task00016_timecalc_c1_j1_20260624_221851\20260624_221853\pawbench\deepseek-v4-flash\aijia\20260624_221853.json`
+- Score: `0.6513333333333333`
+- Status: `success`
+- Regression: score dropped from `0.7293333333333334` to `0.6513333333333333`, tokens rose from `24,921` to `50,031`, and the report still misinterpreted UTC/rate-limit timing.
+- Decision: revert the extra global time-window prompt text. The effective fix for this sample is the runtime delivery-guard grace period, not more global prompt detail.
