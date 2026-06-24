@@ -3566,7 +3566,7 @@ impl RuntimeChatTurnDriver {
                     state.iteration_count = iteration + 1;
 
                     let missing_targets = if delivery_guard_count > 0 {
-                        safeguard::missing_requested_file_targets(
+                        safeguard::unready_requested_file_targets(
                             &requested_file_targets,
                             &delivery_guard_workspace,
                         )
