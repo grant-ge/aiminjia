@@ -78,7 +78,7 @@ fn looks_like_creation_request(text: &str) -> bool {
     .any(|marker| lower.contains(marker))
 }
 
-fn clean_file_candidate(raw: &str) -> Option<String> {
+pub(crate) fn normalize_workspace_file_candidate(raw: &str) -> Option<String> {
     let candidate = raw
         .trim()
         .trim_matches(|c: char| {
@@ -129,6 +129,82 @@ fn clean_file_candidate(raw: &str) -> Option<String> {
     Some(candidate)
 }
 
+fn char_boundary_before(text: &str, mut idx: usize) -> usize {
+    idx = idx.min(text.len());
+    while idx > 0 && !text.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
+fn char_boundary_after(text: &str, mut idx: usize) -> usize {
+    idx = idx.min(text.len());
+    while idx < text.len() && !text.is_char_boundary(idx) {
+        idx += 1;
+    }
+    idx
+}
+
+fn output_context_for_match(request: &str, start: usize, end: usize) -> bool {
+    let before_start = char_boundary_before(request, start.saturating_sub(96));
+    let after_end = char_boundary_after(request, end.saturating_add(96));
+    let before = request
+        .get(before_start..start)
+        .unwrap_or_default()
+        .to_lowercase();
+    let after = request
+        .get(end..after_end)
+        .unwrap_or_default()
+        .to_lowercase();
+    let immediate_before_start = char_boundary_before(request, start.saturating_sub(24));
+    let immediate_before = request
+        .get(immediate_before_start..start)
+        .unwrap_or_default()
+        .to_lowercase();
+
+    if [
+        "from ",
+        "using ",
+        "based on ",
+        "read ",
+        "load ",
+        "source ",
+        "input ",
+        "从",
+        "读取",
+        "基于",
+        "来源",
+    ]
+    .iter()
+    .any(|marker| immediate_before.contains(marker))
+    {
+        return false;
+    }
+
+    before.contains("create")
+        || before.contains("write")
+        || before.contains("save")
+        || before.contains("generate")
+        || before.contains("output")
+        || before.contains("export")
+        || before.contains("produce")
+        || before.contains("report to")
+        || before.contains("as a")
+        || before.contains("to ")
+        || before.contains("创建")
+        || before.contains("新建")
+        || before.contains("写入")
+        || before.contains("保存")
+        || before.contains("生成")
+        || before.contains("输出")
+        || before.contains("导出")
+        || after.contains("file")
+        || after.contains("workspace root")
+        || after.contains("工作区根")
+        || after.contains("根目录")
+        || after.contains("文件")
+}
+
 /// Extract explicit file targets from a user request when the request appears to
 /// require creating/updating files. The result is intentionally conservative and
 /// only includes relative workspace paths.
@@ -139,12 +215,24 @@ pub fn extract_requested_file_targets(request: &str) -> Vec<String> {
 
     let mut targets = BTreeSet::new();
     for caps in CODE_SPAN_RE.captures_iter(request) {
-        if let Some(value) = caps.get(1).and_then(|m| clean_file_candidate(m.as_str())) {
+        let Some(m) = caps.get(1) else {
+            continue;
+        };
+        if !output_context_for_match(request, m.start(), m.end()) {
+            continue;
+        }
+        if let Some(value) = normalize_workspace_file_candidate(m.as_str()) {
             targets.insert(value);
         }
     }
     for caps in BARE_FILE_RE.captures_iter(request) {
-        if let Some(value) = caps.get(1).and_then(|m| clean_file_candidate(m.as_str())) {
+        let Some(m) = caps.get(1) else {
+            continue;
+        };
+        if !output_context_for_match(request, m.start(), m.end()) {
+            continue;
+        }
+        if let Some(value) = normalize_workspace_file_candidate(m.as_str()) {
             targets.insert(value);
         }
     }
@@ -173,6 +261,17 @@ pub fn delivery_guard_prompt(missing_targets: &[String]) -> String {
         .join("\n");
     format!(
         "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区仍未发现以下非空文件：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入工具，在用户指定路径创建这些文件的最小可交付骨架。骨架可以包含章节、TODO、已知事实、待验证项或阻塞原因，但必须是真实文件。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少存在且非空。\n</system-reminder>"
+    )
+}
+
+pub fn delivery_guard_blocking_prompt(missing_targets: &[String]) -> String {
+    let list = missing_targets
+        .iter()
+        .map(|target| format!("- `{target}`"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "<system-reminder>\n上一轮已经要求先交付命名文件，但你本轮仍准备调用非写入工具。系统已跳过这批工具调用，因为以下目标文件仍不存在或为空：\n{list}\n\n下一轮只调用 Write 或 Edit 写入这些路径的最小可交付内容；不要调用 Read、Glob、Bash、Skill、TaskCreate 或其它探索工具。可以写入部分诊断、TODO、阻塞原因和已知事实，之后再补充。\n</system-reminder>"
     )
 }
 
@@ -257,5 +356,13 @@ mod tests {
         assert!(prompt.contains("missing.md"));
         assert!(!prompt.contains("present.md"));
         assert!(prompt.contains("必须优先调用 Write"));
+    }
+
+    #[test]
+    fn does_not_treat_source_file_as_output_target() {
+        let targets = extract_requested_file_targets(
+            "Read `input.csv` and create `report.md` with the findings.",
+        );
+        assert_eq!(targets, vec!["report.md".to_string()]);
     }
 }

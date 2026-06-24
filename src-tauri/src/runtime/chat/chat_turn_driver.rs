@@ -114,6 +114,26 @@ fn round_has_successful_teammate_spawn(round_results: &[ToolRoundResult]) -> boo
     })
 }
 
+fn tool_calls_write_missing_target(
+    tool_calls: &[RuntimeToolCallRequest],
+    missing_targets: &[String],
+) -> bool {
+    tool_calls.iter().any(|call| {
+        if !matches!(call.tool_name.as_str(), "Write" | "Edit") {
+            return false;
+        }
+        let Some(target) = call
+            .args
+            .get("file_path")
+            .and_then(|value| value.as_str())
+            .and_then(safeguard::normalize_workspace_file_candidate)
+        else {
+            return false;
+        };
+        missing_targets.iter().any(|missing| missing == &target)
+    })
+}
+
 fn extract_name_markers(text: &str) -> HashSet<String> {
     let mut names = HashSet::new();
     let mut rest = text;
@@ -3544,6 +3564,33 @@ impl RuntimeChatTurnDriver {
                     state.step_cache_creation_input_tokens += cache_creation_input_tokens;
                     state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
+
+                    let missing_targets = if delivery_guard_count > 0 {
+                        safeguard::missing_requested_file_targets(
+                            &requested_file_targets,
+                            &delivery_guard_workspace,
+                        )
+                    } else {
+                        Vec::new()
+                    };
+                    if !missing_targets.is_empty()
+                        && !tool_calls_write_missing_target(&tool_calls, &missing_targets)
+                    {
+                        delivery_guard_count += 1;
+                        if !assistant_content.trim().is_empty() {
+                            state.messages.push(serde_json::json!({
+                                "role": "assistant",
+                                "content": assistant_content,
+                            }));
+                        }
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": safeguard::delivery_guard_blocking_prompt(&missing_targets),
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
 
                     // Stage: Tools — emit the planned batch so the UI immediately
                     // shows "正在执行 X / 正在并行运行 N 个工具".  Per-tool
