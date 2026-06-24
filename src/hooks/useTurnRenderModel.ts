@@ -779,6 +779,7 @@ export function buildTurnsFromMessages(
 
   const turns: RenderTurn[] = [];
   let current: RenderTurn | null = null;
+  let pendingInternalEventFollowup = false;
 
   for (const m of messages) {
     if (isCompactBoundaryMessage(m)) {
@@ -797,6 +798,7 @@ export function buildTurnsFromMessages(
         isComplete: true,
       });
       current = null;
+      pendingInternalEventFollowup = false;
       continue;
     }
 
@@ -808,9 +810,13 @@ export function buildTurnsFromMessages(
       // Runtime XML is injected as user-role context for the LLM, but it is
       // not user-authored chat content and should not render a visible row.
       if (isInternalEventMessage(text)) {
-        current = null;
+        if (current) {
+          current.isComplete = true;
+          pendingInternalEventFollowup = true;
+        }
         continue;
       }
+      pendingInternalEventFollowup = false;
       // Normal user message — original logic.
       current = {
         userMessage: normalizeUserMessageForRender(m),
@@ -850,6 +856,8 @@ export function buildTurnsFromMessages(
       // Order in blocks: assistant text first (matches natural narration flow),
       // then tool calls below it.
       const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
+      const isInternalEventFollowup =
+        pendingInternalEventFollowup && !hasToolCalls;
       // 一旦遇到 toolCalls 为空的 assistant message，即说明本 turn 已收到
       // chat_turn_driver Step 8 emit 的最终消息候选。若后面又出现工具调用，
       // 说明它只是过程性回复，最终候选会被清掉并等待后续普通回复覆盖。
@@ -884,7 +892,7 @@ export function buildTurnsFromMessages(
               id: segmentId,
               segment,
             });
-            if (!hasToolCalls && !m.error) {
+            if (!hasToolCalls && !m.error && !isInternalEventFollowup) {
               current.completedFinalAnswer = segment;
             }
             return;
@@ -1014,6 +1022,7 @@ export function buildTurnsFromMessages(
           current.blocks.push({ kind: "generatedFile", id: file.id, file });
         }
       }
+      pendingInternalEventFollowup = false;
       continue;
     }
 
@@ -1107,13 +1116,17 @@ export function buildTurnsFromMessages(
       recalcToolGroup(turn.toolGroup);
     }
     const finalAnswerId = turn.completedFinalAnswer?.id;
+    const finalAnswerIndex = finalAnswerId
+      ? turn.blocks.findIndex(
+          (block) =>
+            block.kind === "assistantText" && block.id === finalAnswerId,
+        )
+      : -1;
+    const foldableBlocks =
+      finalAnswerIndex >= 0 ? turn.blocks.slice(0, finalAnswerIndex) : turn.blocks;
     const hasFoldableProcess =
       Boolean(finalAnswerId) &&
-      turn.blocks.some(
-        (block) =>
-          block.kind !== "generatedFile" &&
-          !(block.kind === "assistantText" && block.id === finalAnswerId),
-      );
+      foldableBlocks.some((block) => block.kind !== "generatedFile");
     turn.shouldCollapseCompletedProcess = Boolean(
       turn.isComplete && turn.completedFinalAnswer && hasFoldableProcess,
     );

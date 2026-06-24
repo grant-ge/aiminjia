@@ -417,7 +417,7 @@ describe('MessageList generated file actions', () => {
     expect(screen.getByText('你好！')).toBeInTheDocument()
   })
 
-  it('renders a background task completion after the next turn as a standalone assistant bubble', () => {
+  it('renders a background task completion under the previous turn summary without folding it', () => {
     resetStores('conv-1')
     useChatStore.setState({ messages: messagesWithBackgroundNotificationAfterCompletedTurn() })
 
@@ -430,6 +430,9 @@ describe('MessageList generated file actions', () => {
     expect(backgroundCompletion).toBeInTheDocument()
     expect(screen.queryByText(/task-notification/)).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: '执行过程' })).toHaveLength(2)
+    expect(backgroundCompletion.closest('[data-testid="chat-row"]')).toBe(
+      turnSummary.closest('[data-testid="chat-row"]'),
+    )
     expect(turnSummary.compareDocumentPosition(backgroundCompletion)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 

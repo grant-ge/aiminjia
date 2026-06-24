@@ -742,13 +742,20 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     blocks: RenderTurnBlock[],
     ctx: InterleavedRenderCtx & { finalAnswer: RenderAiSegment },
   ) {
-    const processBlocks = blocks.filter(
+    const finalAnswerIndex = blocks.findIndex(
       (block) =>
-        block.kind !== "generatedFile" &&
-        !(block.kind === "assistantText" && block.id === ctx.finalAnswer.id),
+        block.kind === "assistantText" && block.id === ctx.finalAnswer.id,
     );
-    const resultBlocks = blocks.filter(
-      (block) => block.kind === "generatedFile",
+    const blocksBeforeFinal =
+      finalAnswerIndex >= 0 ? blocks.slice(0, finalAnswerIndex) : blocks;
+    const blocksAfterFinal =
+      finalAnswerIndex >= 0 ? blocks.slice(finalAnswerIndex + 1) : [];
+    const processBlocks = blocksBeforeFinal.filter(
+      (block) => block.kind !== "generatedFile",
+    );
+    const resultBlocks = blocks.filter((block) => block.kind === "generatedFile");
+    const postFinalBlocks = blocksAfterFinal.filter(
+      (block) => block.kind !== "generatedFile",
     );
     const { children: processChildren, firstTextIso } =
       buildInterleavedBlockNodes(processBlocks, {
@@ -763,8 +770,18 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       persistedBlockCount: resultBlocks.length,
       showFinalThinkingIndicator: false,
     });
+    const { children: postFinalChildren } = buildInterleavedBlockNodes(
+      postFinalBlocks,
+      {
+        ...ctx,
+        inlineStreamingContent: null,
+        persistedBlockCount: postFinalBlocks.length,
+        showFinalThinkingIndicator: false,
+      },
+    );
     const visibleProcessChildren = processChildren.filter(Boolean);
     const visibleResultChildren = resultChildren.filter(Boolean);
+    const visiblePostFinalChildren = postFinalChildren.filter(Boolean);
 
     return (
       <ChatRow
@@ -783,6 +800,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           message={ctx.finalAnswer.message}
         />
         {visibleResultChildren}
+        {visiblePostFinalChildren}
       </ChatRow>
     );
   }

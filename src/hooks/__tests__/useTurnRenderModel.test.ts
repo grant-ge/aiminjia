@@ -158,7 +158,7 @@ describe("buildTurnsFromMessages", () => {
     expect(turns[0].shouldCollapseCompletedProcess).toBe(false);
   });
 
-  it("keeps assistant replies to internal task notifications separate from the previous visible turn", () => {
+  it("appends assistant replies to internal task notifications after the previous visible turn summary", () => {
     const taskNotification = userMsg(
       "notify-1",
       [
@@ -200,18 +200,17 @@ describe("buildTurnsFromMessages", () => {
       [],
     );
 
-    expect(turns).toHaveLength(3);
+    expect(turns).toHaveLength(2);
     expect(turns[1].userMessage?.id).toBe("u2");
     expect(turns[1].completedFinalAnswer).toMatchObject({
       id: "a4",
       text: "三点总结：两个文件已创建并检查。",
     });
-    expect(turns[2].userMessage).toBeUndefined();
-    expect(turns[2].completedFinalAnswer).toMatchObject({
+    expect(turns[1].aiSegments.at(-1)).toMatchObject({
       id: "a5",
       text: "之前提交的 30 秒等待命令已执行完毕，正常退出。",
     });
-    expect(turns[2].shouldCollapseCompletedProcess).toBe(false);
+    expect(turns[1].shouldCollapseCompletedProcess).toBe(true);
   });
 
   it("groups messages into turns starting at each user message", () => {
