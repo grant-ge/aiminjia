@@ -176,12 +176,16 @@ Verification after reverting the prompt experiment at commit `82640222`:
 - Improvement: the report identified the 180-minute rate-limit conflict and evidence coverage scored `1.0`.
 - Remaining issue: the final report still lacked the exact `148 minutes` / `18:55 Asia/Shanghai` next-eligible-time detail, and the turn continued into extra verification instead of cleanly stopping after a usable report.
 
-Follow-up runtime adjustment:
+Placeholder-check experiment after commit `b9a07cad`:
 
-- Treat report text such as `Not yet run`, `not yet checked`, `will be completed in the next step`, and `requires shell execution` as placeholder content for named deliverables.
-- This targets the `82640222` failure shape where `diagnosis-report.md` existed but still contained stale "next step" sections after evidence gathering.
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\b9a07cad_task00016_unfinishedreport_c1_j1_20260624_223935\20260624_223937\pawbench\deepseek-v4-flash\aijia\20260624_223937.json`
+- Score: `0.6993333333333334`
+- Status: `error` due to `EXIT_CODE_NONZERO`.
+- Regression: score dropped from `0.8013333333333333` to `0.6993333333333334`; the report still missed the correct next eligible time and introduced unsupported claims such as `npm install` succeeding.
+- Decision: revert the expanded placeholder detector. It is too blunt for this task and does not solve the timestamp reasoning issue.
 
 Verification:
 
 - `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib guard"`
-- Result: 29 focused tests passed.
+- Result after reverting the placeholder detector: 28 focused tests passed.
