@@ -1,3 +1,4 @@
+// Manual CLI entrypoint; examples are not bundled with the desktop app by default.
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
