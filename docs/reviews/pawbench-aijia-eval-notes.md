@@ -288,3 +288,30 @@ Expected effect:
 - Increase the probability that named files exist before service hiccups, max-output events, or long exploration loops.
 - Reduce "no output file generated" zero-score failures without forcing final quality to be perfect on the first draft.
 - Potential risk: some deep research tasks may receive the file-write reminder earlier. The guard prompt permits partial evidence, known facts, assumptions, and blocker notes, so the intended behavior is an early recoverable draft rather than premature finalization.
+
+## 2026-06-25 initial named-deliverable reminder
+
+Evidence from focused run after `ed489894`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\ed489894_visual_artifact_c3_j2_20260625_002828\20260625_002829\pawbench\deepseek-v4-flash\aijia\20260625_002830.json`
+- Same six-task visual artifact focus as the previous run.
+- Result: average score improved from `0.152` to `0.296`.
+- Improvements: `M012_score_symphony_animated` generated `output/output.html` and scored `0.846`; `M011_score_mariage_animated` improved from `0.762` to `0.804`.
+- Remaining failures: `M005`, `M006`, `M007`, and `M010` still produced no `output/output.html`. Their transcripts show the agent repeatedly acknowledged that the user supplied enough explicit specs, then continued metadata/viewing attempts and ended with the generic empty-response fallback.
+
+Change:
+
+- Add an initial hidden planning reminder when the original request contains explicit named deliverables that are currently missing or placeholder-like.
+- The reminder lists the exact target paths and states that they are final deliverables, not source files; after one reasonable evidence pass, the agent should create/update them and must not finish with only a summary or tool error.
+
+Rationale:
+
+- The after-tool delivery guard works in controlled tests, but it appears too late for short service-fallback failures. The model may spend the first visible turns on media/tool probing and then receive an empty response before any persisted deliverable exists.
+- QoderWork's file/artifact discipline is front-loaded: file creation triggers are visible before work starts, not only after failure. Lotus should similarly bind explicit target paths to the turn plan from the first LLM step.
+- This remains generic. It applies to any user-named output file path and does not mention PawBench task ids, benchmark locations, sample answers, fixed title strings, or grading criteria.
+
+Expected effect:
+
+- Reduce runs where the model knows the target path but never calls Write/Edit.
+- Improve robustness when a later LLM step returns empty or service fallback text.
+- Keep quality pressure in the model prompt rather than runtime-generating benchmark-specific content.
