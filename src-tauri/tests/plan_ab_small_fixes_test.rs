@@ -8,7 +8,6 @@ use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
-use app_lib::runtime::store::AuthorizedWorkspaceRef;
 use async_trait::async_trait;
 
 fn make_test_turn(conversation_id: &str) -> TurnState {
@@ -21,86 +20,6 @@ struct CoreMemoryCapturingExecutor {
     core_memory: String,
     load_core_memory_calls: Mutex<u32>,
     captured_dynamic_contexts: Mutex<Vec<String>>,
-}
-
-struct DeliveryGuardCapturingExecutor {
-    responses: Mutex<Vec<LlmStepResult>>,
-    captured_messages: Mutex<Vec<Vec<serde_json::Value>>>,
-    workspace: std::path::PathBuf,
-}
-
-impl DeliveryGuardCapturingExecutor {
-    fn new(workspace: std::path::PathBuf, responses: Vec<LlmStepResult>) -> Self {
-        Self {
-            responses: Mutex::new(responses),
-            captured_messages: Mutex::new(Vec::new()),
-            workspace,
-        }
-    }
-}
-
-#[async_trait]
-impl RuntimeLlmExecutor for DeliveryGuardCapturingExecutor {
-    async fn run_llm_step(
-        &self,
-        input: &LlmStepInput<'_>,
-        _bus: &RuntimeEventBus,
-        _cancel: &CancellationToken,
-    ) -> Result<LlmStepResult, TurnError> {
-        self.captured_messages
-            .lock()
-            .unwrap()
-            .push(input.messages.clone());
-        let mut responses = self.responses.lock().unwrap();
-        if responses.is_empty() {
-            Ok(LlmStepResult::ContentComplete {
-                content: "done".to_string(),
-                tokens_in: 0,
-                tokens_out: 0,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
-                thinking_blocks: Vec::new(),
-                stop_reason: Some("end_turn".to_string()),
-            })
-        } else {
-            Ok(responses.remove(0))
-        }
-    }
-
-    async fn persist_assistant_message(
-        &self,
-        _conversation_id: &str,
-        _content: &str,
-        _tool_calls: &[serde_json::Value],
-        _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value],
-        _thinking_blocks: &[serde_json::Value],
-        _error: Option<&app_lib::storage::file_store::types::MessageError>,
-    ) -> Result<String, TurnError> {
-        Ok("delivery-guard-msg".to_string())
-    }
-
-    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])
-    }
-
-    async fn load_workspace_path(&self) -> Result<std::path::PathBuf, TurnError> {
-        Ok(self.workspace.clone())
-    }
-
-    async fn load_turn_config_overrides(
-        &self,
-        _request: &ChatTurnRequest,
-    ) -> Result<app_lib::runtime::chat::turn_config::TurnConfigOverrides, TurnError> {
-        Ok(app_lib::runtime::chat::turn_config::TurnConfigOverrides {
-            authorized_workspace: Some(AuthorizedWorkspaceRef {
-                id: "test-workspace".to_string(),
-                root_path: self.workspace.clone(),
-                display_name: "test-workspace".to_string(),
-            }),
-            ..Default::default()
-        })
-    }
 }
 
 impl CoreMemoryCapturingExecutor {
@@ -239,68 +158,6 @@ async fn ab1_load_core_memory_called_once_per_turn() {
         1,
         "load_core_memory must be called once per turn"
     );
-}
-
-#[tokio::test]
-async fn delivery_guard_reaches_next_llm_step_after_named_file_grace() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("output")).unwrap();
-    let responses = vec![
-        LlmStepResult::ToolCalls {
-            assistant_content: "checking source".to_string(),
-            tool_calls: vec![],
-            tokens_in: 0,
-            tokens_out: 0,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-            thinking_blocks: Vec::new(),
-        },
-        LlmStepResult::ToolCalls {
-            assistant_content: "still checking".to_string(),
-            tool_calls: vec![],
-            tokens_in: 0,
-            tokens_out: 0,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-            thinking_blocks: Vec::new(),
-        },
-        LlmStepResult::ContentComplete {
-            content: "done".to_string(),
-            tokens_in: 0,
-            tokens_out: 0,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-            thinking_blocks: Vec::new(),
-            stop_reason: Some("end_turn".to_string()),
-        },
-    ];
-    let executor = Arc::new(DeliveryGuardCapturingExecutor::new(
-        dir.path().to_path_buf(),
-        responses,
-    ));
-    let bus = RuntimeEventBus::new();
-    let qe = QueryEngine::default();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus, executor.clone());
-    let mut turn = make_test_turn("conv-delivery-guard");
-    let request = ChatTurnRequest::new(
-        "conv-delivery-guard",
-        "Please first view the image, then generate `output/output.html` reproducing it.",
-        vec![],
-    );
-
-    driver.run_chat_turn(&mut turn, &request).await.unwrap();
-
-    let captured = executor.captured_messages.lock().unwrap();
-    assert!(
-        captured.len() >= 3,
-        "guard should force an additional LLM step after the second non-writing tool round"
-    );
-    let third_step = serde_json::to_string(&captured[2]).unwrap();
-    assert!(
-        third_step.contains("原始请求包含明确命名的文件产物"),
-        "third LLM step must include delivery guard reminder, got: {third_step}"
-    );
-    assert!(third_step.contains("output/output.html"));
 }
 
 #[test]

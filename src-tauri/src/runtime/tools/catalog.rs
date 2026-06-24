@@ -227,6 +227,8 @@ fn build_default_catalog() -> ToolCatalog {
             "在授权工作目录中执行 shell 命令。默认 timeout 120000ms；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
+            \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若必须用 shell 生成文件，命令后要用独立读取、列举或测试确认目标路径存在、非空且格式合理。\
+            \n\n失败恢复：命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把阻塞原因写入要求的产物。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
         .with_kind(ToolKind::Primitive)
@@ -276,6 +278,8 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式。\
+            \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若必须用 PowerShell 生成文件，命令后要用 Get-Item/Get-Content/Test-Path 或项目校验命令确认目标路径存在、非空且格式合理。\
+            \n\n失败恢复：命令不存在、模块缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把阻塞原因写入要求的产物。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理。",
         )
         .with_kind(ToolKind::Primitive)
@@ -466,6 +470,8 @@ fn build_default_catalog() -> ToolCatalog {
             "Agent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型或不同模型。`subagent_type` 取值范围在每轮 turn 的工具描述动态列表中给出，包含 builtin 类型、用户自定义 agent、以及当前用户已雇佣的数字员工 ID（`emp-...`）。\
+            \n\n不适用场景：不要为了“再确认一下”、未知能力探测、普通文件读取、图片查看、OCR、网页浏览或同一任务的重复尝试而启动子 Agent，除非该 Agent 的描述明确拥有父 Agent 没有的能力。\
+            \n\n交付责任：父 Agent 仍负责最终交付检查。调用 Agent 时要在 prompt 中写清输入路径、输出文件、完成标准和需要回传的证据；子 Agent 返回后，父 Agent 必须验证命名文件、配置、脚本或报告已经真实落地，不能把子 Agent 的文字总结直接当成交付。\
             \n\n默认路径（run_in_background=false 或省略）：子 Agent 先以前台方式运行；如果在前台阻塞预算内完成，直接返回最终输出文本；如果超过预算，系统会自动返回 `task_id`（`task_type=local_agent`）并让同一个子 Agent 继续在后台执行。\
             \n\n异步路径（run_in_background=true）：立即返回 `agent_id/task_id`（`task_type=local_agent`）；子 Agent 从一开始就在后台运行。后台任务都可用 TaskOutput(task_id=..., task_type=\"local_agent\", offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
             \n\nTeammate 派活路径（显式传 team_name + name）：加入当前 Session 的 Team 作为 Teammate 运行。`subagent_type` 可以是 builtin/通用 Agent，也可以是用户明确要求或确需其专属能力的数字员工 `emp-...`。省略 `team_name` 时即使当前已有 active team，也按普通独立子 Agent 运行。",
@@ -517,6 +523,8 @@ fn build_default_catalog() -> ToolCatalog {
             Bash/PowerShell({run_in_background: true}) 立即返回 task_id（task_type=local_bash）。\
             子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
             期间或之后用 TaskOutput(task_id=..., offset=N) 读取产出。\
+            \n\n交付规则：TaskOutput 只证明后台任务说了什么，不证明用户要求的文件、配置或数据已经存在。读取到完成消息后，仍要用文件读取、目录列举、测试或对应业务工具验证真实产物。\
+            \n\n如果 transcript 显示任务失败、超时、依赖缺失或只做了分析，继续完成可独立推进的部分，并把阻塞原因写入要求的最终产物；不要只复述 transcript。\
             \n\n不要用 TaskOutput 读取 Team/Teammate 成员发言；团队成员的对外发言只通过 SendMessage / peer-messages 进入主对话。\
             \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
         )
@@ -543,7 +551,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Skill",
-            "加载一个专项技能的详细指令作为内部参考。只用于理解任务和补充处理规范，不限制工具、不持久化。调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。",
+            "加载一个专项技能的详细指令作为内部参考。只用于理解任务和补充处理规范，不限制工具、不持久化。技能正文中的输入文件、输出文件、禁止事项、验证命令和评分口径是本任务交付约束；调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)
@@ -616,15 +624,15 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TaskCreate",
-            "创建一条持久化任务，用于当前 session/agent 工作清单。",
+            "创建一条持久化任务，用于当前 session/agent 工作清单。适用于多步骤、工具密集、跨轮、团队协作、后台任务或有明确交付物的工作；纯聊天、快速事实问答、单步读取或一次性小修通常不要创建。任务清单只能辅助推进，不能替代用户要求的文件、配置、脚本、报告或数据产物。",
         )
         .with_kind(ToolKind::Support),
         json!({
             "type": "object",
             "required": ["subject", "description"],
             "properties": {
-                "subject": { "type": "string", "description": "任务短标题" },
-                "description": { "type": "string", "description": "任务详细说明" },
+                "subject": { "type": "string", "description": "任务短标题，写完成条件而不是微小读取动作；保持 2-6 个粗粒度任务" },
+                "description": { "type": "string", "description": "任务详细说明，应包含交付物、完成标准或验证方式；非平凡任务最后一项应是验证/交付检查" },
                 "activeForm": { "type": "string", "description": "进行中展示文案，如 Running tests" },
                 "metadata": { "type": "object", "description": "可选元数据" }
             }
@@ -634,7 +642,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TaskUpdate",
-            "更新、删除或设置任务依赖、owner、status、metadata。",
+            "更新、删除或设置任务依赖、owner、status、metadata。只有在对应文件、工具调用、配置、测试、计算或阻塞记录真实完成后，才能把任务标为 completed；读过、开始写、正在分析、等待服务或需要继续都不能标 completed。",
         )
         .with_kind(ToolKind::Support),
         json!({
@@ -645,7 +653,7 @@ fn build_default_catalog() -> ToolCatalog {
                 "subject": { "type": "string", "description": "新的任务标题" },
                 "description": { "type": "string", "description": "新的任务描述" },
                 "activeForm": { "type": "string", "description": "进行中展示文案" },
-                "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "deleted"] },
+                "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "deleted"], "description": "completed 只用于真实生成/执行/验证成功，或阻塞原因已写入最终产物的任务" },
                 "owner": { "type": "string", "description": "任务 owner agent/name" },
                 "addBlocks": { "type": "array", "items": { "type": "string" } },
                 "addBlockedBy": { "type": "array", "items": { "type": "string" } },
@@ -655,7 +663,10 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("TaskList", "列出当前 task list 的所有任务及阻塞状态。")
+        ToolDefinition::new(
+            "TaskList",
+            "列出当前 task list 的所有任务及阻塞状态。最终回复前用它或内部清单对照原始请求，确认最后状态落到验证、交付或明确阻塞，而不是停在继续阅读/继续分析。",
+        )
             .with_kind(ToolKind::Support)
             .with_read_only(true),
         json!({

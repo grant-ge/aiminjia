@@ -289,29 +289,41 @@ Expected effect:
 - Reduce "no output file generated" zero-score failures without forcing final quality to be perfect on the first draft.
 - Potential risk: some deep research tasks may receive the file-write reminder earlier. The guard prompt permits partial evidence, known facts, assumptions, and blocker notes, so the intended behavior is an early recoverable draft rather than premature finalization.
 
-## 2026-06-25 initial named-deliverable reminder
+## 2026-06-25 initial delivery-primer rollback
 
-Evidence from focused run after `ed489894`:
+Rejected experiment after `64b1529`:
 
-- Run path: `C:\Users\Administrator\Desktop\github\PawBench\ed489894_visual_artifact_c3_j2_20260625_002828\20260625_002829\pawbench\deepseek-v4-flash\aijia\20260625_002830.json`
-- Same six-task visual artifact focus as the previous run.
-- Result: average score improved from `0.152` to `0.296`.
-- Improvements: `M012_score_symphony_animated` generated `output/output.html` and scored `0.846`; `M011_score_mariage_animated` improved from `0.762` to `0.804`.
-- Remaining failures: `M005`, `M006`, `M007`, and `M010` still produced no `output/output.html`. Their transcripts show the agent repeatedly acknowledged that the user supplied enough explicit specs, then continued metadata/viewing attempts and ended with the generic empty-response fallback.
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\64b15294_visual_artifact_c3_j2_20260625_004941\20260625_004942\pawbench\deepseek-v4-flash\aijia\20260625_004943.json`
+- Scope: the same six visual artifact tasks used for the `ce87fb1c` and `ed489894` focused checks.
+- Result: average score dropped to `0.029`; all six tasks failed to generate `output/output.html`, including `M011` and `M012`, which had generated usable files after the shorter post-tool delivery guard.
+
+Rollback:
+
+- Remove the first-turn hidden delivery-primer prompt added by `64b1529`.
+- Keep the post-tool delivery guard from `ed489894`, because its focused run improved the same six-task average from `0.152` to `0.296`.
+
+Interpretation:
+
+- Front-loading the named-deliverable reminder before the first evidence pass appears to disrupt the model's initial execution path more than it helps.
+- The useful pattern is narrower: let the agent perform one reasonable evidence/tool round, then force a delivery checkpoint only if the named target is still missing or placeholder-like.
+- Future prompt changes should prefer tool-local recovery messages and post-tool guardrails over broad early hidden reminders, and should be checked against focused evaluation before any full run.
+
+## 2026-06-25 tool-local execution contract update
+
+QoderWork prompt review:
+
+- QoderWork keeps broad behavior in the global prompt, but puts concrete operating rules near the relevant tool section: TodoList usage, Task delegation, Skill loading, shell/path handling, file creation, file sharing, and artifact constraints.
+- The portable lesson for lotus is not to copy the whole prompt. The useful pattern is to make the tool description answer the model's immediate question: when should I call this tool, what is not enough, what should I do after failure, and what proof is required before I claim completion.
 
 Change:
 
-- Add an initial hidden planning reminder when the original request contains explicit named deliverables that are currently missing or placeholder-like.
-- The reminder lists the exact target paths and states that they are final deliverables, not source files; after one reasonable evidence pass, the agent should create/update them and must not finish with only a summary or tool error.
-
-Rationale:
-
-- The after-tool delivery guard works in controlled tests, but it appears too late for short service-fallback failures. The model may spend the first visible turns on media/tool probing and then receive an empty response before any persisted deliverable exists.
-- QoderWork's file/artifact discipline is front-loaded: file creation triggers are visible before work starts, not only after failure. Lotus should similarly bind explicit target paths to the turn plan from the first LLM step.
-- This remains generic. It applies to any user-named output file path and does not mention PawBench task ids, benchmark locations, sample answers, fixed title strings, or grading criteria.
+- Strengthened `Bash` and `PowerShell` descriptions so command failure should lead to an installed alternative, small script, project validator, or written blocker instead of same-command retry loops; shell-generated files require an independent existence/content check.
+- Strengthened `Agent` and `TaskOutput` descriptions so delegation/transcripts are not treated as final delivery. The parent agent remains responsible for checking named files, scripts, configs, reports, and data outputs.
+- Strengthened `Skill` descriptions, including the dynamic `Skill` runtime tool, so skill body inputs, outputs, safety rules, validation commands, and scoring notes become task constraints after loading.
+- Strengthened `TaskCreate`, `TaskUpdate`, and `TaskList` descriptions so task tools behave like progress control: coarse tasks, final verification, and no `completed` status for reading/analysis-only states.
 
 Expected effect:
 
-- Reduce runs where the model knows the target path but never calls Write/Edit.
-- Improve robustness when a later LLM step returns empty or service fallback text.
-- Keep quality pressure in the model prompt rather than runtime-generating benchmark-specific content.
+- Improve PawBench cases that previously stopped at "created task / delegated / continued reading" without writing the required file.
+- Reduce loops after command-not-found, missing dependency, timeout, or inaccessible path errors.
+- Preserve the current `system.md` as the cross-tool contract while moving tool-choice discipline closer to the tools that need it.

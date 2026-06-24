@@ -2450,13 +2450,6 @@ impl RuntimeChatTurnDriver {
                 "tokenBudget": config.token_budget,
             })),
         );
-        let delivery_guard_workspace = config
-            .authorized_workspace
-            .as_ref()
-            .map(|workspace| workspace.root_path.clone())
-            .unwrap_or_else(|| config.workspace_path.clone());
-        let requested_file_targets =
-            safeguard::extract_requested_file_targets(request.content.as_str());
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
         // messages 顺序：[system-reminder, agents-md-meta?, ...history, current-user-content]
@@ -2569,17 +2562,6 @@ impl RuntimeChatTurnDriver {
         // again would duplicate the bubble for the LLM (and waste tokens).
         if !is_resume_for_task_notification && !request.pre_persisted {
             initial_messages.push(user_message);
-        }
-        let initial_unready_file_targets = safeguard::unready_requested_file_targets(
-            &requested_file_targets,
-            &delivery_guard_workspace,
-        );
-        if !initial_unready_file_targets.is_empty() && !is_resume_for_task_notification {
-            initial_messages.push(serde_json::json!({
-                "role": "user",
-                "isMeta": true,
-                "content": safeguard::delivery_targets_planning_prompt(&initial_unready_file_targets),
-            }));
         }
         // Inject pending <task-notification> messages AFTER the current user
         // message so that async sub-agent completions appear as the most recent
@@ -2872,6 +2854,13 @@ impl RuntimeChatTurnDriver {
         let compact_transcript_path = executor
             .conversation_dir(config.conversation_id.as_str())
             .map(|dir| compact_transcript_path_for_conversation_dir(&dir));
+        let delivery_guard_workspace = config
+            .authorized_workspace
+            .as_ref()
+            .map(|workspace| workspace.root_path.clone())
+            .unwrap_or_else(|| config.workspace_path.clone());
+        let requested_file_targets =
+            safeguard::extract_requested_file_targets(request.content.as_str());
         let mut delivery_guard_count = 0usize;
 
         'turn: for iteration in 0..config.max_iterations {

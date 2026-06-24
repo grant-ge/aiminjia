@@ -306,17 +306,6 @@ pub fn delivery_guard_prompt(missing_targets: &[String]) -> String {
     )
 }
 
-pub fn delivery_targets_planning_prompt(targets: &[String]) -> String {
-    let list = targets
-        .iter()
-        .map(|target| format!("- `{target}`"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!(
-        "<system-reminder>\n本轮原始请求包含明确命名的文件产物：\n{list}\n\n这些路径是最终交付目标，不是普通来源文件。可以先做必要读取、查看、计算或验证；但不要把口头总结、工具错误、继续查看或继续分析作为最终回复。完成一次合理证据获取后，优先创建或更新这些文件的可用版本；最终回复前必须确认目标文件存在、非空且路径正确。若无法完成，也要把已知事实、缺口和阻塞原因落到目标文件或明确阻塞说明中。\n</system-reminder>"
-    )
-}
-
 pub fn delivery_guard_blocking_prompt(missing_targets: &[String]) -> String {
     let list = missing_targets
         .iter()
@@ -434,18 +423,6 @@ mod tests {
         assert!(prompt.contains("missing.md"));
         assert!(!prompt.contains("present.md"));
         assert!(prompt.contains("必须优先调用 Write"));
-    }
-
-    #[test]
-    fn planning_prompt_lists_named_deliverables() {
-        let prompt = delivery_targets_planning_prompt(&[
-            "output/output.html".to_string(),
-            "report.md".to_string(),
-        ]);
-        assert!(prompt.contains("output/output.html"));
-        assert!(prompt.contains("report.md"));
-        assert!(prompt.contains("最终交付目标"));
-        assert!(prompt.contains("不是普通来源文件"));
     }
 
     #[test]
