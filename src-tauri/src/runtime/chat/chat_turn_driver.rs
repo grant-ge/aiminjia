@@ -54,6 +54,8 @@ use crate::runtime::store::{
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
+const DEFAULT_TURN_OUTPUT_TOKEN_BUDGET: usize = 32_768;
+
 fn push_unique_system_segment(
     segments: &mut Vec<SystemPromptSegment>,
     segment: SystemPromptSegment,
@@ -2297,10 +2299,13 @@ impl RuntimeChatTurnDriver {
             tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(120),
-            // All chat routes through AIjia Gateway V2: ask for an aspirational
-            // ceiling and let the gateway clamp to the real
-            // per-upstream-model cap (Step 1).
-            token_budget: overrides.token_budget.unwrap_or(1_000_000),
+            // Keep each model step bounded. Very large caps let hidden
+            // reasoning consume the whole turn before the driver can enforce
+            // delivery checks; long visible answers can still continue through
+            // the max_tokens recovery path.
+            token_budget: overrides
+                .token_budget
+                .unwrap_or(DEFAULT_TURN_OUTPUT_TOKEN_BUDGET),
             chunk_timeout_secs: 90,
             workspace_path: workspace_path.clone(),
             authorized_workspace: overrides.authorized_workspace,

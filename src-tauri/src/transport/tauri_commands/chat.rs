@@ -16,11 +16,11 @@ use tracing::Instrument;
 
 use crate::auth::AuthManager;
 use crate::connector::im::shared::app_feedback::{
-    AppFeedbackDecision, IMAppFeedbackCoordinator, feedback_message,
+    feedback_message, AppFeedbackDecision, IMAppFeedbackCoordinator,
 };
 use crate::llm::compact_summary_client::LlmCompactSummaryClient;
 use crate::llm::context_decay::resolve_context_window;
-use crate::llm::gateway::{LlmGateway, format_llm_error_diagnostics};
+use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
@@ -31,11 +31,12 @@ use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::chat_turn_driver::{ReasoningMode, RunActivityController};
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::chat::compaction::{
-    AutoCompactConfig, AutoCompactState, CompactTrigger, append_literal_anchor_hints,
-    append_transcript_path_hint, compact_transcript_path_for_conversation_dir,
+    append_literal_anchor_hints, append_transcript_path_hint,
+    compact_transcript_path_for_conversation_dir, AutoCompactConfig, AutoCompactState,
+    CompactTrigger,
 };
 use crate::runtime::chat::preprocess::{
-    PreprocessConfig, PreprocessRuntimeState, PreprocessTrigger, prepare_messages_for_llm,
+    prepare_messages_for_llm, PreprocessConfig, PreprocessRuntimeState, PreprocessTrigger,
 };
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
@@ -45,15 +46,15 @@ use crate::runtime::chat::{
 use crate::runtime::conversation_service;
 use crate::runtime::events::RuntimeEvent;
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
-use crate::runtime::store::PendingPermissionResolution;
 use crate::runtime::store::conversation_store::ConversationStore;
+use crate::runtime::store::PendingPermissionResolution;
 use crate::runtime::tools::permission::PermissionDestination;
 use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
 use crate::storage::crypto::SecureStorage;
 use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_manager::FileManager;
-use crate::storage::file_store::AppStorage;
 use crate::storage::file_store::types::FileStorageRoot;
+use crate::storage::file_store::AppStorage;
 use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQueue};
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 use crate::transport::tauri_runtime_host::TauriRuntimeHost;
@@ -201,21 +202,19 @@ fn ensure_generated_file_records_from_metas(
             );
             continue;
         };
-        let full_path = match FileManager::resolve_existing_file_under_root(
-            &storage_root.path,
-            &stored_path,
-        ) {
-            Ok(path) => path,
-            Err(err) => {
-                log::warn!(
+        let full_path =
+            match FileManager::resolve_existing_file_under_root(&storage_root.path, &stored_path) {
+                Ok(path) => path,
+                Err(err) => {
+                    log::warn!(
                     "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
                     file_id,
                     stored_path,
                     err
                 );
-                continue;
-            }
-        };
+                    continue;
+                }
+            };
         let file_name = json_str(meta, &["fileName", "file_name"])
             .map(ToString::to_string)
             .or_else(|| {
@@ -1438,7 +1437,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
         use crate::runtime::events::{RetryReason, RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
-        use crate::telemetry::{DiagnosticEvent, DiagnosticSource, record_diagnostic};
+        use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
         use futures::StreamExt;
 
         let session_id = SessionId::from(input.conversation_id);
@@ -1622,6 +1621,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let mut cache_creation_input_tokens: u64 = 0;
             let mut cache_read_input_tokens: u64 = 0;
             let mut stream_needs_retry = false;
+            let thinking_only_timeout =
+                std::time::Duration::from_secs(input.chunk_timeout_secs.min(45).max(15));
+            let mut thinking_only_started_at: Option<tokio::time::Instant> = None;
 
             loop {
                 // Check the runtime CancellationToken before each iteration
@@ -1842,6 +1844,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 // Strip DeepSeek-style thinking markers before forwarding
                                 let clean = strip_thinking_tag(&delta);
                                 if !clean.is_empty() {
+                                    thinking_only_started_at = None;
                                     iter_content.push_str(&clean);
                                     log::debug!(
                                         "[stream-timing-be] delta len={} total={} run={}",
@@ -1861,6 +1864,42 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             Some(StreamEvent::ThinkingDelta { .. }) => {
                                 // ThinkingDelta: internal model reasoning — intentionally dropped.
                                 // Not shown to users; bypasses prompt_guard.
+                                if iter_content.is_empty() && tool_calls.is_empty() {
+                                    let now = tokio::time::Instant::now();
+                                    let started = thinking_only_started_at.get_or_insert(now);
+                                    if now.duration_since(*started) >= thinking_only_timeout {
+                                        log::warn!(
+                                            "[run_llm_step] thinking-only timeout ({}s) conv={} run={}",
+                                            thinking_only_timeout.as_secs(),
+                                            input.conversation_id,
+                                            input.run_id
+                                        );
+                                        record_diagnostic(
+                                            &crate::telemetry::diagnostics_workspace(),
+                                            DiagnosticEvent::new(
+                                                "streaming.thinking_only_timeout",
+                                                DiagnosticSource::Backend,
+                                            )
+                                            .conversation_id(input.conversation_id)
+                                            .run_id(input.run_id)
+                                            .ok(false)
+                                            .payload(serde_json::json!({
+                                                "timeout_secs": thinking_only_timeout.as_secs(),
+                                            })),
+                                        );
+                                        return Ok(LlmStepResult::ContentComplete {
+                                            content: String::new(),
+                                            thinking_blocks,
+                                            tokens_in,
+                                            tokens_out,
+                                            cache_creation_input_tokens,
+                                            cache_read_input_tokens,
+                                            stop_reason: Some("thinking_timeout".to_string()),
+                                        });
+                                    }
+                                } else {
+                                    thinking_only_started_at = None;
+                                }
                             }
                             Some(StreamEvent::ThinkingBlock { block }) => {
                                 if !block.is_null() {
@@ -1917,6 +1956,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                     "[run_llm_step] Tool call received: name='{}' id='{}'",
                                     tool_call.name, tool_call.id
                                 );
+                                thinking_only_started_at = None;
                                 tool_calls.push(tool_call);
                             }
                             Some(StreamEvent::Done { stop_reason: reason, usage }) => {
@@ -2907,7 +2947,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
-        use crate::runtime::chat::context_builder::{ManagedRuntimeEnvInfo, build_env_info};
+        use crate::runtime::chat::context_builder::{build_env_info, ManagedRuntimeEnvInfo};
 
         let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
 
@@ -6513,7 +6553,7 @@ mod retry_reason_tests {
 
 #[cfg(test)]
 mod retry_backoff_tests {
-    use super::{MAX_STREAM_RETRIES, STREAM_RETRY_MAX_BACKOFF_SECS, stream_retry_backoff_secs};
+    use super::{stream_retry_backoff_secs, MAX_STREAM_RETRIES, STREAM_RETRY_MAX_BACKOFF_SECS};
 
     /// Sequence: 2, 4, 8, 16, 32, 60, 60, 60, 60, 60 for attempts 1..=10.
     /// Worst case total wait = 2+4+8+16+32+60*5 = 362s (~6 min), well below

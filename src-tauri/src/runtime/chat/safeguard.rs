@@ -320,17 +320,9 @@ pub fn maybe_delivery_guard_prompt(
     targets: &[String],
     workspace_root: &Path,
     guard_count: usize,
-    iteration: usize,
+    _iteration: usize,
 ) -> Option<String> {
     if targets.is_empty() || guard_count >= 3 {
-        return None;
-    }
-    let min_iteration = match guard_count {
-        0 => 0,
-        1 => 3,
-        _ => 6,
-    };
-    if iteration < min_iteration {
         return None;
     }
     let missing = unready_requested_file_targets(targets, workspace_root);
@@ -397,6 +389,15 @@ mod tests {
         assert!(prompt.contains("missing.md"));
         assert!(!prompt.contains("present.md"));
         assert!(prompt.contains("必须优先调用 Write"));
+    }
+
+    #[test]
+    fn repeats_prompt_when_guarded_target_is_still_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let targets = vec!["diagnosis-report.md".to_string()];
+        let prompt = maybe_delivery_guard_prompt(&targets, dir.path(), 1, 1)
+            .expect("missing target should keep prompting after first guard");
+        assert!(prompt.contains("diagnosis-report.md"));
     }
 
     #[test]
