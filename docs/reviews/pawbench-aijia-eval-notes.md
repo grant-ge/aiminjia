@@ -327,3 +327,27 @@ Expected effect:
 - Improve PawBench cases that previously stopped at "created task / delegated / continued reading" without writing the required file.
 - Reduce loops after command-not-found, missing dependency, timeout, or inaccessible path errors.
 - Preserve the current `system.md` as the cross-tool contract while moving tool-choice discipline closer to the tools that need it.
+
+## 2026-06-25 text-only delivery guard follow-up
+
+Evidence from focused run after `d25d53cb`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\d25d53cb_visual_tool_contract_c3_j2_20260625_010503\20260625_010507\pawbench\deepseek-v4-flash\aijia\20260625_010508.json`
+- Scope: the same six visual artifact tasks.
+- Result: average score stayed at `0.029`; all six tasks again failed to generate `output/output.html`.
+- Transcript pattern: the post-tool delivery guard reached the model. The model explicitly recognized that it should write the file, but then returned text such as "Let me create/build this HTML file" without any `Write` or other file-writing tool call. The turn then ended with the generic empty-response fallback and no deliverable.
+
+Change:
+
+- Add a text-only delivery guard path in `chat_turn_driver`: once delivery guarding has started, a `ContentComplete` response is not accepted as final while explicit named file targets remain missing or placeholder-like.
+- Inject a more specific reminder for this branch: the previous response was text-only, the named file still does not exist, and the next step must call `Write`, `Edit`, or an equivalent file-writing tool.
+
+Boundary:
+
+- This is not the failed first-turn primer. It only triggers after the normal evidence/tool pass and after the regular delivery guard has already started.
+- It does not create benchmark-specific files or mention task ids. The condition is generic: explicit named target still missing after a text-only response.
+
+Expected effect:
+
+- Reduce "I will create the file" text-only endings on named-file tasks.
+- Give the model another chance to emit the actual write tool call before post-processing turns an empty final response into a generic apology.

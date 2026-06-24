@@ -3548,6 +3548,34 @@ impl RuntimeChatTurnDriver {
                         }
                     }
 
+                    let text_only_missing_targets = if delivery_guard_count > 0 {
+                        safeguard::unready_requested_file_targets(
+                            &requested_file_targets,
+                            &delivery_guard_workspace,
+                        )
+                    } else {
+                        Vec::new()
+                    };
+                    if !text_only_missing_targets.is_empty() {
+                        delivery_guard_count += 1;
+                        state.final_only_content = content.clone();
+                        if !content.trim().is_empty() {
+                            state.messages.push(serde_json::json!({
+                                "role": "assistant",
+                                "content": content,
+                            }));
+                        }
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": safeguard::delivery_guard_text_only_prompt(
+                                &text_only_missing_targets
+                            ),
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
                     if let Some(msg) = safeguard::maybe_delivery_guard_prompt(
                         &requested_file_targets,
                         &delivery_guard_workspace,

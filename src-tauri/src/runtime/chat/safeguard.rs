@@ -317,6 +317,17 @@ pub fn delivery_guard_blocking_prompt(missing_targets: &[String]) -> String {
     )
 }
 
+pub fn delivery_guard_text_only_prompt(missing_targets: &[String]) -> String {
+    let list = missing_targets
+        .iter()
+        .map(|target| format!("- `{target}`"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "<system-reminder>\n上一轮已经要求先交付命名文件，但你只输出了文字，没有调用写入工具；本轮不能以口头计划、总结或道歉结束。以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮必须调用 Write、Edit 或等价文件写入工具，把这些路径更新为可检查的内容。可以基于用户明确规格、已知事实、未验证说明或阻塞原因先写可用版本；不要再只说“我将创建/我会生成/继续分析”。\n</system-reminder>"
+    )
+}
+
 pub fn maybe_delivery_guard_prompt(
     targets: &[String],
     workspace_root: &Path,
@@ -464,6 +475,15 @@ mod tests {
             .expect("missing target should keep prompting once guard has started");
 
         assert!(prompt.contains("diagnosis-report.md"));
+    }
+
+    #[test]
+    fn text_only_prompt_rejects_plan_without_file_write() {
+        let prompt = delivery_guard_text_only_prompt(&["output/output.html".to_string()]);
+        assert!(prompt.contains("output/output.html"));
+        assert!(prompt.contains("只输出了文字"));
+        assert!(prompt.contains("必须调用 Write"));
+        assert!(prompt.contains("我将创建"));
     }
 
     #[test]
