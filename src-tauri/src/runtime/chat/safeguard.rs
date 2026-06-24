@@ -43,7 +43,7 @@ static BARE_FILE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
         r#"(?ix)
         ([A-Z0-9_.-]+(?:[/\\][A-Z0-9_.-]+)*\.
-            (?:md|markdown|txt|json|jsonl|csv|tsv|ya?ml|toml|py|js|ts|tsx|jsx|rs|go|java|kt|sh|bash|ps1|sql|html?|css|xml|pdf|docx|xlsx|pptx)
+            (?:md|markdown|txt|json|jsonl|csv|tsv|ya?ml|toml|py|js|ts|tsx|jsx|rs|go|java|kt|sh|bash|ps1|sql|html?|css|xml|pdf|docx|xlsx|pptx|png|jpe?g|webp|gif|svg|dot|env|template)
         )
         "#,
     )
@@ -55,6 +55,8 @@ fn looks_like_creation_request(text: &str) -> bool {
     [
         "create",
         "write",
+        "update",
+        "modify",
         "save",
         "generate",
         "output",
@@ -63,6 +65,8 @@ fn looks_like_creation_request(text: &str) -> bool {
         "status report",
         "report to",
         "file in",
+        "file called",
+        "file named",
         "workspace root",
         "创建",
         "新建",
@@ -98,7 +102,6 @@ pub(crate) fn normalize_workspace_file_candidate(raw: &str) -> Option<String> {
                     | '，'
                     | '。'
                     | ','
-                    | '.'
                     | ';'
                     | '；'
                     | ':'
@@ -107,6 +110,7 @@ pub(crate) fn normalize_workspace_file_candidate(raw: &str) -> Option<String> {
         })
         .replace('\\', "/");
     if candidate.is_empty()
+        || candidate.ends_with('/')
         || candidate.starts_with('/')
         || candidate.contains("://")
         || candidate.contains('\0')
@@ -163,7 +167,7 @@ fn output_context_for_match(request: &str, start: usize, end: usize) -> bool {
         .unwrap_or_default()
         .to_lowercase();
 
-    if [
+    let source_markers = [
         "from ",
         "using ",
         "based on ",
@@ -171,50 +175,80 @@ fn output_context_for_match(request: &str, start: usize, end: usize) -> bool {
         "load ",
         "source ",
         "input ",
+        "credential in ",
+        "hardcoded credential in ",
         "从",
         "读取",
         "基于",
         "来源",
-    ]
-    .iter()
-    .any(|marker| immediate_before.contains(marker))
+    ];
+
+    if source_markers
+        .iter()
+        .any(|marker| immediate_before.contains(marker))
     {
         return false;
     }
 
-    before.contains("create")
-        || before.contains("write")
-        || before.contains("save")
-        || before.contains("generate")
-        || before.contains("output")
-        || before.contains("export")
-        || before.contains("produce")
-        || before.contains("deliver")
-        || before.contains("implement")
-        || before.contains("implementation")
-        || before.contains("target file")
-        || before.contains("target files")
-        || before.contains("required file")
-        || before.contains("required files")
-        || before.contains("output a")
-        || before.contains("output an")
-        || before.contains("visualization")
-        || before.contains("validated json")
-        || before.contains("report to")
-        || before.contains("as a")
-        || before.contains("to ")
-        || before.contains("创建")
-        || before.contains("新建")
-        || before.contains("写入")
-        || before.contains("保存")
-        || before.contains("生成")
-        || before.contains("输出")
-        || before.contains("导出")
-        || after.contains("file")
+    let output_markers = [
+        "create",
+        "write",
+        "update",
+        "modify",
+        "append",
+        "save",
+        "generate",
+        "output",
+        "export",
+        "produce",
+        "deliver",
+        "implement",
+        "implementation",
+        "target file",
+        "target files",
+        "required file",
+        "required files",
+        "output a",
+        "output an",
+        "visualization",
+        "validated json",
+        "report to",
+        "file called",
+        "file named",
+        "called ",
+        "named ",
+        "at ",
+        "as a",
+        "to ",
+        "创建",
+        "新建",
+        "写入",
+        "保存",
+        "生成",
+        "输出",
+        "导出",
+    ];
+    let last_output_marker = output_markers
+        .iter()
+        .filter_map(|marker| before.rfind(marker))
+        .max();
+    let last_source_marker = source_markers
+        .iter()
+        .filter_map(|marker| before.rfind(marker))
+        .max();
+
+    if let Some(last_source_marker) = last_source_marker {
+        if last_output_marker.map_or(true, |last_output_marker| {
+            last_source_marker > last_output_marker
+        }) {
+            return false;
+        }
+    }
+
+    last_output_marker.is_some()
         || after.contains("workspace root")
         || after.contains("工作区根")
         || after.contains("根目录")
-        || after.contains("文件")
 }
 
 /// Extract explicit file targets from a user request when the request appears to
@@ -313,7 +347,7 @@ pub fn delivery_guard_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区中以下文件仍不存在、为空，或明显还是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入工具，在用户指定路径创建或更新这些文件。可以写入部分诊断、已知事实、待验证项或阻塞原因，但不能停留在“待填写/继续分析”的空骨架。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少包含可交付内容。\n</system-reminder>"
+        "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区中以下文件仍不存在、为空，或明显还是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入/生成工具，在用户指定路径创建或更新这些文件。若目标是 PNG/PDF/XLSX 等二进制或图片产物，可以调用 Bash、PowerShell 或 ShellTask 运行明确写入目标路径的生成命令，并随后验证文件存在、非空。可以写入部分诊断、已知事实、待验证项或阻塞原因，但不能停留在“待填写/继续分析”的空骨架。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少包含可交付内容。\n</system-reminder>"
     )
 }
 
@@ -324,7 +358,7 @@ pub fn delivery_guard_blocking_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n上一轮已经要求先交付命名文件，但你本轮仍准备调用非写入工具。系统已跳过这批工具调用，因为以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮只调用 Write 或 Edit 更新这些路径的可交付内容；不要调用 Read、Glob、Bash、Skill、TaskCreate 或其它探索工具。可以写入部分诊断、已知事实、阻塞原因和手动动作，但不能只写“待补充/继续分析”。\n</system-reminder>"
+        "<system-reminder>\n上一轮已经要求先交付命名文件，但你本轮仍准备调用不会直接生成目标文件的探索工具。系统已跳过这批工具调用，因为以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮只调用 Write、Edit，或调用 Bash/PowerShell/ShellTask 运行会直接写入上述目标路径的生成命令；PNG/PDF/XLSX 等二进制产物必须用真实生成命令落地，不能只写脚本不运行。不要调用 Read、Glob、Skill、TaskCreate 或其它探索工具。可以写入部分诊断、已知事实、阻塞原因和手动动作，但不能只写“待补充/继续分析”。\n</system-reminder>"
     )
 }
 
@@ -335,7 +369,7 @@ pub fn delivery_guard_text_only_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n上一轮已经要求先交付命名文件，但你只输出了文字，没有调用写入工具；本轮不能以口头计划、总结或道歉结束。以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮必须调用 Write、Edit 或等价文件写入工具，把这些路径更新为可检查的内容。可以基于用户明确规格、已知事实、未验证说明或阻塞原因先写可用版本；不要再只说“我将创建/我会生成/继续分析”。\n</system-reminder>"
+        "<system-reminder>\n上一轮已经要求先交付命名文件，但你只输出了文字，没有调用写入或生成工具；本轮不能以口头计划、总结或道歉结束。以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮必须调用 Write、Edit，或调用 Bash/PowerShell/ShellTask 运行会直接写入目标路径的生成命令，把这些路径更新为可检查的内容。可以基于用户明确规格、已知事实、未验证说明或阻塞原因先写可用版本；不要再只说“我将创建/我会生成/继续分析”。\n</system-reminder>"
     )
 }
 
@@ -367,10 +401,7 @@ fn maybe_delivery_guard_prompt_inner(
     if targets.is_empty() || guard_count >= 3 {
         return None;
     }
-    if apply_tool_grace
-        && guard_count == 0
-        && iteration < DELIVERY_GUARD_TOOL_GRACE_ITERATIONS
-    {
+    if apply_tool_grace && guard_count == 0 && iteration < DELIVERY_GUARD_TOOL_GRACE_ITERATIONS {
         return None;
     }
     let missing = unready_requested_file_targets(targets, workspace_root);
@@ -454,6 +485,44 @@ mod tests {
                 "dialogue.dot".to_string(),
                 "dialogue.json".to_string(),
                 "solution.py".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_file_called_report_target_without_source_file() {
+        let targets = extract_requested_file_targets(
+            "I have a transcript file `transcript.md` from NASA. Please read the transcript and identify controversial statements in a file called `controversy_analysis.md`.",
+        );
+        assert_eq!(targets, vec!["controversy_analysis.md".to_string()]);
+    }
+
+    #[test]
+    fn extracts_hidden_secret_management_targets() {
+        let targets = extract_requested_file_targets(
+            "Create a `.secrets/` directory. Create `.secrets/.env.template` from `.env.example`. Create `.secrets/README.md` using `old_notes.txt` and `security_config.json`. Update `.gitignore`. Update `SECURITY.md`. Flag the hardcoded credential in `config.json` in the README.",
+        );
+        assert_eq!(
+            targets,
+            vec![
+                ".gitignore".to_string(),
+                ".secrets/.env.template".to_string(),
+                ".secrets/README.md".to_string(),
+                "SECURITY.md".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_csv_and_png_chart_targets() {
+        let targets = extract_requested_file_targets(
+            "Save a CSV at `output/thinking_relative_impact.csv` and generate a vertical bar chart at `output/relative_gain_bar.png` visualizing the sorted relative percentage increases.",
+        );
+        assert_eq!(
+            targets,
+            vec![
+                "output/relative_gain_bar.png".to_string(),
+                "output/thinking_relative_impact.csv".to_string(),
             ]
         );
     }

@@ -183,15 +183,23 @@ fn shell_command_writes_target(command: &str, target: &str) -> bool {
         "writefilesync",
         "write_text",
         "writealltext",
+        "savefig",
+        "imsave",
+        "imwrite",
+        "write_image",
+        "write_pdf",
+        "to_excel",
+        "to_csv",
+        ".save(",
     ];
     write_markers.iter().any(|marker| {
-        lower
-            .match_indices(marker)
-            .any(|(idx, marker)| command_segment_after_marker_contains_target(
+        lower.match_indices(marker).any(|(idx, marker)| {
+            command_segment_after_marker_contains_target(
                 &normalized,
                 idx + marker.len(),
                 &target_lower,
-            ))
+            )
+        })
     })
 }
 
@@ -201,9 +209,8 @@ fn redirection_points_to_target(command: &str, target: &str) -> bool {
         if after.starts_with('&') {
             return false;
         }
-        first_shell_path_token(after).is_some_and(|path| {
-            file_path_targets_missing(path, &[target.to_string()])
-        })
+        first_shell_path_token(after)
+            .is_some_and(|path| file_path_targets_missing(path, &[target.to_string()]))
     })
 }
 
@@ -235,8 +242,7 @@ fn first_shell_path_token(input: &str) -> Option<&str> {
     let end = input
         .char_indices()
         .find_map(|(idx, ch)| {
-            matches!(ch, ' ' | '\t' | '\n' | '\r' | ';' | '&' | '|' | '<' | '>')
-                .then_some(idx)
+            matches!(ch, ' ' | '\t' | '\n' | '\r' | ';' | '&' | '|' | '<' | '>').then_some(idx)
         })
         .unwrap_or(input.len());
     (end > 0).then_some(&input[..end])
@@ -3548,14 +3554,10 @@ impl RuntimeChatTurnDriver {
                         }
                     }
 
-                    let text_only_missing_targets = if delivery_guard_count > 0 {
-                        safeguard::unready_requested_file_targets(
-                            &requested_file_targets,
-                            &delivery_guard_workspace,
-                        )
-                    } else {
-                        Vec::new()
-                    };
+                    let text_only_missing_targets = safeguard::unready_requested_file_targets(
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                    );
                     if !text_only_missing_targets.is_empty() {
                         delivery_guard_count += 1;
                         state.final_only_content = content.clone();
@@ -4755,6 +4757,21 @@ mod tests {
         assert!(tool_calls_write_missing_target(
             &calls,
             &["SKILL.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_shell_savefig_to_png_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({
+                "command": "python3 - <<'PY'\nimport matplotlib.pyplot as plt\nplt.bar(['A'], [1])\nplt.savefig('output/relative_gain_bar.png')\nPY"
+            }),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["output/relative_gain_bar.png".to_string()]
         ));
     }
 
