@@ -250,6 +250,7 @@ function messagesWithCompletedToolProcess(): Message[] {
         name: 'Read',
         content: 'README contents',
         isError: false,
+        durationMs: 1234,
       },
     },
     {
@@ -258,6 +259,58 @@ function messagesWithCompletedToolProcess(): Message[] {
       role: 'assistant',
       createdAt: '2026-04-28T00:00:04Z',
       content: { text: '已检查 README，并确认项目启动方式。' },
+    },
+  ]
+}
+
+function messagesWithFinalArtifactInMiddle(): Message[] {
+  return [
+    {
+      id: 'u-artifact-middle',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '生成压测报告' },
+    },
+    {
+      id: 'a-artifact-tool',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '我先写入压测报告。' },
+      toolCalls: [
+        { id: 'write-artifact-report', name: 'Write', arguments: { file_path: '/tmp/pilot_tool_stress_3.md' } },
+      ],
+    },
+    {
+      id: 't-artifact-tool',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:02Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'write-artifact-report',
+        name: 'Write',
+        content: '{"created":true,"file_path":"/tmp/pilot_tool_stress_3.md"}',
+        isError: false,
+      },
+    },
+    {
+      id: 'a-artifact-final',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:03Z',
+      content: {
+        text: [
+          '第三轮工具压测完成，以下是执行汇总。',
+          '',
+          '**生成的产物文件：**',
+          '![artifact](/tmp/pilot_tool_stress_3.md)',
+          '',
+          '**数据对比（与上一轮压测的差异）：**',
+          '- Markdown 文件数已更新。',
+        ].join('\n'),
+      },
     },
   ]
 }
@@ -391,20 +444,42 @@ describe('MessageList generated file actions', () => {
     render(<MessageList />)
 
     expect(screen.getByText('检查 README')).toBeInTheDocument()
-    const processSummary = screen.getByRole('button', { name: '执行过程' })
+    const processSummary = screen.getByRole('button', { name: '已完成 · 1 步' })
     const summary = screen.getByText('已检查 README，并确认项目启动方式。')
     expect(processSummary).toBeInTheDocument()
     expect(summary).toBeInTheDocument()
     expect(processSummary.compareDocumentPosition(summary)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(screen.queryByRole('button', { name: '执行过程' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument()
     expect(screen.queryByText('我先读取 README。')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '读取了 1 个文件' })).not.toBeInTheDocument()
 
     fireEvent.click(processSummary)
 
+    const processBody = screen.getByTestId('completed-process-body')
+    expect(processBody).not.toHaveClass('border-l')
+    expect(processBody.className).not.toContain('pl-')
+    expect(processBody.className).not.toContain('ml-')
     expect(screen.getByText('我先读取 README。')).toBeInTheDocument()
     expect(screen.getByText('已检查 README，并确认项目启动方式。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '读取了 1 个文件' })).toBeInTheDocument()
+  })
+
+  it('keeps final artifact cards at their original position in a collapsed completed turn', async () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: messagesWithFinalArtifactInMiddle() })
+
+    render(<MessageList />)
+
+    const processSummary = screen.getByRole('button', { name: '已完成 · 1 步' })
+    const artifactIntro = screen.getByText('生成的产物文件：')
+    const artifactCard = await screen.findByTestId('generated-file-card')
+    const comparison = screen.getByText('数据对比（与上一轮压测的差异）：')
+
+    expect(processSummary).toBeInTheDocument()
+    expect(screen.queryByText('我先写入压测报告。')).not.toBeInTheDocument()
+    expect(artifactIntro.compareDocumentPosition(artifactCard)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(artifactCard.compareDocumentPosition(comparison)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   it('keeps a simple completed chat turn expanded when no summary is present', () => {
@@ -429,7 +504,7 @@ describe('MessageList generated file actions', () => {
     expect(turnSummary).toBeInTheDocument()
     expect(backgroundCompletion).toBeInTheDocument()
     expect(screen.queryByText(/task-notification/)).not.toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: '执行过程' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /已完成/ })).toHaveLength(2)
     expect(backgroundCompletion.closest('[data-testid="chat-row"]')).toBe(
       turnSummary.closest('[data-testid="chat-row"]'),
     )

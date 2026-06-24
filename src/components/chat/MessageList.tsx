@@ -35,6 +35,7 @@ import {
   useTurnRenderModel,
   type RenderAiSegment,
   type RenderGeneratedFile,
+  type RenderToolGroup,
   type RenderToolReceipt,
   type RenderToolStep,
   type RenderTurnBlock,
@@ -57,27 +58,37 @@ function AvailableGeneratedFileCard({
   return <GeneratedFileCard {...cardProps} />;
 }
 
-function CompletedProcessCollapse({ children }: { children: ReactNode }) {
+function CompletedProcessCollapse({
+  children,
+  toolGroup,
+}: {
+  children: ReactNode;
+  toolGroup?: RenderToolGroup;
+}) {
   const [open, setOpen] = useState(false);
+  const stepLabel = toolGroup?.steps.length
+    ? `${toolGroup.steps.length} 步`
+    : null;
+  const summaryLabel = ["已完成", stepLabel].filter(Boolean).join(" · ");
 
   return (
     <div>
       <Button
         unstyled
         type="button"
-        aria-label="执行过程"
+        aria-label={summaryLabel}
         onClick={() => setOpen((value) => !value)}
         className="inline-flex w-fit max-w-full min-w-0 items-center gap-1.5 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
       >
+        <span className="min-w-0 break-words">{summaryLabel}</span>
         {open ? (
           <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         ) : (
           <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         )}
-        <span className="min-w-0 break-words">执行过程</span>
       </Button>
       {open ? (
-        <div className="ml-[7px] mt-1 flex flex-col gap-1 border-l border-border/60 pl-3">
+        <div data-testid="completed-process-body" className="mt-1 flex flex-col gap-1">
           {children}
         </div>
       ) : null}
@@ -560,6 +571,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                 persistedBlockCount: t.persistedBlockCount ?? t.blocks.length,
                 showFinalThinkingIndicator: false,
                 finalAnswer: t.completedFinalAnswer,
+                toolGroup: t.toolGroup,
               })
             ) : t.blocks && t.blocks.length > 0 ? (
               renderInterleavedBlocks(t.blocks, {
@@ -740,23 +752,45 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
 
   function renderCompletedFinalAnswerTurn(
     blocks: RenderTurnBlock[],
-    ctx: InterleavedRenderCtx & { finalAnswer: RenderAiSegment },
+    ctx: InterleavedRenderCtx & {
+      finalAnswer: RenderAiSegment;
+      toolGroup?: RenderToolGroup;
+    },
   ) {
+    const finalMessageId = ctx.finalAnswer.message.id;
     const finalAnswerIndex = blocks.findIndex(
       (block) =>
-        block.kind === "assistantText" && block.id === ctx.finalAnswer.id,
+        block.kind === "assistantText" &&
+        block.segment.message.id === finalMessageId,
     );
+    const postFinalIndex =
+      finalAnswerIndex >= 0
+        ? blocks.findIndex(
+            (block, index) =>
+              index > finalAnswerIndex &&
+              block.kind === "assistantText" &&
+              block.segment.message.id !== finalMessageId,
+          )
+        : -1;
+    const finalBlocks =
+      finalAnswerIndex >= 0
+        ? blocks.slice(
+            finalAnswerIndex,
+            postFinalIndex >= 0 ? postFinalIndex : blocks.length,
+          )
+        : [
+            {
+              kind: "assistantText" as const,
+              id: ctx.finalAnswer.id,
+              segment: ctx.finalAnswer,
+            },
+          ];
     const blocksBeforeFinal =
       finalAnswerIndex >= 0 ? blocks.slice(0, finalAnswerIndex) : blocks;
     const blocksAfterFinal =
-      finalAnswerIndex >= 0 ? blocks.slice(finalAnswerIndex + 1) : [];
-    const processBlocks = blocksBeforeFinal.filter(
-      (block) => block.kind !== "generatedFile",
-    );
-    const resultBlocks = blocks.filter((block) => block.kind === "generatedFile");
-    const postFinalBlocks = blocksAfterFinal.filter(
-      (block) => block.kind !== "generatedFile",
-    );
+      postFinalIndex >= 0 ? blocks.slice(postFinalIndex) : [];
+    const processBlocks = blocksBeforeFinal;
+    const postFinalBlocks = blocksAfterFinal;
     const { children: processChildren, firstTextIso } =
       buildInterleavedBlockNodes(processBlocks, {
         ...ctx,
@@ -764,10 +798,10 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         persistedBlockCount: processBlocks.length,
         showFinalThinkingIndicator: false,
       });
-    const { children: resultChildren } = buildInterleavedBlockNodes(resultBlocks, {
+    const { children: finalChildren } = buildInterleavedBlockNodes(finalBlocks, {
       ...ctx,
       inlineStreamingContent: null,
-      persistedBlockCount: resultBlocks.length,
+      persistedBlockCount: finalBlocks.length,
       showFinalThinkingIndicator: false,
     });
     const { children: postFinalChildren } = buildInterleavedBlockNodes(
@@ -780,7 +814,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       },
     );
     const visibleProcessChildren = processChildren.filter(Boolean);
-    const visibleResultChildren = resultChildren.filter(Boolean);
+    const visibleFinalChildren = finalChildren.filter(Boolean);
     const visiblePostFinalChildren = postFinalChildren.filter(Boolean);
 
     return (
@@ -791,15 +825,11 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         timestamp={firstTextIso ?? ctx.aiAnchorIso ?? undefined}
       >
         {visibleProcessChildren.length > 0 ? (
-          <CompletedProcessCollapse>
+          <CompletedProcessCollapse toolGroup={ctx.toolGroup}>
             {visibleProcessChildren}
           </CompletedProcessCollapse>
         ) : null}
-        <AiBubble
-          key={ctx.finalAnswer.message.id}
-          message={ctx.finalAnswer.message}
-        />
-        {visibleResultChildren}
+        {visibleFinalChildren}
         {visiblePostFinalChildren}
       </ChatRow>
     );
