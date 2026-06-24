@@ -12,7 +12,7 @@ use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::tools::permission::PermissionMode;
 use serde_json::json;
 
-const DEFAULT_MAX_ITERATIONS: usize = 15;
+const DEFAULT_MAX_ITERATIONS: usize = 120;
 
 #[tokio::main]
 async fn main() {
