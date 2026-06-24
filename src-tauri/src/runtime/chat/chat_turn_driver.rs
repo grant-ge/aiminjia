@@ -2723,6 +2723,14 @@ impl RuntimeChatTurnDriver {
         let compact_transcript_path = executor
             .conversation_dir(config.conversation_id.as_str())
             .map(|dir| compact_transcript_path_for_conversation_dir(&dir));
+        let delivery_guard_workspace = config
+            .authorized_workspace
+            .as_ref()
+            .map(|workspace| workspace.root_path.clone())
+            .unwrap_or_else(|| config.workspace_path.clone());
+        let requested_file_targets =
+            safeguard::extract_requested_file_targets(request.content.as_str());
+        let mut delivery_guard_count = 0usize;
 
         'turn: for iteration in 0..config.max_iterations {
             let mut preprocess_config = PreprocessConfig::default();
@@ -3409,6 +3417,27 @@ impl RuntimeChatTurnDriver {
                         }
                     }
 
+                    if let Some(msg) = safeguard::maybe_delivery_guard_prompt(
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        delivery_guard_count,
+                        iteration,
+                    ) {
+                        delivery_guard_count += 1;
+                        state.final_only_content = content.clone();
+                        state.messages.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": content,
+                        }));
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
                     turn_completed_normally = true;
                     break 'turn;
                 }
@@ -3719,6 +3748,22 @@ impl RuntimeChatTurnDriver {
                     state
                         .generated_file_ids
                         .extend(results.new_generated_file_ids);
+
+                    if let Some(msg) = safeguard::maybe_delivery_guard_prompt(
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        delivery_guard_count,
+                        iteration,
+                    ) {
+                        delivery_guard_count += 1;
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
 
                     // Safeguard check.
                     match safeguard::check_iteration(

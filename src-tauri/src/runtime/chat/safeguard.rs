@@ -1,3 +1,9 @@
+use std::collections::BTreeSet;
+use std::path::{Component, Path};
+
+use once_cell::sync::Lazy;
+use regex::Regex;
+
 /// 迭代保护策略的决策结果
 #[derive(Debug)]
 pub enum SafeguardAction {
@@ -29,6 +35,172 @@ pub fn check_iteration(
     SafeguardAction::Continue
 }
 
+static CODE_SPAN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"`([^`\r\n]{1,180})`").expect("valid code span regex"));
+
+static BARE_FILE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r#"(?ix)
+        ([A-Z0-9_.-]+(?:[/\\][A-Z0-9_.-]+)*\.
+            (?:md|markdown|txt|json|jsonl|csv|tsv|ya?ml|toml|py|js|ts|tsx|jsx|rs|go|java|kt|sh|bash|ps1|sql|html?|css|xml|pdf|docx|xlsx|pptx)
+        )
+        "#,
+    )
+    .expect("valid bare file regex")
+});
+
+fn looks_like_creation_request(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    [
+        "create",
+        "write",
+        "save",
+        "generate",
+        "output",
+        "export",
+        "produce",
+        "status report",
+        "report to",
+        "file in",
+        "workspace root",
+        "创建",
+        "新建",
+        "写入",
+        "保存",
+        "生成",
+        "输出",
+        "导出",
+        "报告",
+        "文件",
+        "产物",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+}
+
+fn clean_file_candidate(raw: &str) -> Option<String> {
+    let candidate = raw
+        .trim()
+        .trim_matches(|c: char| {
+            matches!(
+                c,
+                '`' | '"'
+                    | '\''
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | '<'
+                    | '>'
+                    | '，'
+                    | '。'
+                    | ','
+                    | '.'
+                    | ';'
+                    | '；'
+                    | ':'
+                    | '：'
+            )
+        })
+        .replace('\\', "/");
+    if candidate.is_empty()
+        || candidate.starts_with('/')
+        || candidate.contains("://")
+        || candidate.contains('\0')
+        || candidate.len() > 180
+    {
+        return None;
+    }
+    let path = Path::new(&candidate);
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return None;
+    }
+    let file_name = path.file_name()?.to_string_lossy();
+    if !file_name.contains('.') {
+        return None;
+    }
+    Some(candidate)
+}
+
+/// Extract explicit file targets from a user request when the request appears to
+/// require creating/updating files. The result is intentionally conservative and
+/// only includes relative workspace paths.
+pub fn extract_requested_file_targets(request: &str) -> Vec<String> {
+    if !looks_like_creation_request(request) {
+        return Vec::new();
+    }
+
+    let mut targets = BTreeSet::new();
+    for caps in CODE_SPAN_RE.captures_iter(request) {
+        if let Some(value) = caps.get(1).and_then(|m| clean_file_candidate(m.as_str())) {
+            targets.insert(value);
+        }
+    }
+    for caps in BARE_FILE_RE.captures_iter(request) {
+        if let Some(value) = caps.get(1).and_then(|m| clean_file_candidate(m.as_str())) {
+            targets.insert(value);
+        }
+    }
+    targets.into_iter().collect()
+}
+
+pub fn missing_requested_file_targets(targets: &[String], workspace_root: &Path) -> Vec<String> {
+    targets
+        .iter()
+        .filter(|target| {
+            let path = workspace_root.join(target);
+            match std::fs::metadata(&path) {
+                Ok(meta) => !meta.is_file() || meta.len() == 0,
+                Err(_) => true,
+            }
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn delivery_guard_prompt(missing_targets: &[String]) -> String {
+    let list = missing_targets
+        .iter()
+        .map(|target| format!("- `{target}`"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区仍未发现以下非空文件：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入工具，在用户指定路径创建这些文件的最小可交付骨架。骨架可以包含章节、TODO、已知事实、待验证项或阻塞原因，但必须是真实文件。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少存在且非空。\n</system-reminder>"
+    )
+}
+
+pub fn maybe_delivery_guard_prompt(
+    targets: &[String],
+    workspace_root: &Path,
+    guard_count: usize,
+    iteration: usize,
+) -> Option<String> {
+    if targets.is_empty() || guard_count >= 3 {
+        return None;
+    }
+    let min_iteration = match guard_count {
+        0 => 0,
+        1 => 3,
+        _ => 6,
+    };
+    if iteration < min_iteration {
+        return None;
+    }
+    let missing = missing_requested_file_targets(targets, workspace_root);
+    if missing.is_empty() {
+        None
+    } else {
+        Some(delivery_guard_prompt(&missing))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,5 +228,34 @@ mod tests {
     fn daily_no_inject_when_near_limit_but_has_content() {
         let action = check_iteration(7, 10, "some text");
         assert!(matches!(action, SafeguardAction::Continue));
+    }
+
+    #[test]
+    fn extracts_named_file_targets_for_creation_requests() {
+        let targets = extract_requested_file_targets(
+            "Create `SKILL.md` in the workspace root and write a status report to `diagnosis-report.md`.",
+        );
+        assert_eq!(
+            targets,
+            vec!["SKILL.md".to_string(), "diagnosis-report.md".to_string()]
+        );
+    }
+
+    #[test]
+    fn ignores_file_mentions_without_creation_intent() {
+        let targets = extract_requested_file_targets("What does `package.json` do?");
+        assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn reports_missing_targets_as_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("present.md"), "ok").unwrap();
+        let targets = vec!["present.md".to_string(), "missing.md".to_string()];
+        let prompt = maybe_delivery_guard_prompt(&targets, dir.path(), 0, 0)
+            .expect("missing target should prompt");
+        assert!(prompt.contains("missing.md"));
+        assert!(!prompt.contains("present.md"));
+        assert!(prompt.contains("必须优先调用 Write"));
     }
 }
