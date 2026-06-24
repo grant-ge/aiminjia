@@ -261,6 +261,13 @@ fn file_content_looks_placeholder(content: &str) -> bool {
         "full analysis pending",
         "diagnostic in progress",
         "⏳ pending",
+        "not yet run",
+        "not yet checked",
+        "not yet inspected",
+        "not yet read",
+        "not verified yet",
+        "will be completed in the next step",
+        "requires shell execution",
         "pending | need to",
         "need to read",
         "need to verify",
@@ -302,7 +309,7 @@ pub fn delivery_guard_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区中以下文件仍不存在、为空，或明显还是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入工具，在用户指定路径创建或更新这些文件。可以写入部分诊断、已知事实、待验证项或阻塞原因，但不能停留在“待填写/继续分析”的空骨架。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少包含可交付内容。\n</system-reminder>"
+        "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区中以下文件仍不存在、为空，或明显还是 Pending/TODO/To be filled/Not yet run/下一步再完成 这类占位骨架：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入工具，在用户指定路径创建或更新这些文件。可以写入部分诊断、已知事实、待验证项或阻塞原因，但不能停留在“待填写/继续分析/下一步再完成”的空骨架。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少包含可交付内容。\n</system-reminder>"
     )
 }
 
@@ -313,7 +320,7 @@ pub fn delivery_guard_blocking_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n上一轮已经要求先交付命名文件，但你本轮仍准备调用非写入工具。系统已跳过这批工具调用，因为以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮只调用 Write 或 Edit 更新这些路径的可交付内容；不要调用 Read、Glob、Bash、Skill、TaskCreate 或其它探索工具。可以写入部分诊断、已知事实、阻塞原因和手动动作，但不能只写“待补充/继续分析”。\n</system-reminder>"
+        "<system-reminder>\n上一轮已经要求先交付命名文件，但你本轮仍准备调用非写入工具。系统已跳过这批工具调用，因为以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled/Not yet run/下一步再完成 这类占位骨架：\n{list}\n\n下一轮只调用 Write 或 Edit 更新这些路径的可交付内容；不要调用 Read、Glob、Bash、Skill、TaskCreate 或其它探索工具。可以写入部分诊断、已知事实、阻塞原因和手动动作，但不能只写“待补充/继续分析/下一步再完成”。\n</system-reminder>"
     )
 }
 
@@ -471,6 +478,20 @@ mod tests {
             .expect("placeholder target should prompt");
         assert!(prompt.contains("diagnosis-report.md"));
         assert!(prompt.contains("占位骨架"));
+    }
+
+    #[test]
+    fn treats_next_step_reports_as_unready() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("diagnosis-report.md"),
+            "## Execution Test Results\n\nNot yet run. Items require shell execution and will be completed in the next step.",
+        )
+        .unwrap();
+        let targets = vec!["diagnosis-report.md".to_string()];
+        let prompt = maybe_delivery_guard_prompt(&targets, dir.path(), 0, 0)
+            .expect("next-step target should prompt");
+        assert!(prompt.contains("diagnosis-report.md"));
     }
 
     #[test]

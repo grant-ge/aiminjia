@@ -166,3 +166,22 @@ Regression check after commit `10eb36f5`:
 - Status: `success`
 - Regression: score dropped from `0.7293333333333334` to `0.6513333333333333`, tokens rose from `24,921` to `50,031`, and the report still misinterpreted UTC/rate-limit timing.
 - Decision: revert the extra global time-window prompt text. The effective fix for this sample is the runtime delivery-guard grace period, not more global prompt detail.
+
+Verification after reverting the prompt experiment at commit `82640222`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\82640222_task00016_revertedprompt_c1_j1_20260624_222405\20260624_222406\pawbench\deepseek-v4-flash\aijia\20260624_222407.json`
+- Score: `0.8013333333333333`
+- Status: `error` due to `EXIT_CODE_NONZERO`, but files were present and graded.
+- Improvement: the report identified the 180-minute rate-limit conflict and evidence coverage scored `1.0`.
+- Remaining issue: the final report still lacked the exact `148 minutes` / `18:55 Asia/Shanghai` next-eligible-time detail, and the turn continued into extra verification instead of cleanly stopping after a usable report.
+
+Follow-up runtime adjustment:
+
+- Treat report text such as `Not yet run`, `not yet checked`, `will be completed in the next step`, and `requires shell execution` as placeholder content for named deliverables.
+- This targets the `82640222` failure shape where `diagnosis-report.md` existed but still contained stale "next step" sections after evidence gathering.
+
+Verification:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib guard"`
+- Result: 29 focused tests passed.
