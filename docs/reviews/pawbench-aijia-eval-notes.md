@@ -124,3 +124,23 @@ Verification:
 
 - `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib delivery_guard_"`
 - Result: 6 focused tests passed.
+
+Follow-up verification after commit `2d2b5005`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\2d2b5005_task00016_shellwriteguard_c1_j1_20260624_220650\20260624_220655\pawbench\deepseek-v4-flash\aijia\20260624_220655.json`
+- Score: `0.47583333333333333`
+- Status: `success`
+- Key improvement: `SKILL.md` and `diagnosis-report.md` were present before grading.
+- Remaining miss: the report did not analyze `post-history.json` timing/rate-limit evidence and falsely said file access was blocked.
+
+Second runtime adjustment:
+
+- Keep the immediate guard when the assistant tries to finish with named deliverables missing.
+- Add a three-tool-iteration grace period before prompting after tool rounds, so the assistant can read source, config, logs, and history before the delivery guard starts forcing file writes.
+- Once the delivery guard has started, continue blocking non-write calls until the named deliverables are ready.
+
+Verification:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib guard"`
+- Result: 28 focused tests passed.

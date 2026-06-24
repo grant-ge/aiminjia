@@ -37,6 +37,7 @@ pub fn check_iteration(
 
 static CODE_SPAN_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"`([^`\r\n]{1,180})`").expect("valid code span regex"));
+const DELIVERY_GUARD_TOOL_GRACE_ITERATIONS: usize = 3;
 
 static BARE_FILE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
@@ -320,9 +321,34 @@ pub fn maybe_delivery_guard_prompt(
     targets: &[String],
     workspace_root: &Path,
     guard_count: usize,
-    _iteration: usize,
+    iteration: usize,
+) -> Option<String> {
+    maybe_delivery_guard_prompt_inner(targets, workspace_root, guard_count, iteration, false)
+}
+
+pub fn maybe_delivery_guard_prompt_after_tool_round(
+    targets: &[String],
+    workspace_root: &Path,
+    guard_count: usize,
+    iteration: usize,
+) -> Option<String> {
+    maybe_delivery_guard_prompt_inner(targets, workspace_root, guard_count, iteration, true)
+}
+
+fn maybe_delivery_guard_prompt_inner(
+    targets: &[String],
+    workspace_root: &Path,
+    guard_count: usize,
+    iteration: usize,
+    apply_tool_grace: bool,
 ) -> Option<String> {
     if targets.is_empty() || guard_count >= 3 {
+        return None;
+    }
+    if apply_tool_grace
+        && guard_count == 0
+        && iteration < DELIVERY_GUARD_TOOL_GRACE_ITERATIONS
+    {
         return None;
     }
     let missing = unready_requested_file_targets(targets, workspace_root);
@@ -392,11 +418,43 @@ mod tests {
     }
 
     #[test]
+    fn delays_first_tool_round_prompt_during_initial_exploration() {
+        let dir = tempfile::tempdir().unwrap();
+        let targets = vec!["diagnosis-report.md".to_string()];
+
+        let prompt = maybe_delivery_guard_prompt_after_tool_round(&targets, dir.path(), 0, 0);
+
+        assert!(prompt.is_none());
+    }
+
+    #[test]
+    fn prompts_after_tool_grace_iterations() {
+        let dir = tempfile::tempdir().unwrap();
+        let targets = vec!["diagnosis-report.md".to_string()];
+
+        let prompt = maybe_delivery_guard_prompt_after_tool_round(&targets, dir.path(), 0, 3)
+            .expect("missing target should prompt after exploration grace");
+
+        assert!(prompt.contains("diagnosis-report.md"));
+    }
+
+    #[test]
     fn repeats_prompt_when_guarded_target_is_still_missing() {
         let dir = tempfile::tempdir().unwrap();
         let targets = vec!["diagnosis-report.md".to_string()];
         let prompt = maybe_delivery_guard_prompt(&targets, dir.path(), 1, 1)
             .expect("missing target should keep prompting after first guard");
+        assert!(prompt.contains("diagnosis-report.md"));
+    }
+
+    #[test]
+    fn tool_round_prompt_repeats_after_first_guard() {
+        let dir = tempfile::tempdir().unwrap();
+        let targets = vec!["diagnosis-report.md".to_string()];
+
+        let prompt = maybe_delivery_guard_prompt_after_tool_round(&targets, dir.path(), 1, 1)
+            .expect("missing target should keep prompting once guard has started");
+
         assert!(prompt.contains("diagnosis-report.md"));
     }
 

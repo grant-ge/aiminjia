@@ -3907,7 +3907,7 @@ impl RuntimeChatTurnDriver {
                         .generated_file_ids
                         .extend(results.new_generated_file_ids);
 
-                    if let Some(msg) = safeguard::maybe_delivery_guard_prompt(
+                    if let Some(msg) = safeguard::maybe_delivery_guard_prompt_after_tool_round(
                         &requested_file_targets,
                         &delivery_guard_workspace,
                         delivery_guard_count,
