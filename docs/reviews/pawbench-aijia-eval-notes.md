@@ -189,3 +189,49 @@ Verification:
 
 - `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib guard"`
 - Result after reverting the placeholder detector: 28 focused tests passed.
+
+## 2026-06-24 full-run regression after reverting placeholder detector
+
+Full verification at commit `454d4637`:
+
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\454d4637_full_150_c16_j4_20260624_225655\20260624_225659\pawbench\deepseek-v4-flash\aijia\20260624_225700.json`
+- Score: `0.6216406289156756`
+- Comparable baseline: `7e0399a4_full_150_c16_j4_relogin_20260624_144446`, score `0.6604642811744125`
+- Delta: `-0.0388236522587369`
+- Status distribution: `success=125`, `error=25`
+- API-invalid-like count by notes/errors: current `6`, baseline `2`
+
+Major regressions:
+
+- `task_00003_a_stock_announcements_scheduled_fetch`: `0.964 -> 0.0`, likely dominated by AI service error / short transcript rather than a useful prompt signal.
+- `T103_schema_migration`: `0.96 -> 0.0`.
+- `task_00066_svpwm_implementation_for_edge_aligned_pwm_motor_controller`: `0.927 -> 0.0`, no implementation files were produced.
+- `dialogue-parser`: `0.904 -> 0.0`, skill was read but `solution.py`, `dialogue.json`, and `dialogue.dot` were not produced.
+- Visual artifact group regressed heavily because `output/output.html` was not generated after PNG metadata checks: `M005`, `M006`, `M007`, `M010`, `M011`, and `M012`.
+- Several skill/report tasks still show the old failure shape where source files are read but named deliverables are not created, such as `task_00016`, `task_00028`, and `task_00069`.
+
+Major improvements:
+
+- `task_00095_prompt_injection_defense_framework_with_skill_creation`: `0.0 -> 0.946`.
+- `task_meeting_gov_controversy`: `0.0 -> 0.858`.
+- `r2r-mpc-control`: `0.2 -> 0.936`.
+- Skill / cron / agent composition tasks improved substantially: `234-doc-butler`, `233-translator`, `227-weekly-report`, `225-multi-config`, and `230-study-buddy`.
+- `T101_wal_recovery`, `task_video_transcript_extraction`, `task_earnings_analysis`, and several safety/data tasks improved from very low baselines.
+
+Interpretation:
+
+- The full-run drop is not explained by one reverted experiment. It combines external API instability, several implementation tasks stopping before file creation, and a concentrated visual artifact failure group.
+- The strongest prompt-level opportunity is not a task-specific music rule. It is a general artifact-first rule for media-to-output tasks: when the user already gives precise structure, fields, data, layout, or interaction requirements, failure to view the original media must not block creation of the requested file.
+- This aligns with the QoderWork prompt design pattern: artifact tasks have explicit file-creation triggers, single-file HTML/SVG guidance, and a visible final artifact contract. The lotus prompt already has delivery and visual-fallback rules, but the HTML/SVG first-write requirement was too implicit.
+
+Prompt change planned after this run:
+
+- Strengthen `system.md` so HTML/SVG/React and other visual artifacts must be written as a usable first version, not a placeholder.
+- Strengthen media fallback so one reasonable view/parse attempt is enough before writing a target artifact when the user supplied explicit content and acceptance requirements.
+- Keep the rule global: it applies to visualizations, UI reproductions, diagrams, reports, and interactive pages, not to any PawBench task ID, fixed answer, or benchmark path.
+
+Expected effect:
+
+- Improve media-to-artifact tasks that currently stop after binary/metadata probing.
+- Reduce zero-score outcomes where a requested `output/output.html` or similar artifact is never created.
+- Avoid increasing deep reading loops; the first version should be valid, inspectable, and later refinable if visual evidence becomes available.
