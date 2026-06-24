@@ -559,7 +559,11 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             parent_run_id: Some(ctx.run_id.clone()),
             parent_agent_id: ctx.agent_id.clone(),
             cancellation: ctx.cancellation.clone(),
-            permission_mode: ctx.permission_mode,
+            // Sub-agents can run in foreground, explicit background, or be
+            // auto-promoted to background. Background runners cannot surface a
+            // permission prompt, so grant the child turn directly instead of
+            // leaking AskRequired back into the model transcript.
+            permission_mode: PermissionMode::FullAccess,
             parent_tool_use_id: ctx.tool_call_id.clone(),
             permission_ctx: ctx
                 .capability

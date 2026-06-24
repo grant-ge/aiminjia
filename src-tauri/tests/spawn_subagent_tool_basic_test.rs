@@ -250,10 +250,10 @@ async fn sync_path_returns_launcher_output() {
     );
 }
 
-// ─── Permission mode forwarding ───────────────────────────────────────────────
+// ─── Permission mode isolation ────────────────────────────────────────────────
 
 #[tokio::test]
-async fn permission_mode_is_forwarded_to_launch_context() {
+async fn subagent_launch_context_uses_full_access_permission_mode() {
     use std::sync::Mutex;
 
     struct CapturingLauncher {
@@ -308,8 +308,8 @@ async fn permission_mode_is_forwarded_to_launch_context() {
     let mode = captured.lock().unwrap();
     assert_eq!(
         *mode,
-        Some(PermissionMode::DontAsk),
-        "launcher should receive DontAsk permission mode"
+        Some(PermissionMode::FullAccess),
+        "sub-agent launch context should use full access so child tools do not request UI permission"
     );
 }
 

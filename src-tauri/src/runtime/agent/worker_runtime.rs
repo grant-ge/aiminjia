@@ -1872,9 +1872,10 @@ async fn teammate_real_turn(
         user_text_for_turn_state(messages),
     )
     .with_cancellation(turn_cancel.clone())
-    .with_permission_mode(crate::runtime::tools::permission::PermissionMode::Default)
+    .with_permission_mode(crate::runtime::tools::permission::PermissionMode::FullAccess)
     // LTR P2.8: mark this turn as async so every tool's permission Ask
-    // gets auto-denied instead of blocking the idle loop forever.
+    // is still prevented from blocking the idle loop if a tool bypasses
+    // permission-mode normalization.
     .with_async(true);
     // CRITICAL: stamp the teammate's agent_id onto the turn so every
     // ToolExecutionContext built from it carries the caller identity.
