@@ -189,6 +189,17 @@ fn output_context_for_match(request: &str, start: usize, end: usize) -> bool {
         || before.contains("output")
         || before.contains("export")
         || before.contains("produce")
+        || before.contains("deliver")
+        || before.contains("implement")
+        || before.contains("implementation")
+        || before.contains("target file")
+        || before.contains("target files")
+        || before.contains("required file")
+        || before.contains("required files")
+        || before.contains("output a")
+        || before.contains("output an")
+        || before.contains("visualization")
+        || before.contains("validated json")
         || before.contains("report to")
         || before.contains("as a")
         || before.contains("to ")
@@ -416,6 +427,35 @@ mod tests {
             "Please first view the image, then generate `output/output.html` reproducing the score using inline SVG. Save the result to `output/output.html`.",
         );
         assert_eq!(targets, vec!["output/output.html".to_string()]);
+    }
+
+    #[test]
+    fn extracts_target_files_from_should_be_phrase() {
+        let targets = extract_requested_file_targets(
+            "The target files should be `svpwm_output/svpwm.c` and `svpwm_output/svpwm.h`.",
+        );
+        assert_eq!(
+            targets,
+            vec![
+                "svpwm_output/svpwm.c".to_string(),
+                "svpwm_output/svpwm.h".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_parser_outputs_from_implementation_prompt() {
+        let targets = extract_requested_file_targets(
+            "You should implement a function in your parser `solution.py` and output a validated JSON graph `dialogue.json` and visualization `dialogue.dot`.",
+        );
+        assert_eq!(
+            targets,
+            vec![
+                "dialogue.dot".to_string(),
+                "dialogue.json".to_string(),
+                "solution.py".to_string(),
+            ]
+        );
     }
 
     #[test]

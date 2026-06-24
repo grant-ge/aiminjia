@@ -365,3 +365,27 @@ Interpretation:
 - This is strong evidence that the failed branch was not "missing global prompt wording"; it was the driver accepting a text-only response after the model had already been told to write.
 - The new trigger point is materially better than the rejected first-turn primer: it preserves the initial evidence pass, then refuses only the specific non-delivery ending.
 - The tradeoff is higher token/time usage on tasks that need another write attempt. In the focused run, successful tasks used substantially more tokens, but produced real files instead of zero-score missing artifacts.
+
+## 2026-06-25 named-deliverable extractor expansion
+
+Evidence from non-visual focused run after `64ce3bc6`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\64ce3bc6_named_deliverables_c3_j2_20260625_014338\20260625_014343\pawbench\deepseek-v4-flash\aijia\20260625_014343.json`
+- Scope: `task_00016`, `task_00028`, `task_00069`, `task_00066`, and `dialogue-parser`.
+- Positive results: `task_00069` scored `0.964`, `task_00016` scored `0.717`, and `task_00028` scored `0.56`, all much better than the previous near-zero/no-deliverable outcomes.
+- Remaining failures: `dialogue-parser` and `task_00066` still scored `0.0`.
+
+Failure analysis:
+
+- The remaining two failures did not trigger the delivery guard at all. Their transcripts had no `Write`/`Edit` calls and no delivery guard reminder.
+- Both prompts used wording the extractor did not cover: `target files should be ...` for SVPWM, and `implement ... parser solution.py`, `output ... dialogue.json`, `visualization dialogue.dot` for dialogue-parser.
+
+Change:
+
+- Expand the named-target context detector to treat "target file(s)", "required file(s)", "implement/implementation", "output a/an", "validated JSON", and "visualization" as creation contexts when they surround a file path.
+- Add focused extractor tests for the SVPWM target files and dialogue-parser output set.
+
+Expected effect:
+
+- Bring code-generation and parser tasks with explicit output paths under the same delivery guard used by the visual artifact tasks.
+- Avoid false completion when the model only reads source files and summarizes implementation intent.
