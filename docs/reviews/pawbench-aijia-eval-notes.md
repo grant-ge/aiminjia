@@ -262,3 +262,29 @@ Expected effect:
 - Reduce misuse of image-generation tooling as a viewing/OCR mechanism.
 - Improve artifact tasks where the user has already supplied enough concrete content to produce a useful first output even when independent media viewing is unavailable.
 - Reduce false conclusions from truncated file or tool-output previews by making the recovery action explicit at the point of truncation.
+
+## 2026-06-25 delivery guard grace tightening
+
+Evidence from focused run after `ce87fb1c`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\ce87fb1c_visual_artifact_c3_j2_20260625_001227\20260625_001232\pawbench\deepseek-v4-flash\aijia\20260625_001232.json`
+- Scope: six visual artifact tasks that require named `output/output.html` files.
+- Result: average score `0.152`; `M011_score_mariage_animated` generated the file and scored `0.762`, while the other five still failed because no `output/output.html` was generated.
+- Transcript pattern: the agent recognized that the user had supplied explicit specs and should generate the HTML, but continued image/OCR probing and then hit the empty-response fallback before the target file existed.
+- Regression test added: `extracts_named_html_target_from_media_artifact_request` proves the target extractor recognizes generic media-to-artifact prompts such as "generate `output/output.html`".
+
+Change:
+
+- Reduce `DELIVERY_GUARD_TOOL_GRACE_ITERATIONS` from `3` to `1`.
+
+Rationale:
+
+- The previous grace period let a named-file task spend several tool rounds on exploration before any file-write reminder became visible. If the model or service produced an empty response during that window, post-processing returned a generic apology and the benchmark received a success-shaped answer with no deliverable.
+- One initial tool round is enough for a reasonable first evidence check. After that, if a requested named file is still missing or just a placeholder, the guard should force a write/update checkpoint before more exploration.
+- This is a generic delivery reliability fix. It applies to any explicit named output file, not to a PawBench task id, file name, sample answer, or score-specific branch.
+
+Expected effect:
+
+- Increase the probability that named files exist before service hiccups, max-output events, or long exploration loops.
+- Reduce "no output file generated" zero-score failures without forcing final quality to be perfect on the first draft.
+- Potential risk: some deep research tasks may receive the file-write reminder earlier. The guard prompt permits partial evidence, known facts, assumptions, and blocker notes, so the intended behavior is an early recoverable draft rather than premature finalization.

@@ -37,7 +37,7 @@ pub fn check_iteration(
 
 static CODE_SPAN_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"`([^`\r\n]{1,180})`").expect("valid code span regex"));
-const DELIVERY_GUARD_TOOL_GRACE_ITERATIONS: usize = 3;
+const DELIVERY_GUARD_TOOL_GRACE_ITERATIONS: usize = 1;
 
 static BARE_FILE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
@@ -400,6 +400,14 @@ mod tests {
     }
 
     #[test]
+    fn extracts_named_html_target_from_media_artifact_request() {
+        let targets = extract_requested_file_targets(
+            "Please first view the image, then generate `output/output.html` reproducing the score using inline SVG. Save the result to `output/output.html`.",
+        );
+        assert_eq!(targets, vec!["output/output.html".to_string()]);
+    }
+
+    #[test]
     fn ignores_file_mentions_without_creation_intent() {
         let targets = extract_requested_file_targets("What does `package.json` do?");
         assert!(targets.is_empty());
@@ -428,11 +436,11 @@ mod tests {
     }
 
     #[test]
-    fn prompts_after_tool_grace_iterations() {
+    fn prompts_after_one_followup_tool_round() {
         let dir = tempfile::tempdir().unwrap();
         let targets = vec!["diagnosis-report.md".to_string()];
 
-        let prompt = maybe_delivery_guard_prompt_after_tool_round(&targets, dir.path(), 0, 3)
+        let prompt = maybe_delivery_guard_prompt_after_tool_round(&targets, dir.path(), 0, 1)
             .expect("missing target should prompt after exploration grace");
 
         assert!(prompt.contains("diagnosis-report.md"));
