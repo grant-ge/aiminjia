@@ -389,3 +389,14 @@ Expected effect:
 
 - Bring code-generation and parser tasks with explicit output paths under the same delivery guard used by the visual artifact tasks.
 - Avoid false completion when the model only reads source files and summarizes implementation intent.
+
+Focused result after extractor expansion:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\7056a330_extractor_two_failures_c2_j2_20260625_022042\20260625_022044\pawbench\deepseek-v4-flash\aijia\20260625_022044.json`
+- `dialogue-parser` improved from `0.0` to `0.394`: `solution.py`, `dialogue.json`, and `dialogue.dot` were produced, with 34/35 automated tests passing.
+- `task_00066_svpwm_implementation_for_edge_aligned_pwm_motor_controller` stayed at `0.0`; it still produced no `svpwm_output/svpwm.c` or `.h` and exited nonzero after a long run.
+
+Interpretation:
+
+- The extractor change works for parser/code-output wording where the model can move to a bounded implementation.
+- SVPWM is now a separate long-code/long-output failure branch. The transcript ended after large source/config content was surfaced as assistant text, with no write calls; improving it likely needs a separate strategy for long engineering tasks, such as earlier code skeleton creation or stronger interruption of long source dumping.
