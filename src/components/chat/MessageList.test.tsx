@@ -6,8 +6,9 @@ import { MessageList } from './MessageList'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { isGeneratedFileAvailable, isLocalFileAvailable, openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
+import { getTeamOverview, isGeneratedFileAvailable, isLocalFileAvailable, openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import type { GeneratedFile, Message } from '@/types/message'
+import { useTeamStore } from '@/stores/teamStore'
 
 vi.mock('@/lib/tauri', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri')
@@ -28,6 +29,7 @@ const openGeneratedFileMock = vi.mocked(openGeneratedFile)
 const revealFileInFolderMock = vi.mocked(revealFileInFolder)
 const isGeneratedFileAvailableMock = vi.mocked(isGeneratedFileAvailable)
 const isLocalFileAvailableMock = vi.mocked(isLocalFileAvailable)
+const getTeamOverviewMock = vi.mocked(getTeamOverview)
 
 function generatedFile(overrides: Partial<GeneratedFile> = {}): GeneratedFile {
   return {
@@ -315,6 +317,79 @@ function messagesWithFinalArtifactInMiddle(): Message[] {
   ]
 }
 
+function messagesWithCompletedTeamSession(): Message[] {
+  return [
+    {
+      id: 'u-team',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '组建专家团做谈判预演' },
+    },
+    {
+      id: 'a-team-create',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '先建立专家团。' },
+      toolCalls: [
+        {
+          id: 'team-create',
+          name: 'TeamCreate',
+          arguments: { team_name: '沟通/谈判预演团' },
+        },
+      ],
+    },
+    {
+      id: 't-team-create',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:02Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'team-create',
+        name: 'TeamCreate',
+        content: 'Team created',
+        isError: false,
+      },
+    },
+    {
+      id: 'a-agent',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:03Z',
+      content: { text: '然后召唤专家入场。' },
+      toolCalls: [
+        {
+          id: 'agent-1',
+          name: 'Agent',
+          arguments: { name: 'comm-coach', task: '给出谈判建议' },
+        },
+      ],
+    },
+    {
+      id: 't-agent',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:04Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'agent-1',
+        name: 'Agent',
+        content: '专家已入场',
+        isError: false,
+      },
+    },
+    {
+      id: 'a-team-final',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:05Z',
+      content: { text: '最终决策建议如下。' },
+    },
+  ]
+}
+
 function simpleGreetingMessages(): Message[] {
   return [
     {
@@ -415,6 +490,7 @@ function resetStores(activeConversationId: string | null = 'conv-1') {
   })
   useGeneratedFilePreviewStore.setState({ target: null })
   useNotificationStore.setState({ notifications: [] })
+  useTeamStore.getState().reset()
 }
 
 function renderWithFile(file: GeneratedFile, activeConversationId: string | null = 'conv-1') {
@@ -433,6 +509,7 @@ beforeEach(() => {
   isLocalFileAvailableMock.mockResolvedValue(true)
   openGeneratedFileMock.mockResolvedValue(undefined)
   revealFileInFolderMock.mockResolvedValue(undefined)
+  getTeamOverviewMock.mockResolvedValue({ conversationId: 'conv-1', teams: [] })
   resetStores()
 })
 
@@ -480,6 +557,42 @@ describe('MessageList generated file actions', () => {
     expect(screen.queryByText('我先写入压测报告。')).not.toBeInTheDocument()
     expect(artifactIntro.compareDocumentPosition(artifactCard)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(artifactCard.compareDocumentPosition(comparison)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('keeps the team session card visible outside the collapsed completed process', async () => {
+    resetStores('conv-1')
+    getTeamOverviewMock.mockResolvedValue({
+      conversationId: 'conv-1',
+      teams: [
+        {
+          teamId: 'expert-team-negotiation',
+          teamName: '沟通/谈判预演团',
+          createdAt: '2026-04-28T00:00:01Z',
+          deletedAt: null,
+          members: [
+            { agentId: 'lead', agentName: 'team-lead', spawnedAt: '2026-04-28T00:00:01Z', isAsync: false, hasTranscript: false },
+            { agentId: 'coach', agentName: 'comm-coach', spawnedAt: '2026-04-28T00:00:03Z', isAsync: true, hasTranscript: true },
+          ],
+          events: [
+            { kind: 'send_message', ts: '2026-04-28T00:00:04Z', from: 'comm-coach', to: 'team-lead', text: 'one', isError: false, toolCallId: 'send-1', variant: 'text' },
+          ],
+        },
+      ],
+    })
+    useChatStore.setState({ messages: messagesWithCompletedTeamSession() })
+
+    render(<MessageList />)
+
+    const processSummary = screen.getByRole('button', { name: '已完成 · 1 步' })
+    const teamCardTitle = await screen.findByText('沟通/谈判预演团')
+    const finalSummary = screen.getByText('最终决策建议如下。')
+
+    expect(processSummary).toBeInTheDocument()
+    expect(screen.queryByText('先建立专家团。')).not.toBeInTheDocument()
+    expect(screen.queryByText('然后召唤专家入场。')).not.toBeInTheDocument()
+    expect(teamCardTitle.compareDocumentPosition(finalSummary)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
   })
 
   it('keeps a simple completed chat turn expanded when no summary is present', () => {

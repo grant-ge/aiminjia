@@ -789,7 +789,12 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       finalAnswerIndex >= 0 ? blocks.slice(0, finalAnswerIndex) : blocks;
     const blocksAfterFinal =
       postFinalIndex >= 0 ? blocks.slice(postFinalIndex) : [];
-    const processBlocks = blocksBeforeFinal;
+    const visibleProcessSurfaceBlocks = blocksBeforeFinal.filter(
+      (block) => block.kind === "teamMarker",
+    );
+    const processBlocks = blocksBeforeFinal.filter(
+      (block) => block.kind !== "teamMarker",
+    );
     const postFinalBlocks = blocksAfterFinal;
     const { children: processChildren, firstTextIso } =
       buildInterleavedBlockNodes(processBlocks, {
@@ -798,6 +803,15 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         persistedBlockCount: processBlocks.length,
         showFinalThinkingIndicator: false,
       });
+    const { children: processSurfaceChildren } = buildInterleavedBlockNodes(
+      visibleProcessSurfaceBlocks,
+      {
+        ...ctx,
+        inlineStreamingContent: null,
+        persistedBlockCount: visibleProcessSurfaceBlocks.length,
+        showFinalThinkingIndicator: false,
+      },
+    );
     const { children: finalChildren } = buildInterleavedBlockNodes(finalBlocks, {
       ...ctx,
       inlineStreamingContent: null,
@@ -814,6 +828,8 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       },
     );
     const visibleProcessChildren = processChildren.filter(Boolean);
+    const visibleProcessSurfaceChildren =
+      processSurfaceChildren.filter(Boolean);
     const visibleFinalChildren = finalChildren.filter(Boolean);
     const visiblePostFinalChildren = postFinalChildren.filter(Boolean);
 
@@ -829,6 +845,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
             {visibleProcessChildren}
           </CompletedProcessCollapse>
         ) : null}
+        {visibleProcessSurfaceChildren}
         {visibleFinalChildren}
         {visiblePostFinalChildren}
       </ChatRow>
