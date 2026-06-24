@@ -351,3 +351,17 @@ Expected effect:
 
 - Reduce "I will create the file" text-only endings on named-file tasks.
 - Give the model another chance to emit the actual write tool call before post-processing turns an empty final response into a generic apology.
+
+Focused result after this change:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\2b1e3b3a_visual_text_only_guard_c3_j2_20260625_011703\20260625_011704\pawbench\deepseek-v4-flash\aijia\20260625_011705.json`
+- Scope: the same six visual artifact tasks.
+- Result: average score improved to `0.635` from the previous `0.029`.
+- Five of six tasks generated `output/output.html` and scored between `0.706` and `0.797`: `M005`, `M006`, `M010`, `M011`, `M012`.
+- `M007_score_symphony` remained low (`0.03`) with `status=error`; transcript stopped after file existence and metadata checks, so it looks like a separate timeout/error path rather than the text-only guard branch that this change fixed.
+
+Interpretation:
+
+- This is strong evidence that the failed branch was not "missing global prompt wording"; it was the driver accepting a text-only response after the model had already been told to write.
+- The new trigger point is materially better than the rejected first-turn primer: it preserves the initial evidence pass, then refuses only the specific non-delivery ending.
+- The tradeoff is higher token/time usage on tasks that need another write attempt. In the focused run, successful tasks used substantially more tokens, but produced real files instead of zero-score missing artifacts.
