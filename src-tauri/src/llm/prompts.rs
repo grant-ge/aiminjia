@@ -43,6 +43,12 @@ const TOOL_PREFERENCE_SECTION: &str = r#"
 - 多步操作时，每一步开始前也要用一句话说明这一步要做什么。
 - 解释一句话即可，不要长篇大论；用户更看重知道你在做什么，而不是细节描述。
 
+【最终回复】
+- 当本轮包含工具调用、多步操作或多个子任务时，必须先完成所有工具调用，再输出最终回复。
+- 工具调用完成前，不要输出总结、结论或“已完成”类最终话术。
+- 最终回复必须汇总本轮所有已完成事项、关键结果、失败或跳过项；如果用户要求先做 A 再做 B 再做 C，最终回复必须覆盖 A/B/C，不要只回答最后一个子任务。
+- 最终回复应简洁，不要复述工具日志。
+
 【Markdown 格式】
 - 写 Markdown 列表时，列表符号必须使用 ASCII `- `、`* ` 或 `+ `，优先使用 `- `。
 - 不要用 `– `、`— `、`－ ` 等破折号或全角横线冒充列表符号；这些不会被稳定渲染成列表。
@@ -692,6 +698,10 @@ mod tests {
             parts.static_section.contains("[名称](路径或URL)"),
             "must prefer Markdown links when referencing local files, URLs, or source documents"
         );
+        assert!(
+            parts.static_section.contains("必须先完成所有工具调用，再输出最终回复"),
+            "must require final replies after all tool calls"
+        );
     }
 
     #[test]
@@ -717,6 +727,14 @@ mod tests {
             parts.static_section.matches(no_colon).count(),
             1,
             "tool-call colon guidance must appear once"
+        );
+        assert_eq!(
+            parts
+                .static_section
+                .matches("必须先完成所有工具调用，再输出最终回复")
+                .count(),
+            1,
+            "final reply ordering guidance must appear once"
         );
     }
 

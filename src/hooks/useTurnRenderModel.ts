@@ -151,6 +151,8 @@ export interface RenderTurn {
   generatedFiles: RenderGeneratedFile[];
   suggestions: string[];
   peerBanners: RenderPeerBanner[];
+  completedFinalAnswer?: RenderAiSegment;
+  shouldCollapseCompletedProcess: boolean;
   /**
    * Set when this turn contains a TeamCreate. Tells MessageList to render
    * an in-line TeamProgressBlock (anchor to the team chat drawer) here
@@ -790,6 +792,8 @@ export function buildTurnsFromMessages(
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        completedFinalAnswer: undefined,
+        shouldCollapseCompletedProcess: false,
         isComplete: true,
       });
       current = null;
@@ -804,6 +808,7 @@ export function buildTurnsFromMessages(
       // Runtime XML is injected as user-role context for the LLM, but it is
       // not user-authored chat content and should not render a visible row.
       if (isInternalEventMessage(text)) {
+        current = null;
         continue;
       }
       // Normal user message — original logic.
@@ -816,6 +821,8 @@ export function buildTurnsFromMessages(
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        completedFinalAnswer: undefined,
+        shouldCollapseCompletedProcess: false,
         isComplete: false,
       };
       turns.push(current);
@@ -832,6 +839,8 @@ export function buildTurnsFromMessages(
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        completedFinalAnswer: undefined,
+        shouldCollapseCompletedProcess: false,
         isComplete: false,
       };
       turns.push(current);
@@ -842,10 +851,12 @@ export function buildTurnsFromMessages(
       // then tool calls below it.
       const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
       // 一旦遇到 toolCalls 为空的 assistant message，即说明本 turn 已收到
-      // chat_turn_driver Step 8 emit 的最终消息——MessageList 据此把交错模式
-      // 下已完成的 turn 折叠成聚合视图，只保留这段最终文字。
+      // chat_turn_driver Step 8 emit 的最终消息候选。若后面又出现工具调用，
+      // 说明它只是过程性回复，最终候选会被清掉并等待后续普通回复覆盖。
       if (!hasToolCalls) {
         current.isComplete = true;
+      } else {
+        current.completedFinalAnswer = undefined;
       }
       const remainingStructuredFiles = (m.content.generatedFiles ?? []).map((file) =>
         normalizeGeneratedFile(file, m.conversationId),
@@ -873,6 +884,9 @@ export function buildTurnsFromMessages(
               id: segmentId,
               segment,
             });
+            if (!hasToolCalls && !m.error) {
+              current.completedFinalAnswer = segment;
+            }
             return;
           }
 
@@ -1092,6 +1106,17 @@ export function buildTurnsFromMessages(
     if (turn.toolGroup) {
       recalcToolGroup(turn.toolGroup);
     }
+    const finalAnswerId = turn.completedFinalAnswer?.id;
+    const hasFoldableProcess =
+      Boolean(finalAnswerId) &&
+      turn.blocks.some(
+        (block) =>
+          block.kind !== "generatedFile" &&
+          !(block.kind === "assistantText" && block.id === finalAnswerId),
+      );
+    turn.shouldCollapseCompletedProcess = Boolean(
+      turn.isComplete && turn.completedFinalAnswer && hasFoldableProcess,
+    );
   }
 
   return turns;

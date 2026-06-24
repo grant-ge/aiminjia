@@ -97,6 +97,123 @@ function compactBoundaryMsg(id: string): Message {
 }
 
 describe("buildTurnsFromMessages", () => {
+  it("marks a completed tool turn collapsible around its final assistant answer", () => {
+    const turns = buildTurnsFromMessages(
+      [
+        userMsg("u1", "检查项目"),
+        aiMsg("a1", "我先看一下文件。"),
+        assistantMsgWithToolCalls("a2", [
+          { id: "tc-1", name: "Read", arguments: { file_path: "README.md" } },
+        ]),
+        toolResultMsg("t1", {
+          toolCallId: "tc-1",
+          name: "Read",
+          content: "README contents",
+          isError: false,
+        }),
+        aiMsg("a3", "已检查 README，并确认项目启动方式。"),
+      ],
+      [],
+    );
+
+    expect(turns[0].completedFinalAnswer).toMatchObject({
+      id: "a3",
+      text: "已检查 README，并确认项目启动方式。",
+    });
+    expect(turns[0].shouldCollapseCompletedProcess).toBe(true);
+  });
+
+  it("does not collapse a simple completed chat turn without foldable process", () => {
+    const turns = buildTurnsFromMessages(
+      [userMsg("u1", "你好"), aiMsg("a1", "你好！")],
+      [],
+    );
+
+    expect(turns[0].completedFinalAnswer).toMatchObject({
+      id: "a1",
+      text: "你好！",
+    });
+    expect(turns[0].shouldCollapseCompletedProcess).toBe(false);
+  });
+
+  it("does not collapse an interrupted tool turn without a final assistant answer", () => {
+    const turns = buildTurnsFromMessages(
+      [
+        userMsg("u1", "检查项目"),
+        aiMsg("a1", "我先看一下文件。"),
+        assistantMsgWithToolCalls("a2", [
+          { id: "tc-1", name: "Read", arguments: { file_path: "README.md" } },
+        ]),
+        toolResultMsg("t1", {
+          toolCallId: "tc-1",
+          name: "Read",
+          content: "cancelled",
+          isError: true,
+        }),
+      ],
+      [],
+    );
+
+    expect(turns[0].completedFinalAnswer).toBeUndefined();
+    expect(turns[0].shouldCollapseCompletedProcess).toBe(false);
+  });
+
+  it("keeps assistant replies to internal task notifications separate from the previous visible turn", () => {
+    const taskNotification = userMsg(
+      "notify-1",
+      [
+        "<task-notification>",
+        "  <task-id>bg-1</task-id>",
+        "  <status>completed</status>",
+        "  <summary>Background command completed</summary>",
+        "</task-notification>",
+      ].join("\n"),
+    );
+
+    const turns = buildTurnsFromMessages(
+      [
+        userMsg("u1", "请执行一个会等待 30 秒的命令。"),
+        assistantMsgWithToolCalls("a1", [
+          { id: "tc-1", name: "Bash", arguments: { command: "sleep 30" } },
+        ]),
+        toolResultMsg("t1", {
+          toolCallId: "tc-1",
+          name: "Bash",
+          content: '{"status":"backgrounded"}',
+          isError: false,
+        }),
+        aiMsg("a2", "30 秒命令已在后台执行。"),
+        userMsg("u2", "请创建两个文件并三点总结。"),
+        assistantMsgWithToolCalls("a3", [
+          { id: "tc-2", name: "Bash", arguments: { command: "touch /tmp/a" } },
+        ]),
+        toolResultMsg("t2", {
+          toolCallId: "tc-2",
+          name: "Bash",
+          content: "",
+          isError: false,
+        }),
+        aiMsg("a4", "三点总结：两个文件已创建并检查。"),
+        taskNotification,
+        aiMsg("a5", "之前提交的 30 秒等待命令已执行完毕，正常退出。"),
+      ],
+      [],
+    );
+
+    expect(turns).toHaveLength(3);
+    expect(turns[1].userMessage?.id).toBe("u2");
+    expect(turns[1].completedFinalAnswer).toMatchObject({
+      id: "a4",
+      text: "三点总结：两个文件已创建并检查。",
+    });
+    expect(turns[2].userMessage).toBeUndefined();
+    expect(turns[2].completedFinalAnswer).toMatchObject({
+      id: "a5",
+      text: "之前提交的 30 秒等待命令已执行完毕，正常退出。",
+    });
+    expect(turns[2].shouldCollapseCompletedProcess).toBe(false);
+  });
+
   it("groups messages into turns starting at each user message", () => {
     const msgs = [
       userMsg("u1", "hi"),

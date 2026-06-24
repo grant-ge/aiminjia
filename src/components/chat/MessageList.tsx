@@ -33,6 +33,7 @@ import { useChat } from "@/hooks/useChat";
 import { useTeamOverview } from "@/hooks/useTeamOverview";
 import {
   useTurnRenderModel,
+  type RenderAiSegment,
   type RenderGeneratedFile,
   type RenderToolReceipt,
   type RenderToolStep,
@@ -54,6 +55,34 @@ function AvailableGeneratedFileCard({
   ...cardProps
 }: GeneratedFileCardProps & { file: RenderGeneratedFile }) {
   return <GeneratedFileCard {...cardProps} />;
+}
+
+function CompletedProcessCollapse({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <Button
+        unstyled
+        type="button"
+        aria-label="执行过程"
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex w-fit max-w-full min-w-0 items-center gap-1.5 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+      >
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        )}
+        <span className="min-w-0 break-words">执行过程</span>
+      </Button>
+      {open ? (
+        <div className="ml-[7px] mt-1 flex flex-col gap-1 border-l border-border/60 pl-3">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 // Display name for IM platforms when the inbound conversation's sender is
@@ -515,7 +544,24 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                 </ChatRow>
               )
             ) : null}
-            {t.blocks && t.blocks.length > 0 ? (
+            {t.shouldCollapseCompletedProcess && t.completedFinalAnswer ? (
+              renderCompletedFinalAnswerTurn(t.blocks, {
+                assistantName,
+                assistantLogo,
+                aiAnchorIso,
+                teamSession,
+                expertTeam: expertTeam ?? null,
+                onOpenTeamDrawer: handleOpenTeamDrawer,
+                onPreview: handlePreview,
+                onOpenExternal: handleOpenExternal,
+                onDownload: handleDownload,
+                onReveal: handleReveal,
+                inlineStreamingContent: null,
+                persistedBlockCount: t.persistedBlockCount ?? t.blocks.length,
+                showFinalThinkingIndicator: false,
+                finalAnswer: t.completedFinalAnswer,
+              })
+            ) : t.blocks && t.blocks.length > 0 ? (
               renderInterleavedBlocks(t.blocks, {
                 assistantName,
                 assistantLogo,
@@ -650,29 +696,101 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
    */
   function renderInterleavedBlocks(
     blocks: RenderTurnBlock[],
-    ctx: {
-      assistantName: string;
-      assistantLogo: string | null | undefined;
-      aiAnchorIso: string | null;
-      teamSession: NonNullable<typeof teamSessionForTurnIdx>[number];
-      expertTeam: ReturnType<typeof getExpertTeam> | null;
-      onOpenTeamDrawer: typeof handleOpenTeamDrawer;
-      onPreview: (file: RenderGeneratedFile) => void | Promise<void>;
-      onOpenExternal: (file: RenderGeneratedFile) => Promise<void>;
-      onDownload: (file: RenderGeneratedFile) => Promise<void>;
-      onReveal: (file: RenderGeneratedFile) => Promise<void>;
-      /** Live text being streamed for the current iter (the next assistantText
-       *  block that will be persisted). Rendered between persisted blocks
-       *  and live tool blocks so the natural "text → tool" order is preserved. */
-      inlineStreamingContent: string | null;
-      /** Number of blocks at the start of `blocks` that come from persisted
-       *  messages.jsonl. Blocks at >= this index are live toolExecutions. */
-      persistedBlockCount: number;
-      /** 流式期间在 children 末尾追加一个 indicator-only StreamingBubble
-       *  （content=""），用 absolute 渲染 typing 占位，不占 layout 高度。 */
-      showFinalThinkingIndicator: boolean;
-    },
+    ctx: InterleavedRenderCtx,
   ) {
+    const { children, firstTextIso } = buildInterleavedBlockNodes(blocks, ctx);
+
+    // TeamProgressBlock 现在通过 'teamMarker' block 在 children 内联渲染（按
+    // TeamCreate 在消息序列中的自然位置）。聚合模式下仍由 ChatRow 之前的
+    // 独立分支渲染，与历史行为一致。
+    return (
+      <ChatRow
+        role="assistant"
+        name={ctx.assistantName}
+        avatarUrl={ctx.assistantLogo}
+        timestamp={firstTextIso ?? undefined}
+      >
+        {children}
+      </ChatRow>
+    );
+  }
+
+  type InterleavedRenderCtx = {
+    assistantName: string;
+    assistantLogo: string | null | undefined;
+    aiAnchorIso: string | null;
+    teamSession: NonNullable<typeof teamSessionForTurnIdx>[number];
+    expertTeam: ReturnType<typeof getExpertTeam> | null;
+    onOpenTeamDrawer: typeof handleOpenTeamDrawer;
+    onPreview: (file: RenderGeneratedFile) => void | Promise<void>;
+    onOpenExternal: (file: RenderGeneratedFile) => Promise<void>;
+    onDownload: (file: RenderGeneratedFile) => Promise<void>;
+    onReveal: (file: RenderGeneratedFile) => Promise<void>;
+    /** Live text being streamed for the current iter (the next assistantText
+     *  block that will be persisted). Rendered between persisted blocks
+     *  and live tool blocks so the natural "text → tool" order is preserved. */
+    inlineStreamingContent: string | null;
+    /** Number of blocks at the start of `blocks` that come from persisted
+     *  messages.jsonl. Blocks at >= this index are live toolExecutions. */
+    persistedBlockCount: number;
+    /** 流式期间在 children 末尾追加一个 indicator-only StreamingBubble
+     *  （content=""），用 absolute 渲染 typing 占位，不占 layout 高度。 */
+    showFinalThinkingIndicator: boolean;
+  };
+
+  function renderCompletedFinalAnswerTurn(
+    blocks: RenderTurnBlock[],
+    ctx: InterleavedRenderCtx & { finalAnswer: RenderAiSegment },
+  ) {
+    const processBlocks = blocks.filter(
+      (block) =>
+        block.kind !== "generatedFile" &&
+        !(block.kind === "assistantText" && block.id === ctx.finalAnswer.id),
+    );
+    const resultBlocks = blocks.filter(
+      (block) => block.kind === "generatedFile",
+    );
+    const { children: processChildren, firstTextIso } =
+      buildInterleavedBlockNodes(processBlocks, {
+        ...ctx,
+        inlineStreamingContent: null,
+        persistedBlockCount: processBlocks.length,
+        showFinalThinkingIndicator: false,
+      });
+    const { children: resultChildren } = buildInterleavedBlockNodes(resultBlocks, {
+      ...ctx,
+      inlineStreamingContent: null,
+      persistedBlockCount: resultBlocks.length,
+      showFinalThinkingIndicator: false,
+    });
+    const visibleProcessChildren = processChildren.filter(Boolean);
+    const visibleResultChildren = resultChildren.filter(Boolean);
+
+    return (
+      <ChatRow
+        role="assistant"
+        name={ctx.assistantName}
+        avatarUrl={ctx.assistantLogo}
+        timestamp={firstTextIso ?? ctx.aiAnchorIso ?? undefined}
+      >
+        {visibleProcessChildren.length > 0 ? (
+          <CompletedProcessCollapse>
+            {visibleProcessChildren}
+          </CompletedProcessCollapse>
+        ) : null}
+        <AiBubble
+          key={ctx.finalAnswer.message.id}
+          message={ctx.finalAnswer.message}
+        />
+        {visibleResultChildren}
+      </ChatRow>
+    );
+  }
+
+  function buildInterleavedBlockNodes(
+    blocks: RenderTurnBlock[],
+    ctx: InterleavedRenderCtx,
+  ): { children: ReactNode[]; firstTextIso: string | null } {
     const firstTextIso =
       blocks.find(
         (b): b is Extract<RenderTurnBlock, { kind: "assistantText" }> =>
@@ -770,7 +888,9 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
 
     const splitAt = Math.min(ctx.persistedBlockCount, blocks.length);
 
-    // 不再按 turn 完成与否折叠"过程"——所有 blocks 按时序统一展开渲染：
+    // 默认不按 turn 完成与否折叠"过程"——所有 blocks 按时序统一展开渲染。
+    // 完成态折叠会把最终普通回复之前的过程 nodes 放进 CompletedProcessCollapse，
+    // 并把最终普通回复单独展示在折叠过程之后。
     // - persisted 段（已落盘）走 walkAndGroup（连续 toolStep 合并）
     // - inline StreamingBubble 紧贴 persisted 渲染流式 text（suppressIndicator
     //   关掉自带 typing，避免和末尾 placeholder 重复）
@@ -801,19 +921,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         />
       ) : null,
     ];
-
-    // TeamProgressBlock 现在通过 'teamMarker' block 在 children 内联渲染（按
-    // TeamCreate 在消息序列中的自然位置）。聚合模式下仍由 ChatRow 之前的
-    // 独立分支渲染，与历史行为一致。
-    return (
-      <ChatRow
-        role="assistant"
-        name={ctx.assistantName}
-        avatarUrl={ctx.assistantLogo}
-        timestamp={firstTextIso ?? undefined}
-      >
-        {children}
-      </ChatRow>
-    );
+    return { children, firstTextIso };
   }
 }

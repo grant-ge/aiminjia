@@ -213,6 +213,141 @@ function messagesWithDeniedPermissionReceipt(): Message[] {
   ]
 }
 
+function messagesWithCompletedToolProcess(): Message[] {
+  return [
+    {
+      id: 'u-summary',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '检查 README' },
+    },
+    {
+      id: 'a-progress',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '我先读取 README。' },
+    },
+    {
+      id: 'a-tool',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:02Z',
+      content: { text: '' },
+      toolCalls: [
+        { id: 'read-summary', name: 'Read', arguments: { file_path: 'README.md' } },
+      ],
+    },
+    {
+      id: 't-tool',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:03Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'read-summary',
+        name: 'Read',
+        content: 'README contents',
+        isError: false,
+      },
+    },
+    {
+      id: 'a-final',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:04Z',
+      content: { text: '已检查 README，并确认项目启动方式。' },
+    },
+  ]
+}
+
+function simpleGreetingMessages(): Message[] {
+  return [
+    {
+      id: 'u-hello',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '你好' },
+    },
+    {
+      id: 'a-hello',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '你好！' },
+    },
+  ]
+}
+
+function messagesWithBackgroundNotificationAfterCompletedTurn(): Message[] {
+  return [
+    {
+      id: 'u-background',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '执行一个 30 秒等待命令' },
+    },
+    {
+      id: 'a-background-tool',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '' },
+      toolCalls: [
+        { id: 'wait-background', name: 'Bash', arguments: { command: 'sleep 30' } },
+      ],
+    },
+    {
+      id: 't-background',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:02Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'wait-background',
+        name: 'Bash',
+        content: '{"status":"backgrounded"}',
+        isError: false,
+      },
+    },
+    {
+      id: 'a-background-final',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:03Z',
+      content: { text: '30 秒等待命令已在后台执行。' },
+    },
+    ...messagesWithCompletedToolProcess().map((message) => ({
+      ...message,
+      createdAt: message.createdAt.replace('2026-04-28T00:00', '2026-04-28T00:01'),
+    })),
+    {
+      id: 'u-task-notification',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:02:00Z',
+      content: {
+        text: [
+          '<task-notification>',
+          '  <task-id>wait-background</task-id>',
+          '  <status>completed</status>',
+          '</task-notification>',
+        ].join('\n'),
+      },
+    },
+    {
+      id: 'a-task-notification',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:02:01Z',
+      content: { text: '之前提交的 30 秒等待命令已执行完毕，正常退出。' },
+    },
+  ]
+}
+
 function resetStores(activeConversationId: string | null = 'conv-1') {
   useChatStore.setState({
     conversations: [],
@@ -249,6 +384,55 @@ beforeEach(() => {
 })
 
 describe('MessageList generated file actions', () => {
+  it('collapses a completed tool process when a final assistant answer is present', () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: messagesWithCompletedToolProcess() })
+
+    render(<MessageList />)
+
+    expect(screen.getByText('检查 README')).toBeInTheDocument()
+    const processSummary = screen.getByRole('button', { name: '执行过程' })
+    const summary = screen.getByText('已检查 README，并确认项目启动方式。')
+    expect(processSummary).toBeInTheDocument()
+    expect(summary).toBeInTheDocument()
+    expect(processSummary.compareDocumentPosition(summary)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument()
+    expect(screen.queryByText('我先读取 README。')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '读取了 1 个文件' })).not.toBeInTheDocument()
+
+    fireEvent.click(processSummary)
+
+    expect(screen.getByText('我先读取 README。')).toBeInTheDocument()
+    expect(screen.getByText('已检查 README，并确认项目启动方式。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '读取了 1 个文件' })).toBeInTheDocument()
+  })
+
+  it('keeps a simple completed chat turn expanded when no summary is present', () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: simpleGreetingMessages() })
+
+    render(<MessageList />)
+
+    expect(screen.getByText('你好')).toBeInTheDocument()
+    expect(screen.getByText('你好！')).toBeInTheDocument()
+  })
+
+  it('renders a background task completion after the next turn as a standalone assistant bubble', () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: messagesWithBackgroundNotificationAfterCompletedTurn() })
+
+    render(<MessageList />)
+
+    const turnSummary = screen.getByText('已检查 README，并确认项目启动方式。')
+    const backgroundCompletion = screen.getByText('之前提交的 30 秒等待命令已执行完毕，正常退出。')
+
+    expect(turnSummary).toBeInTheDocument()
+    expect(backgroundCompletion).toBeInTheDocument()
+    expect(screen.queryByText(/task-notification/)).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '执行过程' })).toHaveLength(2)
+    expect(turnSummary.compareDocumentPosition(backgroundCompletion)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
   it('does not render day divider bars in the message flow', () => {
     resetStores('conv-1')
     useChatStore.setState({ messages: messagesAcrossDays() })

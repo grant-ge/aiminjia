@@ -1558,3 +1558,39 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - `<task-notification>` 记录之后的 assistant 记录里先调用 `TaskOutput` 才回答
 - Agent 工具结果 JSON 中出现 `task_type == "local_bash"`
 - Agent 工具结果 JSON 中出现 `assistant_auto_backgrounded == false`
+
+## 意图-对话-037: 工具回合完成后，显示总结并折叠过程
+
+### 场景
+
+用户让 AI 执行一个会调用工具的简单本地任务。期望执行过程中正常展示穿插的过程性回复、工具调用和工具结果；任务完成并输出最终普通回复后，前端把最终回复之前的穿插过程收起为「执行过程」入口，默认在入口下方显示最终普通回复。工具调用、工具结果和过程性回复仍保留在消息文件中，用户点击「执行过程」后可以按原穿插顺序查看执行细节。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 打开新对话：`tauri-pilot aijia new-task`
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
+4. 清理可能残留的测试文件：`rm -f /tmp/aijia-turn-summary-037.txt`
+5. 发送消息：请使用当前平台的命令执行工具创建文件 `/tmp/aijia-turn-summary-037.txt`，文件内容只写一行 `aijia-turn-summary-037`。完成后用一句中文告诉我文件已创建，不要展开解释。
+6. 等 agent 回复完成，最长等待 120 秒。
+7. 查看对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+8. 查看当前对话状态：`tauri-pilot aijia where --json`。
+9. 查看当前最后一条 assistant 回复：`tauri-pilot aijia last-reply --json`。
+10. 截取当前对话界面：`tauri-pilot aijia screenshot --label turn-summary-037`。
+
+### 验收标准
+
+- 文件 `/tmp/aijia-turn-summary-037.txt` 存在
+- 文件 `/tmp/aijia-turn-summary-037.txt` 内容包含字面值 `aijia-turn-summary-037`
+- 对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 存在
+- `messages.jsonl` 中至少一条 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "Bash"` 或 `name == "PowerShell"`
+- `messages.jsonl` 中至少一条记录 `role == "tool"`
+- `messages.jsonl` 中不出现 assistant 记录的 `subtype == "turn_summary"`
+- 本轮最后一条普通 assistant 回复 `content.text` 长度 `>= 8`
+- `tauri-pilot aijia where --json` 返回 `hasToolCallBlock == false`
+- `tauri-pilot aijia last-reply --json` 返回的 `text` 等于或包含本轮最后一条普通 assistant 回复的 `content.text`
+- 当前对话截图中，最终可见 assistant 区域先显示「执行过程」折叠入口
+- 当前对话截图中，「执行过程」折叠入口之后显示本轮最后一条普通 assistant 回复
+- 当前对话截图中，最终可见 assistant 区域不显示额外的「查看执行过程」入口
+- 点击「执行过程」折叠入口后，当前对话 UI 按原穿插顺序出现本轮过程性 assistant 文本和工具详情入口
+- 点击「执行过程」折叠入口前，当前对话 UI 不直接展开显示本轮过程性 assistant 文本或工具详情
