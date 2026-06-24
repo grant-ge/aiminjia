@@ -58,3 +58,36 @@ Prompt change:
 Boundary:
 
 - This is not a task-specific patch. It targets all report, audit, cron/config, time-window, quota, log, and data-analysis tasks where later evidence can invalidate an earlier draft.
+
+## 2026-06-24 evidence checkpoint prompt
+
+Focused verification after commit `1bea3502`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\1bea3502_task00016_evidencewriteback_retry_c1_j1_20260624_212522\20260624_212527\pawbench\deepseek-v4-flash\aijia\20260624_212528.json`
+- Score: `0.6093333333333334`
+- Status: `error`
+- Tokens: `16631`
+
+What the sample proves:
+
+- The agent created both required root deliverables: `SKILL.md` and `diagnosis-report.md`.
+- Automated checks scored full credit for skill structure/content, report existence, issue identification, and fixed-vs-manual separation.
+- The model read the relevant files and confirmed key facts in the transcript: `config.json`, `package.json`, `post-history.json`, `post.js`, missing `node`, missing `node_modules`, and `node-fetch`/`dayjs` dependencies.
+
+Remaining failure pattern:
+
+- `diagnosis-report.md` was written too early as a pending/speculative report and was not edited after the key evidence was discovered.
+- The transcript shows the model recognized core findings, then launched more exploratory Bash checks instead of first updating the deliverable.
+- The task reached the 600s PawBench timeout before those later findings were written back.
+- The judge gave rate-limit analysis only partial credit because the final report did not cross-reference `2026-02-10T07:55:12Z`, `minIntervalMinutes: 180`, 148 minutes elapsed, 32 minutes remaining, and next eligible time `2026-02-10T10:55:12Z` / `18:55 Asia/Shanghai`.
+
+Prompt change:
+
+- Strengthened `system.md` so "key evidence found" becomes an explicit writeback checkpoint.
+- If new tool results confirm a core conclusion, config field, dependency state, history timestamp, time window, test result, or manual action, the next step must update the named deliverable before more exploration.
+- Early report skeletons are now framed as short in-progress structures only; they must not become long speculative reports that look complete.
+
+Boundary:
+
+- This remains a global delivery-quality rule, not a task-specific grader patch.
