@@ -121,19 +121,125 @@ fn tool_calls_write_missing_target(
     missing_targets: &[String],
 ) -> bool {
     tool_calls.iter().any(|call| {
-        if !matches!(call.tool_name.as_str(), "Write" | "Edit") {
+        if matches!(call.tool_name.as_str(), "Write" | "Edit") {
+            return call
+                .args
+                .get("file_path")
+                .and_then(|value| value.as_str())
+                .is_some_and(|path| file_path_targets_missing(path, missing_targets));
+        }
+
+        if !matches!(call.tool_name.as_str(), "Bash" | "PowerShell" | "ShellTask") {
             return false;
         }
-        let Some(target) = call
+        let Some(command) = call
             .args
-            .get("file_path")
+            .get("command")
+            .or_else(|| call.args.get("cmd"))
             .and_then(|value| value.as_str())
-            .and_then(safeguard::normalize_workspace_file_candidate)
         else {
             return false;
         };
-        missing_targets.iter().any(|missing| missing == &target)
+        missing_targets
+            .iter()
+            .any(|target| shell_command_writes_target(command, target))
     })
+}
+
+fn file_path_targets_missing(path: &str, missing_targets: &[String]) -> bool {
+    if let Some(target) = safeguard::normalize_workspace_file_candidate(path) {
+        if missing_targets.iter().any(|missing| missing == &target) {
+            return true;
+        }
+    }
+    let normalized = path
+        .trim()
+        .trim_matches(|c: char| matches!(c, '`' | '"' | '\''))
+        .replace('\\', "/");
+    missing_targets.iter().any(|missing| {
+        let missing = missing.replace('\\', "/");
+        normalized == missing || normalized.ends_with(&format!("/{missing}"))
+    })
+}
+
+fn shell_command_writes_target(command: &str, target: &str) -> bool {
+    let normalized = command.replace('\\', "/");
+    let target = target.replace('\\', "/");
+    if !normalized.contains(&target) {
+        return false;
+    }
+
+    if redirection_points_to_target(&normalized, &target) {
+        return true;
+    }
+
+    let lower = normalized.to_lowercase();
+    let target_lower = target.to_lowercase();
+    let write_markers = [
+        "tee ",
+        "set-content",
+        "out-file",
+        "writefile",
+        "writefilesync",
+        "write_text",
+        "writealltext",
+    ];
+    write_markers.iter().any(|marker| {
+        lower
+            .match_indices(marker)
+            .any(|(idx, marker)| command_segment_after_marker_contains_target(
+                &normalized,
+                idx + marker.len(),
+                &target_lower,
+            ))
+    })
+}
+
+fn redirection_points_to_target(command: &str, target: &str) -> bool {
+    command.match_indices('>').any(|(idx, _)| {
+        let after = command[idx + 1..].trim_start_matches('>').trim_start();
+        if after.starts_with('&') {
+            return false;
+        }
+        first_shell_path_token(after).is_some_and(|path| {
+            file_path_targets_missing(path, &[target.to_string()])
+        })
+    })
+}
+
+fn command_segment_after_marker_contains_target(
+    command: &str,
+    marker_end: usize,
+    target_lower: &str,
+) -> bool {
+    let segment = command[marker_end..]
+        .split(|c: char| matches!(c, '\n' | '\r' | ';' | '&' | '|'))
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    segment.contains(target_lower)
+}
+
+fn first_shell_path_token(input: &str) -> Option<&str> {
+    let input = input.trim_start();
+    let first = input.chars().next()?;
+    if matches!(first, '"' | '\'' | '`') {
+        let start = first.len_utf8();
+        let end = input[start..]
+            .find(first)
+            .map(|idx| start + idx + first.len_utf8())
+            .unwrap_or(input.len());
+        return Some(&input[..end]);
+    }
+
+    let end = input
+        .char_indices()
+        .find_map(|(idx, ch)| {
+            matches!(ch, ' ' | '\t' | '\n' | '\r' | ';' | '&' | '|' | '<' | '>')
+                .then_some(idx)
+        })
+        .unwrap_or(input.len());
+    (end > 0).then_some(&input[..end])
 }
 
 fn extract_name_markers(text: &str) -> HashSet<String> {
@@ -4523,6 +4629,15 @@ mod tests {
         })
     }
 
+    fn tool_call(tool_name: &str, args: serde_json::Value) -> RuntimeToolCallRequest {
+        RuntimeToolCallRequest {
+            tool_call_id: format!("tc-{tool_name}"),
+            tool_name: tool_name.to_string(),
+            args,
+            purpose: None,
+        }
+    }
+
     #[test]
     fn chat_turn_request_pre_persisted_defaults_false() {
         let req = ChatTurnRequest::new("conv-x", "hello", vec![]);
@@ -4556,6 +4671,89 @@ mod tests {
         };
 
         assert!(!should_build_image_blocks_for_turn(&settings, true));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_write_tool_for_named_target() {
+        let calls = vec![tool_call(
+            "Write",
+            serde_json::json!({"file_path": "diagnosis-report.md", "content": "ok"}),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["diagnosis-report.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_write_tool_absolute_workspace_path() {
+        let calls = vec![tool_call(
+            "Write",
+            serde_json::json!({
+                "file_path": "/app/working/workspaces/default/diagnosis-report.md",
+                "content": "ok"
+            }),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["diagnosis-report.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_shell_redirection_to_named_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({
+                "command": "cat > SKILL.md <<'EOF'\n# Scheduled Script Troubleshooter\nEOF"
+            }),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_shell_tee_to_named_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({"command": "printf '%s\\n' '# Title' | tee SKILL.md"}),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_rejects_shell_read_of_named_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({"command": "sed -n '1,80p' SKILL.md"}),
+        )];
+
+        assert!(!tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_rejects_shell_write_to_other_file_before_target_read() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({"command": "echo ok > notes.txt && sed -n '1,80p' SKILL.md"}),
+        )];
+
+        assert!(!tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
     }
 
     #[test]

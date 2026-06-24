@@ -91,3 +91,36 @@ Prompt change:
 Boundary:
 
 - This remains a global delivery-quality rule, not a task-specific grader patch.
+
+## 2026-06-24 delivery guard shell-write alignment
+
+Focused verification after commit `d7e65806`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\d7e65806_task00016_evidencecheckpoint_c1_j1_20260624_214555\20260624_214556\pawbench\deepseek-v4-flash\aijia\20260624_214557.json`
+- Score: `0.07666666666666666`
+- Status: `error`
+- Elapsed: about `608s`
+
+What the sample proves:
+
+- The service route in the gate log was `route_model=deepseek-v4-flash`; the earlier `deepseek-v3` observation came from an invalid API-error result and is not evidence of real model routing.
+- The named-file delivery guard did extract `SKILL.md` and `diagnosis-report.md`, and repeatedly injected the blocking prompt.
+- The run still failed to create the root deliverables, so prompt-only evidence checkpointing is not sufficient for this failure mode.
+
+Remaining failure pattern:
+
+- The guard message says `Write`, `Edit`, or equivalent file writing is acceptable, but the runtime allow-check only treated literal `Write`/`Edit` tool calls as delivery progress.
+- The model repeatedly said it would write the files while the guard kept reporting that non-write tool calls were skipped.
+- This mismatch can trap the turn in a loop where shell-based file creation is never allowed to execute, and the required files remain missing.
+
+Runtime change:
+
+- Treat a shell command as satisfying the delivery guard only when it clearly writes to one of the missing named targets, such as `cat > SKILL.md`, `tee diagnosis-report.md`, `Set-Content`, `Out-File`, or common programmatic write helpers.
+- Continue blocking ordinary shell reads or exploration commands that merely mention the target file.
+- Also accept absolute `Write`/`Edit` paths that end in the requested workspace target, which is common inside Docker workspaces.
+
+Verification:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib delivery_guard_"`
+- Result: 6 focused tests passed.
