@@ -144,3 +144,16 @@ Verification:
 
 - `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib guard"`
 - Result: 28 focused tests passed.
+
+Follow-up verification after commit `e6fb7c67`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\e6fb7c67_task00016_guardgrace_c1_j1_20260624_221407\20260624_221408\pawbench\deepseek-v4-flash\aijia\20260624_221409.json`
+- Score: `0.7293333333333334`
+- Status: `success`
+- Key improvement: the agent read `post-history.json` and `config.json` before writing the final report.
+- Remaining miss: it compared the rate-limit timestamps incorrectly, concluding the opposite of the expected `148 minutes < 180 minutes` result.
+
+Prompt adjustment:
+
+- Add an explicit time-window calculation contract to `system.md`: normalize time zones, write `last_event_time`, `current_time`, `elapsed`, `required_interval`, `remaining_wait`, and `next_eligible_time`, then derive the rate-limit/cooldown conclusion from `elapsed >= required_interval`.
