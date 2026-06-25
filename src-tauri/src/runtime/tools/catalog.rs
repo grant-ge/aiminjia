@@ -157,7 +157,7 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("Glob", "在授权工作目录中搜索匹配 glob 模式的文件")
+        ToolDefinition::new("Glob", "在授权工作目录中搜索匹配 glob 模式的文件。适合低成本发现输入文件、输出目录、AGENTS.md 或本地技能说明；非平凡文件任务在手写实现前，可先查 `SKILL.md`、`.agents/skills/*/SKILL.md` 或 `skills/*/SKILL.md`，发现明显相关项后用 Read 读取。")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(4_000)
