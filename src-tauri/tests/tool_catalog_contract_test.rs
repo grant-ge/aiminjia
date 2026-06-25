@@ -293,6 +293,8 @@ fn shell_tool_descriptions_redact_untrusted_decoded_payloads() {
                 && def.description.contains("base64")
                 && def.description.contains("不要执行")
                 && def.description.contains("不要在最终回复全文复述")
+                && def.description.contains("即使语法残缺")
+                && def.description.contains("伪命令")
                 && def.description.contains("hash/指纹")
                 && def.description.contains("脱敏片段"),
             "{id} description must keep decoded command-like payloads classified and redacted: {}",
