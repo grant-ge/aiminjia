@@ -743,7 +743,13 @@ impl RuntimeTool for BashTool {
             .unwrap_or(&command)
             .to_string();
 
-        let mut shell = Command::new("/bin/sh");
+        let mut shell = if Path::new("/bin/bash").exists() {
+            let mut cmd = Command::new("/bin/bash");
+            cmd.arg("-o").arg("pipefail");
+            cmd
+        } else {
+            Command::new("/bin/sh")
+        };
         configure_child_process_group(&mut shell);
         inject_bundled_runtime_path(&ctx, &mut shell);
         inject_trace_env(&mut shell);
@@ -1237,7 +1243,7 @@ mod progress_tests {
         CapabilityContext, RuntimeTool, StorageCapability, ToolExecutionContext,
     };
     use serde_json::json;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
@@ -1333,6 +1339,31 @@ mod progress_tests {
         for (tcid, _, _) in sink.events.lock().unwrap().iter() {
             assert_eq!(tcid, "tc-fast");
         }
+    }
+
+    #[tokio::test]
+    async fn missing_command_in_pipeline_is_reported_as_error() {
+        if !Path::new("/bin/bash").exists() {
+            return;
+        }
+        let tmp = TempDir::new().unwrap();
+        let sink = Arc::new(RecordingSink::default());
+        let ctx = ToolExecutionContext::for_test("conv-pipefail", "run-pipefail", "tc-pipefail")
+            .with_capability(cap_with_sink(tmp.path().to_path_buf(), sink));
+        let tool = super::BashTool::default();
+
+        let err = RuntimeTool::execute(
+            &tool,
+            json!({ "command": "__aijia_missing_command_for_pipefail__ | head -1" }),
+            ctx,
+        )
+        .await
+        .expect_err("missing command in a pipeline should fail under pipefail");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("not found") || msg.contains("exit code"),
+            "unexpected error: {msg}"
+        );
     }
 }
 

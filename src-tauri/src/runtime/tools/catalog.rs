@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 
@@ -228,7 +228,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
             \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若必须用 shell 生成文件，命令后要用独立读取、列举或测试确认目标路径存在、非空且格式合理。\
-            \n\n失败恢复：命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把阻塞原因写入要求的产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在 pip install；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
+            \n\n失败恢复：命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把阻塞原因写入要求的产物。解析 STL/Parquet/SQLite/压缩包等结构化二进制数据时，不要优先用 `xxd`、`hexdump`、`od` 或 `file` 探正文；优先用 Python、Node、项目 helper 或专用解析器直接读取文件并写出目标产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在 pip install；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
         .with_kind(ToolKind::Primitive)
