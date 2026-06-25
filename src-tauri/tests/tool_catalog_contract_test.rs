@@ -287,7 +287,9 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
             def.description.contains("错误类型")
                 && def.description.contains("网络/5xx/429/超时")
                 && def.description.contains("权限或安全拒绝")
-                && def.description.contains("不要换写法绕过"),
+                && def.description.contains("不要换写法绕过")
+                && def.description.contains("optional/candidate/backup")
+                && def.description.contains("按已安排/已分配处理"),
             "{id} description must classify tool failures and boundary denials: {}",
             def.description
         );
