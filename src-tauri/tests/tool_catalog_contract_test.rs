@@ -292,7 +292,9 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
                 && def.description.contains("按已安排/已分配处理")
                 && def.description.contains("字段级校验")
                 && def.description.contains("BEGIN:VEVENT")
-                && def.description.contains("ATTENDEE"),
+                && def.description.contains("ATTENDEE")
+                && def.description.contains("ATTENDEE;ROLE=OPT-PARTICIPANT")
+                && def.description.contains("额外顶层章节"),
             "{id} description must classify tool failures and boundary denials: {}",
             def.description
         );
@@ -310,6 +312,8 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
         write.contains("字段级断言")
             && write.contains("attendees")
             && write.contains("ATTENDEE")
+            && write.contains("ATTENDEE;ROLE=OPT-PARTICIPANT")
+            && write.contains("固定章节")
             && write.contains("立即 Edit/重写目标文件"),
         "Write description must require semantic validation of final hard-constraint outputs: {}",
         write
