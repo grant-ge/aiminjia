@@ -354,7 +354,7 @@ pub fn delivery_guard_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区中以下文件仍不存在、为空，或明显还是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入/生成工具，在用户指定路径创建或更新这些文件。若目标是 PNG/PDF/XLSX 等二进制或图片产物，可以调用 Bash、PowerShell 或 ShellTask 运行明确写入目标路径的生成命令，并随后验证文件存在、非空。可以写入部分诊断、已知事实、待验证项或阻塞原因，但不能停留在“待填写/继续分析”的空骨架。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少包含可交付内容。\n</system-reminder>"
+        "<system-reminder>\n原始请求包含明确命名的文件产物，但当前工作区中以下文件仍不存在、为空，或明显还是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须优先调用 Write、Edit 或等价文件写入/生成工具，在用户指定路径创建或更新这些文件。若目标是 PNG/PDF/XLSX 等二进制或图片产物，可以调用 Bash、PowerShell 或 ShellTask 运行明确写入目标路径的生成命令，并随后验证文件存在、非空。若当前输入和规则足以计算/解析/转换，直接生成真实结果；不要为 JSON/CSV/配置/API payload 写 null、status: computing、TODO 或 placeholder 占位。确实阻塞时，可以写结构化阻塞原因，但不能停留在“待填写/继续分析”的空骨架。不要继续扩大阅读、搜索、TaskCreate 或总结，直到这些命名文件至少包含可交付内容。\n</system-reminder>"
     )
 }
 
@@ -365,7 +365,7 @@ pub fn delivery_guard_failed_tool_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n上一轮工具调用本来要生成命名文件，但工具执行失败后以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须恢复交付，不要直接总结失败。若失败原因是缺少 matplotlib/Pillow/pdf 工具、pip 不可用、命令不存在或环境受限，请立刻改用已安装工具、Python 标准库、SVG/CSV/文本降级实现，或把明确阻塞原因写入目标文件；PNG/PDF/XLSX 等二进制产物仍要优先尝试可实际写入目标路径的兜底生成命令，并验证文件存在、非空。不要重复同一个失败命令，不要只说“继续处理/还要生成”。\n</system-reminder>"
+        "<system-reminder>\n上一轮工具调用本来要生成命名文件，但工具执行失败后以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须恢复交付，不要直接总结失败。若失败原因是缺少 matplotlib/Pillow/pdf 工具、pip 不可用、命令不存在或环境受限，请立刻改用已安装工具、Python 标准库、SVG/CSV/文本降级实现，或把明确阻塞原因写入目标文件；PNG/PDF/XLSX 等二进制产物仍要优先尝试可实际写入目标路径的兜底生成命令，并验证文件存在、非空。结构化结果文件不要用 null/status/TODO 伪装成进展；除非真的阻塞，否则必须写真实字段值。不要重复同一个失败命令，不要只说“继续处理/还要生成”。\n</system-reminder>"
     )
 }
 
@@ -376,7 +376,7 @@ pub fn delivery_guard_text_only_prompt(missing_targets: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "<system-reminder>\n上一轮已经要求先交付命名文件，但你只输出了文字，没有调用写入或生成工具；本轮不能以口头计划、总结或道歉结束。以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮必须调用 Write、Edit，或调用 Bash/PowerShell/ShellTask 运行会直接写入目标路径的生成命令，把这些路径更新为可检查的内容。可以基于用户明确规格、已知事实、未验证说明或阻塞原因先写可用版本；不要再只说“我将创建/我会生成/继续分析”。\n</system-reminder>"
+        "<system-reminder>\n上一轮已经要求先交付命名文件，但你只输出了文字，没有调用写入或生成工具；本轮不能以口头计划、总结或道歉结束。以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮必须调用 Write、Edit，或调用 Bash/PowerShell/ShellTask 运行会直接写入目标路径的生成命令，把这些路径更新为可检查的内容。若输入和规则已经足够，直接写真实结果；不要把 null、status: computing、TODO 或 placeholder 写进结构化产物当作临时完成。确实阻塞时，可以基于已知事实和阻塞原因写可用版本；不要再只说“我将创建/我会生成/继续分析”。\n</system-reminder>"
     )
 }
 

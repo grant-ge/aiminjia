@@ -190,7 +190,7 @@ fn build_default_catalog() -> ToolCatalog {
                     "description": "要写入的文件完整内容（UTF-8 文本）。必须在同一次调用中提供全部内容，不得分步调用或省略任何部分。"
                 }
             },
-            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 Read 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 Edit 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部最终内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。"
+            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 Read 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 Edit 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。\n\n交付规则：\n- 用户指定了明确文件名、输出路径或 schema 时，本工具写出的内容应当尽量就是可交付版本，而不是“稍后补全”的占位稿。\n- JSON/CSV/配置/API payload 等结构化产物必须符合用户给出的字段和格式；除非关键输入、权限或工具真实阻塞，否则不要写 null、TODO、status: computing、placeholder、虚构数值或多余说明字段。\n- 若当前已具备计算、解析或转换所需输入，优先用 Bash/PowerShell/项目脚本直接生成真实结果文件，再用 Read/解析命令验证；不要先写一个会被评分器当成最终结果的临时 JSON。\n- 确实阻塞时，可以写结构化阻塞记录，但要明确缺什么、已确认什么、下一步需要什么，不能伪装成正常结果。"
         }),
     ));
 
@@ -227,8 +227,9 @@ fn build_default_catalog() -> ToolCatalog {
             "在授权工作目录中执行 shell 命令。默认 timeout 120000ms；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
-            \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若必须用 shell 生成文件，命令后要用独立读取、列举或测试确认目标路径存在、非空且格式合理。\
-            \n\n失败恢复：命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把阻塞原因写入要求的产物。解析 STL/Parquet/SQLite/压缩包等结构化二进制数据时，不要优先用 `xxd`、`hexdump`、`od` 或 `file` 探正文；优先用 Python、Node、项目 helper 或专用解析器直接读取文件并写出目标产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在 pip install；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
+            \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若需要计算、解析或转换后生成结果，优先用一次 shell 调用完成“读取输入 -> 计算/转换 -> 写入用户指定目标路径 -> 打印简短校验摘要”。命令后要用独立读取、列举或测试确认目标路径存在、非空且格式合理。\
+            明确命名的 JSON/CSV/配置/API payload 不要先写 null、status: computing、TODO 或 placeholder 占位；如果输入和规则已经足够，直接生成真实字段值。若命令创建临时脚本，必须在同一次调用或下一步立即执行它并写回目标文件，不要只留下 /tmp 脚本或 stdout。\
+            \n\n失败恢复：命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。解析 STL/Parquet/SQLite/压缩包等结构化二进制数据时，不要优先用 `xxd`、`hexdump`、`od` 或 `file` 探正文；优先用 Python、Node、项目 helper 或专用解析器直接读取文件并写出目标产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在 pip install；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
         .with_kind(ToolKind::Primitive)
@@ -278,8 +279,9 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式。\
-            \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若必须用 PowerShell 生成文件，命令后要用 Get-Item/Get-Content/Test-Path 或项目校验命令确认目标路径存在、非空且格式合理。\
-            \n\n失败恢复：命令不存在、模块缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把阻塞原因写入要求的产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在安装；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
+            \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若需要计算、解析或转换后生成结果，优先用一次 PowerShell 调用完成“读取输入 -> 计算/转换 -> 写入用户指定目标路径 -> 打印简短校验摘要”。命令后要用 Get-Item/Get-Content/Test-Path 或项目校验命令确认目标路径存在、非空且格式合理。\
+            明确命名的 JSON/CSV/配置/API payload 不要先写 null、status: computing、TODO 或 placeholder 占位；如果输入和规则已经足够，直接生成真实字段值。若命令创建临时脚本，必须在同一次调用或下一步立即执行它并写回目标文件，不要只留下临时脚本或 stdout。\
+            \n\n失败恢复：命令不存在、模块缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在安装；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理。",
         )
         .with_kind(ToolKind::Primitive)
@@ -551,7 +553,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Skill",
-            "加载一个专项技能的详细指令作为内部参考。只用于理解任务和补充处理规范，不限制工具、不持久化。技能正文中的输入文件、输出文件、禁止事项、验证命令和评分口径是本任务交付约束；调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。",
+            "加载一个专项技能的详细指令作为内部参考。只用于理解任务和补充处理规范，不限制工具、不持久化。技能正文中的输入文件、输出文件、禁止事项、验证命令和评分口径是本任务交付约束；调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。读取 Skill 后必须继续执行其中的方法：读取指定输入、运行 helper/脚本或用等价实现生成要求的文件，并验证输出；不要把“已读取技能”当作完成。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)
@@ -624,7 +626,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TaskCreate",
-            "创建一条持久化任务，用于当前 session/agent 工作清单。适用于多步骤、工具密集、跨轮、团队协作、后台任务或有明确交付物的工作；纯聊天、快速事实问答、单步读取或一次性小修通常不要创建。任务清单只能辅助推进，不能替代用户要求的文件、配置、脚本、报告或数据产物。",
+            "创建一条持久化任务，用于当前 session/agent 工作清单。适用于多步骤、工具密集、跨轮、团队协作、后台任务或多个交付物容易遗漏的工作；纯聊天、快速事实问答、单步读取或一次性小修通常不要创建。若用户已经指定单个明确输出文件，且当前可以直接读取/计算/写入，先用 Read/Bash/PowerShell/Write/Edit 推进真实产物，不要把 TaskCreate 当作开场动作。任务清单只能辅助推进，不能替代用户要求的文件、配置、脚本、报告或数据产物。",
         )
         .with_kind(ToolKind::Support),
         json!({
