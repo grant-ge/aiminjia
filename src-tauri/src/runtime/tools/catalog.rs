@@ -157,7 +157,7 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("Glob", "在授权工作目录中搜索匹配 glob 模式的文件。适合低成本发现输入文件、输出目录、AGENTS.md 或本地技能说明；非平凡文件任务在手写实现前，可先查 `SKILL.md`、`.agents/skills/*/SKILL.md` 或 `skills/*/SKILL.md`，发现明显相关项后用 Read 读取。")
+        ToolDefinition::new("Glob", "在授权工作目录中搜索匹配 glob 模式的文件。适合低成本发现输入文件、输出目录、AGENTS.md 或本地技能说明；非平凡文件任务在手写实现前，可先查 `SKILL.md`、`.agents/skills/*/SKILL.md` 或 `skills/*/SKILL.md`，发现明显相关项后用 Read 读取。本地 SKILL.md 不是动态 Skill 工具的 skill_id，不要用 Skill(find-skills) 代替本工具查本地文件。")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(4_000)
@@ -553,7 +553,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Skill",
-            "加载一个专项技能的详细指令作为内部参考。只用于理解任务和补充处理规范，不限制工具、不持久化。技能正文中的输入文件、输出文件、禁止事项、验证命令和评分口径是本任务交付约束；调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。读取 Skill 后必须继续执行其中的方法：读取指定输入、运行 helper/脚本或用等价实现生成要求的文件，并验证输出；不要把“已读取技能”当作完成。",
+            "加载一个专项技能的详细指令作为内部参考。只用于动态上下文中已列出的 skill_id，不读取当前工作区文件。本地 `SKILL.md`、`.agents/skills/*/SKILL.md` 或 `skills/*/SKILL.md` 应使用 Glob/Read 发现和读取，不要调用 `Skill(skill_id=\"find-skills\")` 来查本地技能。技能正文中的输入文件、输出文件、禁止事项、验证命令和评分口径是本任务交付约束；调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。读取 Skill 后必须继续执行其中的方法：读取指定输入、运行 helper/脚本或用等价实现生成要求的文件，并验证输出；不要把“已读取技能”当作完成。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)
