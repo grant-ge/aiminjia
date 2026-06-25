@@ -532,3 +532,43 @@ Next evaluation口径:
 - Refresh AIjia login first; current direct WSL CLI call still returns `not logged in: run the desktop app login first so ~/.renlijia contains a valid JWT`.
 - After login is healthy, rerun the 20 invalid `0866a8a8` tasks at lower judge concurrency with `-LogFile` and `-SaveWorkspace`.
 - If agent output succeeds but judge fails again, use `scripts/regrade_saved_workspaces.py` on the saved run instead of burning another AIjia rerun.
+
+## 2026-06-25 long-engineering runnable-increment prompt
+
+Current blocker check:
+
+- Direct WSL CLI call still returns `not logged in: run the desktop app login first so ~/.renlijia contains a valid JWT`.
+- No new PawBench agent run was started, because it would only generate another auth-invalid low-score run.
+
+Qoder comparison:
+
+- QoderWork's prompt uses explicit tool/task/file workflow sections rather than a vague persona-only prompt.
+- The useful transferable pattern here is not a copied rule, but the repeated emphasis that real work should move into visible artifacts and verification instead of remaining in chat text.
+
+Change:
+
+- Strengthened `system.md` for long engineering implementation, code reproduction, controllers, parsers, simulations, and data recovery tasks.
+- New rule: use "小步可运行" progress, first lock output contract/core inputs/minimal validation, then write the main code/script/JSON/CSV/report skeleton early.
+- New rule: when reading large source, config, papers, logs, or data, extract interfaces, constraints, and key snippets rather than copying large raw content into the conversation as a substitute for artifacts.
+- New rule: if dependency installation, command execution, tests, external tools, or environment fail, still complete the writable artifact from confirmed constraints and record the error and unverified impact instead of returning only the error or continuing broad reading.
+
+Why this is general:
+
+- The rule does not mention any PawBench task id, path, expected answer, scoring keyword, or fixed file name.
+- It targets a repeated product-level failure mode: long technical tasks stalling in reading, source dumping, command failure, or plan text rather than producing usable intermediate artifacts.
+
+Validation:
+
+- Added `prompt_style_test::system_prompt_guides_long_engineering_tasks_to_runnable_artifacts`.
+- Ran `cargo test --test prompt_style_test -- --nocapture`: 3 tests passed.
+
+Expected effect:
+
+- Improve long code/engineering tasks where the model currently spends too much time reading or explaining and too little time writing the requested implementation or data artifacts.
+- Reduce "command failed so no deliverable" endings by forcing best-effort artifact writeback plus explicit unverified-impact notes.
+
+Next evaluation step:
+
+- After login is refreshed, run a 1-task auth smoke first.
+- Then run the 20 invalid latest-run tasks with `-LogFile`, `-SaveWorkspace`, and low judge concurrency.
+- If that is healthy, include long-engineering low tasks in the next focused comparison before deciding whether this prompt change improved the valid-score distribution.
