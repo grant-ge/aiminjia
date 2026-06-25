@@ -41,7 +41,7 @@ pub fn format_skill_catalog_with_budget(
     }
 
     let header = "The following skills are available for use with the Skill tool:\n\n";
-    let footer = "\nUse Skill({ skill_id: \"<id>\" }) to load detailed instructions when a skill matches the user request.\nSpecial routing rule: for substantive specialized work not clearly covered by enabled local skills, including enterprise/business systems, enterprise tool integrations, professional analysis, specialized file workflows, business data exports, event/log analysis, or domain automation, load `find-skills` and search the market before falling back to generic tools.\nDo not use `find-skills` for pure chat, simple fact questions, ordinary public webpage browsing/scraping, or tasks already covered by enabled skills.\n重要：只要用户任务属于专业分析、业务明细处理、系统导出数据、事件/日志分析或领域自动化，即使文件还没提供，也先调用 Skill({ skill_id: \"find-skills\" }) 判断是否有专门技能，再询问文件位置或格式。";
+    let footer = "\nUse Skill({ skill_id: \"<id>\" }) to load detailed instructions when a listed dynamic skill clearly matches the user request.\nSpecial routing rule: use `find-skills` only for market/dynamic skill discovery when enabled skills and local workspace skill files do not clearly cover the task, especially enterprise/business systems, enterprise tool integrations, external tool integrations, business data exports, or domain automation.\nFor workspace file tasks, first use Glob/Read to inspect local `SKILL.md`, `.agents/skills/*/SKILL.md`, or `skills/*/SKILL.md`; do not call `find-skills` before checking those local files.\nDo not use `find-skills` for pure chat, simple fact questions, ordinary public webpage browsing/scraping, tasks already covered by enabled skills, or tasks with relevant local SKILL.md files in the current workspace.\n重要：`find-skills` 只用于市场/动态技能发现；当前工作区文件任务应先查本地 SKILL.md/skills 目录，找不到相关本地技能且确实需要企业/业务系统专用能力时，再调用 Skill({ skill_id: \"find-skills\" })。";
     let mut content = format!("{}{}{}", header, lines.join("\n"), footer);
     if content.len() > budget {
         content = format!(
@@ -140,11 +140,13 @@ mod tests {
 
         let out = format_skill_catalog_with_budget(&skills, 200_000);
 
-        assert!(out.contains("substantive specialized work"));
+        assert!(out.contains("market/dynamic skill discovery"));
+        assert!(out.contains("external tool integrations"));
+        assert!(out.contains("local `SKILL.md`"));
+        assert!(out.contains("do not call `find-skills` before checking"));
         assert!(out.contains("ordinary public webpage"));
         assert!(out.contains("tasks already covered by enabled skills"));
-        assert!(out.contains("事件/日志分析"));
-        assert!(out.contains("判断是否有专门技能"));
+        assert!(out.contains("本地 SKILL.md/skills 目录"));
         assert!(out.contains("find-skills"));
         assert!(out.contains("browser"));
         assert!(!out.contains("named enterprise products"));
