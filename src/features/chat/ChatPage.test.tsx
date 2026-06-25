@@ -27,6 +27,8 @@ const tauriMocks = vi.hoisted(() => ({
   clearConversationSource: vi.fn(),
   setConversationExpertTeam: vi.fn(),
   getTeamOverview: vi.fn(),
+  getAuthorizedWorkspace: vi.fn(),
+  isLocalDirectoryAvailable: vi.fn(),
   onMessageUpdated: vi.fn(),
   onToolCompleted: vi.fn(),
   workplaceDirectoryCatalog: vi.fn(),
@@ -57,6 +59,8 @@ vi.mock('@/lib/tauri', () => ({
   clearConversationSource: tauriMocks.clearConversationSource,
   setConversationExpertTeam: tauriMocks.setConversationExpertTeam,
   getTeamOverview: tauriMocks.getTeamOverview,
+  getAuthorizedWorkspace: tauriMocks.getAuthorizedWorkspace,
+  isLocalDirectoryAvailable: tauriMocks.isLocalDirectoryAvailable,
   onMessageUpdated: tauriMocks.onMessageUpdated,
   onToolCompleted: tauriMocks.onToolCompleted,
   workplaceDirectoryCatalog: tauriMocks.workplaceDirectoryCatalog,
@@ -69,11 +73,17 @@ vi.mock('@/components/shell/ChatTopBar', () => ({
     title,
     sourceLabel,
     employee,
+    workspace,
+    workspaceAvailable,
+    workspacePath,
     moreMenuItems,
   }: {
     title: string
     sourceLabel?: string
     employee?: { name: string; role: string; defaultSkillLabel?: string | null }
+    workspace?: string
+    workspaceAvailable?: boolean | null
+    workspacePath?: string | null
     moreMenuItems?: Array<{
       id: string
       label: string
@@ -91,6 +101,15 @@ vi.mock('@/components/shell/ChatTopBar', () => ({
         <span data-testid="chat-default-skill">{employee.defaultSkillLabel}</span>
       ) : null}
       {sourceLabel ? <span data-testid="chat-source-label">{sourceLabel}</span> : null}
+      {workspace ? (
+        <span
+          data-testid="chat-workspace-label"
+          data-available={workspaceAvailable == null ? 'unknown' : String(workspaceAvailable)}
+          data-path={workspacePath ?? ''}
+        >
+          {workspace}
+        </span>
+      ) : null}
       {moreMenuItems?.map((item) => (
         <button key={item.id} onClick={() => item.onSelect?.()}>
           {item.icon}
@@ -135,6 +154,8 @@ describe('ChatPage layout', () => {
     tauriMocks.clearConversationSource.mockReset()
     tauriMocks.setConversationExpertTeam.mockReset()
     tauriMocks.getTeamOverview.mockReset()
+    tauriMocks.getAuthorizedWorkspace.mockReset()
+    tauriMocks.isLocalDirectoryAvailable.mockReset()
     tauriMocks.onMessageUpdated.mockReset()
     tauriMocks.onToolCompleted.mockReset()
     tauriMocks.workplaceDirectoryCatalog.mockReset()
@@ -143,6 +164,8 @@ describe('ChatPage layout', () => {
     tauriMocks.clearConversationSource.mockResolvedValue(undefined)
     tauriMocks.setConversationExpertTeam.mockResolvedValue(undefined)
     tauriMocks.getTeamOverview.mockResolvedValue(null)
+    tauriMocks.getAuthorizedWorkspace.mockResolvedValue(null)
+    tauriMocks.isLocalDirectoryAvailable.mockResolvedValue(true)
     tauriMocks.onMessageUpdated.mockResolvedValue(() => undefined)
     tauriMocks.onToolCompleted.mockResolvedValue(() => undefined)
     tauriMocks.workplaceDirectoryCatalog.mockResolvedValue({ schemaVersion: 1, categories: [], items: [] })
@@ -174,6 +197,42 @@ describe('ChatPage layout', () => {
     await waitFor(() => {
       expect(chatMocks.switchConversation).toHaveBeenCalledWith('conv-reload')
     })
+  })
+
+  it('checks the authorized workspace directory when opening a conversation', async () => {
+    tauriMocks.getAuthorizedWorkspace.mockResolvedValue({
+      id: 'ws-1',
+      rootPath: '/Users/me/Desktop/missing-workspace',
+      displayName: 'missing-workspace',
+    })
+    tauriMocks.isLocalDirectoryAvailable.mockResolvedValue(false)
+    useChatStore.setState({
+      activeConversationId: 'conv-workspace',
+      conversations: [{
+        id: 'conv-workspace',
+        title: '目录检测',
+        createdAt: '',
+        updatedAt: '',
+        isArchived: false,
+        workspaceName: 'missing-workspace',
+      }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-workspace" />)
+
+    await waitFor(() => {
+      expect(tauriMocks.getAuthorizedWorkspace).toHaveBeenCalledWith('conv-workspace')
+    })
+    await waitFor(() => {
+      expect(tauriMocks.isLocalDirectoryAvailable)
+        .toHaveBeenCalledWith('/Users/me/Desktop/missing-workspace')
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-workspace-label')).toHaveAttribute('data-available', 'false')
+    })
+    expect(screen.getByTestId('chat-workspace-label'))
+      .toHaveAttribute('data-path', '/Users/me/Desktop/missing-workspace')
   })
 
   it('sends a generated message for creating a skill from the current conversation', async () => {

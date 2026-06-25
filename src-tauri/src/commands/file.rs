@@ -751,6 +751,12 @@ pub async fn is_local_file_available(path: String) -> Result<bool, String> {
     Ok(p.is_absolute() && p.is_file())
 }
 
+#[tauri::command]
+pub async fn is_local_directory_available(path: String) -> Result<bool, String> {
+    let p = Path::new(&path);
+    Ok(p.is_absolute() && p.is_dir())
+}
+
 /// Save a generated/uploaded conversation file to a user-selected destination.
 /// Searches both uploaded_files and generated_files tables.
 #[tauri::command]
@@ -1119,6 +1125,27 @@ mod tests {
             !is_local_file_available(tmp.path().to_string_lossy().to_string())
                 .await
                 .expect("directory availability")
+        );
+    }
+
+    #[tokio::test]
+    async fn local_directory_available_requires_absolute_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let source = tmp.path().join("source.png");
+        std::fs::write(&source, [1_u8, 2, 3, 4]).expect("write source");
+
+        assert!(
+            is_local_directory_available(tmp.path().to_string_lossy().to_string())
+                .await
+                .expect("absolute directory availability")
+        );
+        assert!(!is_local_directory_available("relative/workspace".to_string())
+            .await
+            .expect("relative directory availability"));
+        assert!(
+            !is_local_directory_available(source.to_string_lossy().to_string())
+                .await
+                .expect("file availability")
         );
     }
 }

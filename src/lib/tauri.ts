@@ -1351,6 +1351,10 @@ export function isLocalFileAvailable(path: string): Promise<boolean> {
   return invoke<boolean>("is_local_file_available", { path });
 }
 
+export function isLocalDirectoryAvailable(path: string): Promise<boolean> {
+  return invoke<boolean>("is_local_directory_available", { path });
+}
+
 export function saveGeneratedFileAs(
   fileId: string,
   conversationId: string,

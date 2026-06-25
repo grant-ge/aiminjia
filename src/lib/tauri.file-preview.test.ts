@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }))
 import {
   getFilePreview,
   isGeneratedFileAvailable,
+  isLocalDirectoryAvailable,
   isLocalFileAvailable,
   saveGeneratedFileAs,
   saveLocalFileAs,
@@ -64,6 +65,16 @@ describe('tauri file preview command', () => {
 
     expect(coreMock.invoke).toHaveBeenCalledWith('is_local_file_available', {
       path: '/tmp/missing.png',
+    })
+  })
+
+  it('invokes local directory availability for workspace paths', async () => {
+    coreMock.invoke.mockResolvedValue(false)
+
+    await expect(isLocalDirectoryAvailable('/tmp/missing-workspace')).resolves.toBe(false)
+
+    expect(coreMock.invoke).toHaveBeenCalledWith('is_local_directory_available', {
+      path: '/tmp/missing-workspace',
     })
   })
 
