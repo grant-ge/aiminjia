@@ -296,7 +296,9 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
                 && def.description.contains("ATTENDEE;ROLE=OPT-PARTICIPANT")
                 && def.description.contains("required+optional")
                 && def.description.contains("完整邮箱")
-                && def.description.contains("额外顶层章节"),
+                && def.description.contains("额外顶层章节")
+                && def.description.contains("脚本退出成功")
+                && def.description.contains("仍按交付失败处理"),
             "{id} description must classify tool failures and boundary denials: {}",
             def.description
         );
@@ -318,7 +320,9 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
             && write.contains("固定章节")
             && write.contains("required+optional")
             && write.contains("carol@company.com")
-            && write.contains("立即 Edit/重写目标文件"),
+            && write.contains("立即 Edit/重写目标文件")
+            && write.contains("写脚本、生成脚本或保存 helper 只是中间步骤")
+            && write.contains("必须运行它生成用户命名的最终文件"),
         "Write description must require semantic validation of final hard-constraint outputs: {}",
         write
     );
