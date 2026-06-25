@@ -664,6 +664,14 @@ mod tests {
     }
 
     #[test]
+    fn extracts_file_called_target_from_long_input_extraction_prompt() {
+        let targets = extract_requested_file_targets(
+            "I have a transcript file `transcript.md` from a public meeting.\n\nPlease read the transcript and extract all referenced data sources and measurement systems into a file called `data_sources.md`. For each source, include owner, description, relevance, limitations, and who referenced it.",
+        );
+        assert_eq!(targets, vec!["data_sources.md".to_string()]);
+    }
+
+    #[test]
     fn extracts_hidden_secret_management_targets() {
         let targets = extract_requested_file_targets(
             "Create a `.secrets/` directory. Create `.secrets/.env.template` from `.env.example`. Create `.secrets/README.md` using `old_notes.txt` and `security_config.json`. Update `.gitignore`. Update `SECURITY.md`. Flag the hardcoded credential in `config.json` in the README.",
@@ -808,27 +816,33 @@ Use exactly the following structure.
         std::fs::write(dir.path().join("report.md"), "done").unwrap();
         let targets = vec!["report.md".to_string()];
 
-        assert!(maybe_artifact_quality_guard_prompt(
-            "Create `report.md` with a short summary.",
-            &targets,
-            dir.path(),
-            0,
-        )
-        .is_none());
-        assert!(maybe_artifact_quality_guard_prompt(
-            "Modify `report.md` and rename one field in the example.",
-            &targets,
-            dir.path(),
-            0,
-        )
-        .is_none());
-        assert!(maybe_artifact_quality_guard_prompt(
-            "Create `report.md` with exactly the following structure.",
-            &targets,
-            dir.path(),
-            1,
-        )
-        .is_none());
+        assert!(
+            maybe_artifact_quality_guard_prompt(
+                "Create `report.md` with a short summary.",
+                &targets,
+                dir.path(),
+                0,
+            )
+            .is_none()
+        );
+        assert!(
+            maybe_artifact_quality_guard_prompt(
+                "Modify `report.md` and rename one field in the example.",
+                &targets,
+                dir.path(),
+                0,
+            )
+            .is_none()
+        );
+        assert!(
+            maybe_artifact_quality_guard_prompt(
+                "Create `report.md` with exactly the following structure.",
+                &targets,
+                dir.path(),
+                1,
+            )
+            .is_none()
+        );
     }
 
     #[test]

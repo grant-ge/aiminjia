@@ -1,8 +1,8 @@
 use app_lib::runtime::chat::tool_result_artifact::{
-    apply_tool_result_artifact_replacements, build_compaction_evidence_messages,
-    build_persisted_tool_result_message,
+    CompactionEvidenceConfig, DEFAULT_PREVIEW_CHARS, apply_tool_result_artifact_replacements,
+    build_compaction_evidence_messages, build_persisted_tool_result_message,
     build_tool_result_artifact_replacements_from_round_results, persist_tool_result_artifact,
-    tool_results_dir, tool_results_manifest_path, CompactionEvidenceConfig, DEFAULT_PREVIEW_CHARS,
+    tool_results_dir, tool_results_manifest_path,
 };
 use app_lib::runtime::chat::tool_result_collector::collect_results;
 use app_lib::runtime::chat::tool_round_driver::ToolRoundResult;
@@ -51,6 +51,8 @@ fn persisted_message_contains_recovery_fields() {
     assert!(message.contains("tool_name=\"tool &quot;quoted&quot;\""));
     assert!(message.contains("Full output saved to:"));
     assert!(message.contains("Sha256:"));
+    assert!(message.contains("named deliverable"));
+    assert!(message.contains("instead of continuing broad exploratory reads"));
     assert!(message.contains("</persisted-tool-result>"));
     assert_eq!(record.preview.chars().count(), DEFAULT_PREVIEW_CHARS);
 }
@@ -100,11 +102,13 @@ fn unsafe_tool_call_id_cannot_escape_artifact_directory() {
     let artifact_dir = tool_results_dir(tmp.path()).canonicalize().unwrap();
     let artifact_path = record.path_buf().canonicalize().unwrap();
     assert!(artifact_path.starts_with(artifact_dir));
-    assert!(!artifact_path
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .contains(".."));
+    assert!(
+        !artifact_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains("..")
+    );
 }
 
 #[test]
@@ -128,10 +132,12 @@ fn artifact_projection_replaces_collector_truncation_with_recoverable_reference(
     let replacements =
         build_tool_result_artifact_replacements_from_round_results(tmp.path(), &round_results);
     let mut collected = collect_results(round_results).tool_result_messages;
-    assert!(collected[0]["content"]
-        .as_str()
-        .unwrap()
-        .contains("[Output truncated:"));
+    assert!(
+        collected[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("[Output truncated:")
+    );
 
     apply_tool_result_artifact_replacements(&mut collected, &replacements);
 
@@ -148,9 +154,11 @@ fn artifact_projection_replaces_collector_truncation_with_recoverable_reference(
         std::fs::read_to_string(record.path_buf()).unwrap(),
         raw_content
     );
-    assert!(std::fs::read_to_string(record.path_buf())
-        .unwrap()
-        .contains(important_tail));
+    assert!(
+        std::fs::read_to_string(record.path_buf())
+            .unwrap()
+            .contains(important_tail)
+    );
 }
 
 #[test]

@@ -224,6 +224,9 @@ fn catalog_read_guides_binary_data_to_parsers_and_artifacts() {
     assert!(def.description.contains("解析脚本"));
     assert!(def.description.contains("目标产物"));
     assert!(def.description.contains("不要先 Read 二进制文件"));
+    assert!(def.description.contains("预览不完整"));
+    assert!(def.description.contains("写入该命名目标文件"));
+    assert!(def.description.contains("不要继续只扩大阅读范围"));
 }
 
 #[test]
@@ -298,7 +301,12 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
                 && def.description.contains("完整邮箱")
                 && def.description.contains("额外顶层章节")
                 && def.description.contains("脚本退出成功")
-                && def.description.contains("仍按交付失败处理"),
+                && def.description.contains("仍按交付失败处理")
+                && def.description.contains("长 transcript")
+                && def.description.contains("speaker dump")
+                && def
+                    .description
+                    .contains("先把已确认事实和未确认缺口写入目标文件"),
             "{id} description must classify tool failures and boundary denials: {}",
             def.description
         );

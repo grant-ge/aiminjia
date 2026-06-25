@@ -65,7 +65,7 @@ pub fn build_persisted_tool_result_message(record: &ToolResultArtifactRef) -> St
             "Full output saved to: {}\n",
             "Original chars: {}\n",
             "Sha256: {}\n",
-            "Note: Preview is incomplete. If omitted output matters, read the saved file before relying on this result.\n",
+            "Note: Preview is incomplete. If omitted output matters, inspect or search the saved file. If the user requested a named deliverable, prefer using this evidence to update that deliverable instead of continuing broad exploratory reads.\n",
             "Preview:\n",
             "{}\n",
             "</persisted-tool-result>"
@@ -525,10 +525,12 @@ mod tests {
         let artifact_dir = tool_results_dir(tmp.path()).canonicalize().unwrap();
         let artifact_path = record.path_buf().canonicalize().unwrap();
         assert!(artifact_path.starts_with(artifact_dir));
-        assert!(!artifact_path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .contains(".."));
+        assert!(
+            !artifact_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("..")
+        );
     }
 }
