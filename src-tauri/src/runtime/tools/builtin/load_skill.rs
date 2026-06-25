@@ -10,18 +10,18 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::registry::SkillRegistry;
-use crate::plugin::skill::substitution::{substitute_skill_body, SkillSubstitutionContext};
+use crate::plugin::skill::substitution::{SkillSubstitutionContext, substitute_skill_body};
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::builtin::refresh_skills::SkillRegistryRefresher;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
-use crate::runtime::tools::RuntimeTool;
 
 /// Format the result of a forked skill execution.
 pub fn format_fork_result(skill_name: &str, result_text: &str) -> String {
@@ -145,6 +145,7 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             "加载一个专项技能的详细指令作为内部参考。当用户需求匹配技能目录中的某个专项技能时，\
               调用此工具并传入 skill_id。只用于理解任务和补充处理规范，不限制工具、不持久化。\
               技能正文中的输入文件、输出文件、禁止事项、验证命令和评分口径是本任务交付约束。\
+              本工具只加载已注册且已启用的技能；当前工作区里的 SKILL.md 或 skills/<name>/SKILL.md 不是自动可用 skill_id，应使用 Read 读取对应文件。\
               调用后不要向用户说明内部能力选择过程，直接以业务语言承接用户需求。\
               可用 skill_id：{}。",
             available
@@ -405,10 +406,12 @@ mod tests {
             .unwrap_err();
 
         assert!(format!("{err:?}").contains("Unknown or unavailable skill"));
-        assert!(registry
-            .lock()
-            .unwrap()
-            .get("disabled-after-refresh")
-            .is_some());
+        assert!(
+            registry
+                .lock()
+                .unwrap()
+                .get("disabled-after-refresh")
+                .is_some()
+        );
     }
 }

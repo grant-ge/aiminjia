@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 
@@ -138,7 +138,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Read",
-            "读取授权工作目录中的文本文件内容。PNG/JPG/PDF/音视频/压缩包等二进制媒体不会返回原始内容；遇到这类文件应改用元数据、OCR、截图、专用解析器或用户已给出的明确规格推进交付。大文件可能返回 truncated=true；若被截断部分影响结论，应使用 offset/limit 继续读取，不要把预览当完整证据。",
+            "读取授权工作目录中的文本文件内容。PNG/JPG/PDF/音视频/压缩包等二进制媒体不会返回原始内容；遇到这类文件应改用元数据、OCR、截图、专用解析器或用户已给出的明确规格推进交付。大文件可能返回 truncated=true；若被截断部分影响结论，应使用 offset/limit、搜索或脚本切片继续读取，不要把预览当完整证据，也不要反复整读大型 JSON/CSV/日志。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
@@ -563,7 +563,7 @@ fn build_default_catalog() -> ToolCatalog {
             "properties": {
                 "skill_id": {
                     "type": "string",
-                    "description": "技能 ID，必须来自动态上下文中的可用专项技能目录"
+                    "description": "技能 ID，必须来自动态上下文中的可用专项技能目录；不要传工作区里的 skills/<name> 目录名，本地 SKILL.md 应使用 Read 读取文件路径"
                 }
             }
         }),
