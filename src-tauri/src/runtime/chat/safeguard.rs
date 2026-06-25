@@ -43,7 +43,7 @@ static BARE_FILE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
         r#"(?ix)
         ([A-Z0-9_.-]+(?:[/\\][A-Z0-9_.-]+)*\.
-            (?:md|markdown|txt|json|jsonl|csv|tsv|ya?ml|toml|py|js|ts|tsx|jsx|rs|go|java|kt|sh|bash|ps1|sql|html?|css|xml|pdf|docx|xlsx|pptx|png|jpe?g|webp|gif|svg|dot|env|template)
+            (?:md|markdown|txt|json|jsonl|csv|tsv|ya?ml|toml|py|js|ts|tsx|jsx|rs|go|java|kt|sh|bash|ps1|sql|html?|css|xml|pdf|docx|xlsx|pptx|png|jpe?g|webp|gif|svg|dot|env|template|npz|npy|pt|pth|pkl|pickle)
         )
         "#,
     )
@@ -150,11 +150,36 @@ fn char_boundary_after(text: &str, mut idx: usize) -> usize {
     idx
 }
 
+fn context_start_before_match(text: &str, start: usize, lower_bound: usize) -> usize {
+    let prefix = text.get(..start).unwrap_or_default();
+    let mut boundary = None;
+    for (idx, ch) in prefix.char_indices() {
+        if idx < lower_bound {
+            continue;
+        }
+        let is_boundary = match ch {
+            '!' | '?' | '。' | '！' | '？' | '；' | ';' => true,
+            '.' => {
+                let next = prefix
+                    .get(idx + ch.len_utf8()..)
+                    .and_then(|rest| rest.chars().next());
+                !matches!(next, Some(next) if next.is_ascii_alphanumeric())
+            }
+            _ => false,
+        };
+        if is_boundary {
+            boundary = Some(idx + ch.len_utf8());
+        }
+    }
+    boundary.unwrap_or(lower_bound)
+}
+
 fn output_context_for_match(request: &str, start: usize, end: usize) -> bool {
-    let before_start = char_boundary_before(request, start.saturating_sub(96));
+    let broad_before_start = char_boundary_before(request, start.saturating_sub(96));
+    let context_start = context_start_before_match(request, start, broad_before_start);
     let after_end = char_boundary_after(request, end.saturating_add(96));
     let before = request
-        .get(before_start..start)
+        .get(context_start..start)
         .unwrap_or_default()
         .to_lowercase();
     let after = request
@@ -175,17 +200,72 @@ fn output_context_for_match(request: &str, start: usize, end: usize) -> bool {
         "load ",
         "source ",
         "input ",
+        "input file",
+        "input files",
         "credential in ",
         "hardcoded credential in ",
+        "located at ",
+        "located in ",
+        "saved under ",
+        "stored under ",
+        "provided in ",
+        "provided under ",
+        "available in ",
+        "testing code located at ",
+        "test code located at ",
         "从",
         "读取",
         "基于",
         "来源",
+        "位于",
+        "保存在",
+        "存放在",
+    ];
+    let protected_markers = [
+        "do not modify",
+        "do not revise",
+        "cannot modify",
+        "cannot revise",
+        "can not modify",
+        "can not revise",
+        "don't modify",
+        "don't revise",
+        "do not edit",
+        "cannot edit",
+        "can not edit",
+        "不要修改",
+        "不能修改",
+        "不要改",
+        "不得修改",
+        "禁止修改",
     ];
 
-    if source_markers
+    if protected_markers
         .iter()
-        .any(|marker| immediate_before.contains(marker))
+        .any(|marker| immediate_before.contains(marker) || before.contains(marker))
+    {
+        return false;
+    }
+    let after_source_markers = [
+        " are saved under ",
+        " is saved under ",
+        " are stored under ",
+        " is stored under ",
+        " are located under ",
+        " is located under ",
+        " are located in ",
+        " is located in ",
+        " are provided in ",
+        " is provided in ",
+        " are available in ",
+        " is available in ",
+        " 保存在",
+        " 存放在",
+        " 位于",
+    ];
+    if after_source_markers
+        .iter()
+        .any(|marker| after.contains(marker))
     {
         return false;
     }
@@ -215,11 +295,9 @@ fn output_context_for_match(request: &str, start: usize, end: usize) -> bool {
         "report to",
         "file called",
         "file named",
-        "called ",
-        "named ",
-        "at ",
         "as a",
-        "to ",
+        "to file",
+        "log ",
         "创建",
         "新建",
         "写入",
@@ -686,8 +764,11 @@ Use exactly the following structure.
     fn artifact_quality_guard_prompts_for_ready_hard_constraint_outputs() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("output")).unwrap();
-        std::fs::write(dir.path().join("output/scheduled.ics"), "BEGIN:VCALENDAR\nEND:VCALENDAR")
-            .unwrap();
+        std::fs::write(
+            dir.path().join("output/scheduled.ics"),
+            "BEGIN:VCALENDAR\nEND:VCALENDAR",
+        )
+        .unwrap();
         std::fs::write(dir.path().join("output/unscheduled.json"), "[]").unwrap();
         std::fs::write(
             dir.path().join("output/decision_log.md"),
@@ -815,5 +896,52 @@ Use exactly the following structure.
             "Read `input.csv` and create `report.md` with the findings.",
         );
         assert_eq!(targets, vec!["report.md".to_string()]);
+    }
+
+    #[test]
+    fn does_not_treat_located_or_protected_test_files_as_output_targets() {
+        let request = r#"
+Implement the `simpo_loss` function of `SimPOTrainer` class in 'SimPO/scripts/simpo_trainer.py' based on the SimPO loss described in the paper located at SimPO/paper.pdf.
+
+After you finished the code, please run the testing code located at 'SimPO/unit_test/unit_test_1.py' to generate loss for evaluation with fixed input tensors.
+The value should be saved into 'loss.npz' and the key should be 'losses'.
+
+Please also log your python version and the package via command 'python -VV' and 'python -m pip freeze' to file 'python_info.txt'.
+
+You can not revise the content in the unit_test.py
+"#;
+        let targets = extract_requested_file_targets(request);
+
+        assert!(targets.contains(&"SimPO/scripts/simpo_trainer.py".to_string()));
+        assert!(targets.contains(&"loss.npz".to_string()));
+        assert!(targets.contains(&"python_info.txt".to_string()));
+        assert!(!targets.contains(&"SimPO/paper.pdf".to_string()));
+        assert!(!targets.contains(&"SimPO/unit_test/unit_test_1.py".to_string()));
+        assert!(!targets.contains(&"unit_test.py".to_string()));
+    }
+
+    #[test]
+    fn does_not_treat_data_directory_inputs_as_output_targets() {
+        let request = r#"
+The files handbook.pdf, mes_log.csv, test_defects.csv and thermocouples.csv are saved under data/.
+
+You are required to generate output/q01.json.
+You are required to generate output/q02.json.
+You are required to generate output/q03.json.
+You are required to generate output/q04.json.
+You are required to generate output/q05.json.
+"#;
+        let targets = extract_requested_file_targets(request);
+
+        assert_eq!(
+            targets,
+            vec![
+                "output/q01.json".to_string(),
+                "output/q02.json".to_string(),
+                "output/q03.json".to_string(),
+                "output/q04.json".to_string(),
+                "output/q05.json".to_string(),
+            ]
+        );
     }
 }
