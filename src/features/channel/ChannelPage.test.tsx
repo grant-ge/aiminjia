@@ -134,7 +134,10 @@ describe('ChannelPage domain UI', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { name: 'IM 频道' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '配置钉钉' })).toBeInTheDocument()
+    const configureButton = screen.getByRole('button', { name: '配置钉钉' })
+    expect(configureButton).toBeInTheDocument()
+    expect(configureButton).toHaveClass('h-8')
+    expect(configureButton).not.toHaveClass('h-6')
     expect(screen.queryByRole('button', { name: '更多钉钉配置' })).not.toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: /钉钉/ })).not.toBeInTheDocument()
   })
@@ -216,7 +219,10 @@ describe('ChannelPage domain UI', () => {
     })
     renderPage()
 
-    await userEvent.click(screen.getByRole('button', { name: '唤醒钉钉机器人' }))
+    const greetingButton = screen.getByRole('button', { name: '唤醒钉钉机器人' })
+    expect(greetingButton).toHaveClass('h-8')
+    expect(greetingButton).not.toHaveClass('h-6')
+    await userEvent.click(greetingButton)
 
     await waitFor(() => {
       expect(sendDingtalkGreeting).toHaveBeenCalledTimes(1)
@@ -249,7 +255,8 @@ describe('ChannelPage domain UI', () => {
     useChannelStore.setState({ platforms: { dingtalk: connected, feishu }, setEnabled, removePlatform })
     renderPage()
 
-    await userEvent.click(screen.getByRole('switch', { name: '钉钉频道已启用' }))
+    const toggle = screen.getByRole('radiogroup', { name: '钉钉频道已启用' })
+    await userEvent.click(within(toggle).getByRole('radio', { name: '关' }))
 
     expect(setEnabled).toHaveBeenCalledWith('dingtalk', false)
     expect(removePlatform).not.toHaveBeenCalled()
@@ -263,7 +270,8 @@ describe('ChannelPage domain UI', () => {
     })
     renderPage()
 
-    await userEvent.click(screen.getByRole('switch', { name: '钉钉频道已停用' }))
+    const toggle = screen.getByRole('radiogroup', { name: '钉钉频道已停用' })
+    await userEvent.click(within(toggle).getByRole('radio', { name: '开' }))
 
     expect(setEnabled).toHaveBeenCalledWith('dingtalk', true)
   })

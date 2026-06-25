@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import type { ChatWidthMode, FontScale, ProfileAvatarMode } from '@/types/settings'
 import type { AppLanguage } from '@/i18n'
 import { Button } from '@/components/ui/button'
+import { SegmentedControl } from '@/components/common/SegmentedControl'
 
 interface GeneralPanelProps {
   user: { name: string; tenantName: string; avatarUrl: string }
@@ -197,10 +198,10 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
       <section className="flex flex-col gap-4 pb-2">
         <div className="text-xl font-bold text-foreground">{t('settings.general.profile')}</div>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           <div className="text-base font-semibold text-foreground">{t('settings.general.avatarIcon')}</div>
           <div
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-2"
             role="radiogroup"
             aria-label={t('settings.general.avatarIcon')}
           >
@@ -213,7 +214,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                 setAvatarUploadError(null)
                 handleInitialAvatar()
               }}
-              className="flex items-center gap-3 rounded-md px-1 py-1 text-left text-foreground transition-colors hover:bg-muted/70"
+              className="flex items-center gap-3 rounded-md px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
             >
               <span className={profileAvatarMode === 'initial' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
               <span className="text-base font-medium">{t('settings.general.avatarInitial')}</span>
@@ -225,7 +226,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               aria-checked={profileAvatarMode === 'emoji'}
               aria-label="Emoji"
               onClick={handleEmojiAvatarMode}
-              className="flex items-center gap-3 rounded-md px-1 py-1 text-left text-foreground transition-colors hover:bg-muted/70"
+              className="flex items-center gap-3 rounded-md px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
             >
               <span className={profileAvatarMode === 'emoji' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
               <span className="text-base font-medium">Emoji</span>
@@ -260,13 +261,13 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               aria-checked={profileAvatarMode === 'image'}
               aria-label={t('settings.general.avatarUpload')}
               onClick={handleImageAvatarMode}
-              className="flex items-center gap-3 rounded-md px-1 py-1 text-left text-foreground transition-colors hover:bg-muted/70"
+              className="flex items-center gap-3 rounded-md px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
             >
               <span className={profileAvatarMode === 'image' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
               <span className="text-base font-medium">{t('settings.general.avatarUpload')}</span>
             </Button>
             {profileAvatarMode === 'image' ? (
-              <div className="flex flex-col items-start gap-2 pl-7">
+              <div className="flex flex-col items-start gap-1.5 pl-7">
                 <Button
                   type="button"
                   variant="outline"
@@ -294,34 +295,16 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="text-base font-semibold text-foreground">{t('settings.general.fontSize')}</div>
             <div className="text-sm text-muted-foreground">{t('settings.general.fontSizeDesc')}</div>
           </div>
-          <div
-            className="inline-flex rounded-md bg-muted p-1"
-            role="radiogroup"
-            aria-label={t('settings.general.fontSize')}
-          >
-            {FONT_SCALE_OPTIONS.map((option) => {
-              const selected = fontScale === option.value
-              const label = t(option.labelKey)
-              return (
-                <Button unstyled
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={label}
-                  title={option.description}
-                  onClick={() => handleFontScaleChange(option.value)}
-                  className={
-                    selected
-                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
-                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
-                  }
-                >
-                  {label}
-                </Button>
-              )
-            })}
-          </div>
+          <SegmentedControl<FontScale>
+            ariaLabel={t('settings.general.fontSize')}
+            value={fontScale}
+            onValueChange={handleFontScaleChange}
+            options={FONT_SCALE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+              title: option.description,
+            }))}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-8">
@@ -329,33 +312,15 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="text-base font-semibold text-foreground">{t('settings.general.chatWidth')}</div>
             <div className="text-sm text-muted-foreground">{t('settings.general.chatWidthDesc')}</div>
           </div>
-          <div
-            className="inline-flex rounded-md bg-muted p-1"
-            role="radiogroup"
-            aria-label={t('settings.general.chatWidth')}
-          >
-            {CHAT_WIDTH_OPTIONS.map((option) => {
-              const selected = chatWidthMode === option.value
-              const label = t(option.labelKey)
-              return (
-                <Button unstyled
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={label}
-                  onClick={() => handleChatWidthModeChange(option.value)}
-                  className={
-                    selected
-                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
-                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
-                  }
-                >
-                  {label}
-                </Button>
-              )
-            })}
-          </div>
+          <SegmentedControl<ChatWidthMode>
+            ariaLabel={t('settings.general.chatWidth')}
+            value={chatWidthMode}
+            onValueChange={handleChatWidthModeChange}
+            options={CHAT_WIDTH_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-8">
@@ -367,33 +332,13 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               {t('settings.general.languageDesc')}
             </div>
           </div>
-          <div
-            className="inline-flex rounded-md bg-muted p-1"
-            role="radiogroup"
-            aria-label={t('settings.general.language')}
-            data-testid="settings-language-switch"
-          >
-            {LANGUAGE_OPTIONS.map((option) => {
-              const selected = appLanguage === option.value
-              return (
-                <Button unstyled
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={option.label}
-                  onClick={() => handleLanguageChange(option.value)}
-                  className={
-                    selected
-                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
-                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
-                  }
-                >
-                  {option.label}
-                </Button>
-              )
-            })}
-          </div>
+          <SegmentedControl<AppLanguage>
+            ariaLabel={t('settings.general.language')}
+            value={appLanguage}
+            onValueChange={handleLanguageChange}
+            testId="settings-language-switch"
+            options={LANGUAGE_OPTIONS}
+          />
         </div>
       </section>
     </div>

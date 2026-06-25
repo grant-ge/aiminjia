@@ -73,7 +73,7 @@ describe('GeneralPanel', () => {
   it('renders profile avatar controls without name or background editing', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
     expect(screen.getByText('个人信息')).toBeInTheDocument()
-    expect(screen.getByText('图标')).toBeInTheDocument()
+    expect(screen.getByText('头像')).toBeInTheDocument()
     expect(screen.getByTestId('settings-profile-avatar-preview')).toHaveStyle({
       background: 'rgba(var(--primary-rgb), 0.12)',
     })

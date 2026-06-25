@@ -2,7 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
-import { Switch } from '@/components/common/Switch'
+import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillActionBar } from '@/components/skills/SkillActionBar'
@@ -28,6 +28,11 @@ import { Button } from '@/components/ui/button'
 interface SkillDetailPageProps {
   skillId: string
 }
+
+const TOGGLE_OPTIONS: Array<{ value: 'off' | 'on'; label: string }> = [
+  { value: 'off', label: '关' },
+  { value: 'on', label: '开' },
+]
 
 interface BodySection {
   title: string
@@ -333,12 +338,14 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
             {manageable ? (
               <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-muted-foreground">
                 <span>{enabled ? '已开启' : '已关闭'}</span>
-                <Switch
-                  checked={enabled}
+                <SegmentedControl<'off' | 'on'>
+                  className="w-20 shrink-0"
+                  value={enabled ? 'on' : 'off'}
                   disabled={isChangingEnabled}
                   data-aijia-skill-toggle={skill.id}
-                  aria-label={`${localized.name} 技能开关`}
-                  onCheckedChange={(next) => void handleSetEnabled(next)}
+                  ariaLabel={`${localized.name} 技能开关`}
+                  onValueChange={(value) => void handleSetEnabled(value === 'on')}
+                  options={TOGGLE_OPTIONS}
                 />
               </div>
             ) : null}

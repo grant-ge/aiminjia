@@ -29,12 +29,7 @@ import { useSidebarStatusStore } from "@/stores/sidebarStatusStore";
 import { hasExpertTeam } from "@/features/expert-teams/expertTeamRegistry";
 import { selectPendingActionForSession } from "@/components/chat-scene/pendingActionSelectors";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { SegmentedControl } from "@/components/common/SegmentedControl";
 
 import { ConversationRow } from "./ConversationRow";
 import { ConversationRenameDialog } from "./ConversationRenameDialog";
@@ -503,44 +498,25 @@ export function AppSidebar() {
                 labelKey: "sidebar.channel",
               },
             ];
-            const activeIndex = TABS.findIndex((tab) => tab.key === sidebarTab);
             return (
               <div className="px-2">
-                <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
-                  {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
-                  <div
-                    className="absolute rounded-md bg-card shadow-sm"
-                    style={{
-                      top: "2px",
-                      bottom: "2px",
-                      left: "4px",
-                      width: "calc(25% - 2px)",
-                      transform: `translateX(${activeIndex * 100}%)`,
-                      transition: "transform 200ms ease-in-out",
-                    }}
-                  />
-                  {TABS.map(({ key, Icon, labelKey }) => (
-                    <TooltipProvider key={key} delayDuration={400}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button unstyled
-                            type="button"
-                            aria-label={t(labelKey)}
-                            onClick={() => switchTab(key)}
-                            className={`relative z-10 flex items-center justify-center rounded-md transition-colors duration-200 ${
-                              sidebarTab === key ? "text-foreground" : ""
-                            }`}
-                          >
-                            <Icon className="h-3.5 w-3.5 shrink-0" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          {t(labelKey)}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ))}
-                </div>
+                <SegmentedControl<SidebarBodyTab>
+                  ariaLabel={t("sidebar.project")}
+                  value={sidebarTab}
+                  onValueChange={switchTab}
+                  testId="sidebar-body-tabs"
+                  className="w-full border border-sidebar-border bg-sidebar-accent/70"
+                  options={TABS.map(({ key, Icon, labelKey }) => {
+                    const label = t(labelKey);
+                    return {
+                      value: key,
+                      label: "",
+                      ariaLabel: label,
+                      tooltip: label,
+                      icon: <Icon className="h-3.5 w-3.5 shrink-0" />,
+                    };
+                  })}
+                />
               </div>
             );
           })()}

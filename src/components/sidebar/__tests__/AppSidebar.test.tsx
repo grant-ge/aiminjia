@@ -293,10 +293,18 @@ describe("AppSidebar", () => {
     expect(homeNavButton.closest("nav")).toHaveClass("px-2");
     expect(homeNavButton.className).toMatch(/px-2\.5/);
     expect(screen.getByText("置顶").parentElement).toHaveClass("px-2");
-    const sidebarTab = screen.getByRole("button", { name: "项目" }).parentElement;
-    expect(sidebarTab).toHaveClass("px-1");
+    const sidebarTab = screen.getByRole("radio", { name: "项目" }).parentElement;
+    expect(sidebarTab).toHaveAttribute("data-testid", "sidebar-body-tabs");
+    expect(sidebarTab).toHaveClass("p-1");
     expect(sidebarTab).toHaveClass("h-8");
     expect(sidebarTab?.className).not.toContain("30px");
+    const activeSidebarTab = screen.getByRole("radio", { name: "项目" });
+    expect(activeSidebarTab).toHaveClass("rounded", "text-foreground");
+    expect(activeSidebarTab).not.toHaveClass("rounded-md");
+    expect(screen.getByTestId("sidebar-body-tabs-indicator")).toHaveClass(
+      "bg-card",
+      "transition-transform",
+    );
     expect(sidebarTab?.parentElement).toHaveClass("px-2");
     expect(screen.getByText("默认项目").closest(".overflow-auto")).toHaveClass("px-2");
   });
@@ -372,31 +380,31 @@ describe("AppSidebar", () => {
     expect(
       within(displayGroup).getByRole("heading", { name: "显示" }),
     ).toBeInTheDocument();
-    const switchControl = screen.getByRole("switch", {
+    const switchControl = screen.getByRole("radiogroup", {
       name: "显示工具失败图标",
     });
     expect(
-      within(displayGroup).getByRole("switch", { name: "显示工具失败图标" }),
+      within(displayGroup).getByRole("radiogroup", { name: "显示工具失败图标" }),
     ).toBe(switchControl);
-    expect(switchControl).not.toBeChecked();
+    expect(within(switchControl).getByRole("radio", { name: "关" })).toHaveAttribute("aria-checked", "true");
 
-    await user.click(switchControl);
+    await user.click(within(switchControl).getByRole("radio", { name: "开" }));
 
-    expect(switchControl).toBeChecked();
+    expect(within(switchControl).getByRole("radio", { name: "开" })).toHaveAttribute("aria-checked", "true");
     expect(
       JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
     ).toMatchObject({
       showToolErrorIcon: true,
     });
 
-    const rawSkillSwitch = screen.getByRole("switch", {
+    const rawSkillSwitch = screen.getByRole("radiogroup", {
       name: "显示技能原始内容",
     });
-    expect(rawSkillSwitch).not.toBeChecked();
+    expect(within(rawSkillSwitch).getByRole("radio", { name: "关" })).toHaveAttribute("aria-checked", "true");
 
-    await user.click(rawSkillSwitch);
+    await user.click(within(rawSkillSwitch).getByRole("radio", { name: "开" }));
 
-    expect(rawSkillSwitch).toBeChecked();
+    expect(within(rawSkillSwitch).getByRole("radio", { name: "开" })).toHaveAttribute("aria-checked", "true");
     expect(
       JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
     ).toMatchObject({
@@ -441,7 +449,7 @@ describe("AppSidebar", () => {
       screen.getByRole("button", { name: "定时任务" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "IM 频道" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "项目" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "项目" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
   });
 
@@ -621,11 +629,11 @@ describe("AppSidebar", () => {
 
     // "专家团" is a top-level nav item; the sidebar body tab is labelled "专家".
     expect(screen.getByRole("button", { name: "专家团" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "专家" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "专家" })).toBeInTheDocument();
     expect(screen.getByText("普通项目对话")).toBeInTheDocument();
     expect(screen.queryByText("市场方案专家讨论")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "专家" }));
+    await userEvent.click(screen.getByRole("radio", { name: "专家" }));
 
     expect(screen.getByText("市场方案专家讨论")).toBeInTheDocument();
     expect(screen.queryByText("普通项目对话")).not.toBeInTheDocument();
@@ -636,12 +644,12 @@ describe("AppSidebar", () => {
     render(<AppSidebar />);
 
     expect(
-      screen.getAllByRole("button", { name: "项目" }).length,
+      screen.getAllByRole("radio", { name: "项目" }).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole("button", { name: "频道" }).length,
+      screen.getAllByRole("radio", { name: "频道" }).length,
     ).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole("button", { name: "频道" }));
+    await userEvent.click(screen.getByRole("radio", { name: "频道" }));
     // Tab switching is local UI state — must not affect route.
     expect(uiState.setRoute).not.toHaveBeenCalled();
     // The channel tab lists every platform section; the dingtalk private

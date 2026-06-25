@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
@@ -442,7 +442,8 @@ describe('SkillCenterPage', () => {
     render(<SkillCenterPage />)
 
     fireEvent.click(screen.getByRole('button', { name: '已安装' }))
-    fireEvent.click(screen.getByRole('switch', { name: '本地日报 技能开关' }))
+    const toggle = screen.getByRole('radiogroup', { name: '本地日报 技能开关' })
+    fireEvent.click(within(toggle).getByRole('radio', { name: '开' }))
 
     await waitFor(() => expect(setSkillEnabled).toHaveBeenCalledWith('local-report', true))
   })

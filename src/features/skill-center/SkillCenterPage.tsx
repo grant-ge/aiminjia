@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
-import { Switch } from '@/components/common/Switch'
+import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCard } from '@/components/skills/SkillCard'
@@ -38,6 +38,11 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { SkillValidationError, type SkillValidationKind } from '@/stores/skillStore'
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
 import { ChevronDown, FolderOpen, Package } from 'lucide-react'
+
+const TOGGLE_OPTIONS: Array<{ value: 'off' | 'on'; label: string }> = [
+  { value: 'off', label: '关' },
+  { value: 'on', label: '开' },
+]
 
 function getSkillCardIconBg(skillId: string | null | undefined) {
   return getSkillCardAvatarClass(skillId)
@@ -701,13 +706,15 @@ export function SkillCenterPage() {
                 actionsSlot={
                   <div className="flex items-center gap-2">
                     {manageable ? (
-                      <Switch
+                      <SegmentedControl<'off' | 'on'>
                         size="sm"
-                        checked={enabled}
+                        className="w-16 shrink-0"
+                        value={enabled ? 'on' : 'off'}
                         disabled={enablementChangingId === skill.id}
                         data-aijia-skill-toggle={skill.id}
-                        aria-label={`${localized.name} 技能开关`}
-                        onCheckedChange={(next) => void handleSetSkillEnabled(skill, next)}
+                        ariaLabel={`${localized.name} 技能开关`}
+                        onValueChange={(value) => void handleSetSkillEnabled(skill, value === 'on')}
+                        options={TOGGLE_OPTIONS}
                       />
                     ) : null}
                     {menuItems.length > 0 ? (
