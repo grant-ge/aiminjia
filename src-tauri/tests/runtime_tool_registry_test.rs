@@ -48,6 +48,12 @@ async fn read_workspace_file_runtime_tool_returns_metadata_for_binary_content() 
     assert_eq!(data["binary"], json!(true));
     assert_eq!(data["media_type"], json!("image/png"));
     assert_eq!(data["content"], json!(""));
+    let message = data["message"]
+        .as_str()
+        .expect("binary read should include recovery guidance");
+    assert!(message.contains("Do not call Read again"));
+    assert!(message.contains("parser script"));
+    assert!(message.contains("requested target artifact"));
     assert!(!result.content.contains('\u{fffd}'));
 }
 

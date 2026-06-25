@@ -144,7 +144,7 @@ fn runtime_tool_default_predicates_follow_definition_flags() {
     use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, ToolResult};
     use async_trait::async_trait;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     struct PredicateTool(ToolDefinition);
 
@@ -214,6 +214,16 @@ fn catalog_read_workspace_file_has_16000_limit() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
     let def = TOOL_CATALOG.get("Read").unwrap();
     assert_eq!(def.default_max_result_size_chars, 16_000);
+}
+
+#[test]
+fn catalog_read_guides_binary_data_to_parsers_and_artifacts() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+    let def = TOOL_CATALOG.get("Read").unwrap();
+    assert!(def.description.contains("STL"));
+    assert!(def.description.contains("解析脚本"));
+    assert!(def.description.contains("目标产物"));
+    assert!(def.description.contains("不要先 Read 二进制文件"));
 }
 
 #[test]

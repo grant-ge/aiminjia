@@ -138,7 +138,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Read",
-            "读取授权工作目录中的文本文件内容。PNG/JPG/PDF/音视频/压缩包等二进制媒体不会返回原始内容；遇到这类文件应改用元数据、OCR、截图、专用解析器或用户已给出的明确规格推进交付。大文件可能返回 truncated=true；若被截断部分影响结论，应使用 offset/limit、搜索或脚本切片继续读取，不要把预览当完整证据，也不要反复整读大型 JSON/CSV/日志。",
+            "读取授权工作目录中的文本文件内容。不要用本工具检查二进制、媒体、压缩包、模型、数据库或其他结构化二进制数据的原始内容；PNG/JPG/PDF/音视频/压缩包/STL/Parquet/SQLite 等不会返回可用于判断的完整正文。遇到这类文件时，应改用元数据、OCR、截图、专用解析器，或直接写并运行解析脚本生成用户要求的目标文件；如果用户已经给出二进制结构、字段、schema 或输出格式，不要先 Read 二进制文件探测正文，应让脚本读取该文件并写出目标产物。大文件可能返回 truncated=true；若被截断部分影响结论，应使用 offset/limit、搜索或脚本切片继续读取，不要把预览当完整证据，也不要反复整读大型 JSON/CSV/日志。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)

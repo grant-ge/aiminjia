@@ -5,18 +5,18 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::runtime::path_auth::{decide, Decision, PathOp};
+use crate::runtime::path_auth::{Decision, PathOp, decide};
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::capability::FileState;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
-use crate::runtime::tools::RuntimeTool;
 
 /// Returns the root path for workspace file operations.
 ///
@@ -423,7 +423,7 @@ fn binary_read_tool_result(
         "size": size,
         "binary": true,
         "media_type": media_type,
-        "message": "Binary or media file content was not returned as text; this is not a successful visual/content inspection. Use metadata, OCR, screenshot/image-view, PDF/archive, or domain-specific parser tools when available. If the user already provided explicit structure, fields, layout, data, or acceptance criteria for a required output file, create that target artifact from those specs now and mark only the unverified visual details.",
+        "message": "Binary or media file content was not returned as text; this is not a successful content inspection. Do not call Read again for this binary payload. Use metadata, OCR, screenshot/image-view, PDF/archive, or a domain-specific parser when available. For structured binary data, write and run a parser script that reads this file and writes the requested target artifact. If the user already provided explicit structure, fields, layout, data, schema, or acceptance criteria for a required output file, create or update that target artifact now and mark only the unverified details.",
     });
     if offset.is_some() || limit.is_some() {
         result["range_ignored"] = json!(true);
@@ -593,7 +593,9 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             });
             if limit_truncated {
                 result["truncated"] = json!(true);
-                result["message"] = json!("Read output was truncated by max_bytes; if omitted lines affect the task, read another range with offset/limit before drawing conclusions or finalizing the deliverable.");
+                result["message"] = json!(
+                    "Read output was truncated by max_bytes; if omitted lines affect the task, read another range with offset/limit before drawing conclusions or finalizing the deliverable."
+                );
             }
             return Ok(tool_result("Read", result));
         }
@@ -613,7 +615,9 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let mut result = json!({ "file_path": rel, "content": content, "size": bytes.len() });
         if truncated {
             result["truncated"] = json!(true);
-            result["message"] = json!("Read output was truncated; this is only a preview of the file. If the missing portion matters, use offset/limit to read the relevant lines before drawing conclusions or finalizing the deliverable.");
+            result["message"] = json!(
+                "Read output was truncated; this is only a preview of the file. If the missing portion matters, use offset/limit to read the relevant lines before drawing conclusions or finalizing the deliverable."
+            );
         }
         Ok(tool_result("Read", result))
     }
