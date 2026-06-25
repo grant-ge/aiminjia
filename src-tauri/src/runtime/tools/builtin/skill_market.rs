@@ -5,20 +5,20 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::commands::skill_management::{
-    MarketplaceSkillItem, install_marketplace_skill_headless_with_auth,
-    install_marketplace_skill_with_auth, list_marketplace_skills_with_auth,
+    install_marketplace_skill_headless_with_auth, install_marketplace_skill_with_auth,
+    list_marketplace_skills_with_auth, MarketplaceSkillItem,
 };
 use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::plugin::skill::types::{DiskSkill, SkillSource};
-use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
+use crate::runtime::tools::RuntimeTool;
 
 const SEARCH_TOOL: &str = "SkillMarketSearch";
 const INSTALL_TOOL: &str = "SkillMarketInstall";
@@ -1113,11 +1113,9 @@ mod tests {
         let ranked = rank_marketplace_candidates(&items, "业务表公平分析和调整建议", &[]);
 
         assert_eq!(ranked[0].item.plugin_id, "analysis-primary");
-        assert!(
-            ranked
-                .iter()
-                .any(|candidate| candidate.item.plugin_id == "analysis-benchmark")
-        );
+        assert!(ranked
+            .iter()
+            .any(|candidate| candidate.item.plugin_id == "analysis-benchmark"));
     }
 
     #[test]
@@ -1144,12 +1142,10 @@ mod tests {
         );
 
         assert_eq!(ranked[0].item.plugin_id, "event-path-lab");
-        assert!(
-            !ranked
-                .iter()
-                .any(|candidate| candidate.item.plugin_id == "benchmark-lab"
-                    && candidate.score >= MIN_MATCH_SCORE)
-        );
+        assert!(!ranked
+            .iter()
+            .any(|candidate| candidate.item.plugin_id == "benchmark-lab"
+                && candidate.score >= MIN_MATCH_SCORE));
     }
 
     #[test]
@@ -1298,15 +1294,13 @@ mod tests {
             .disabled_skill_ids
             .insert("batch-helper".to_string());
 
-        assert!(
-            best_disabled_local_skill_match(
-                &skills,
-                "业务表公平分析和调整建议",
-                &["业务表".to_string(), "公平分析".to_string()],
-                &enablement,
-            )
-            .is_none()
-        );
+        assert!(best_disabled_local_skill_match(
+            &skills,
+            "业务表公平分析和调整建议",
+            &["业务表".to_string(), "公平分析".to_string()],
+            &enablement,
+        )
+        .is_none());
     }
 
     #[test]

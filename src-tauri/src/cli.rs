@@ -11,7 +11,6 @@ use crate::llm::gateway::LlmGateway;
 use crate::llm::prompts;
 use crate::models::settings::AppSettings;
 use crate::plugin::registry::ToolRegistry;
-use crate::runtime::RuntimeRunRegistry;
 use crate::runtime::agent::async_task_store::AsyncAgentTaskStore;
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
 use crate::runtime::chat::{ChatTurnOutcome, ChatTurnRequest};
@@ -24,14 +23,15 @@ use crate::runtime::store::{
     ConvJsonAuthorizedWorkspaceStore,
 };
 use crate::runtime::tools::permission::PermissionMode;
+use crate::runtime::RuntimeRunRegistry;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_manager::FileManager;
-use crate::storage::file_store::AppStorage;
 use crate::storage::file_store::types::{ErrorKind, MessageError, StoredMessage};
+use crate::storage::file_store::AppStorage;
 use crate::storage::{AiJiaHome, CurrentUserStorage, GlobalConfigStore, UserScope};
 use crate::storage::{UserScopedPathResolver, UserScopedPaths};
 use crate::transport::tauri_commands::chat::{
-    HeadlessChatRuntime, HeadlessChatRuntimeConfig, build_headless_chat_runtime,
+    build_headless_chat_runtime, HeadlessChatRuntime, HeadlessChatRuntimeConfig,
 };
 
 pub type HeadlessStreamEventSink = Arc<dyn Fn(serde_json::Value) + Send + Sync>;

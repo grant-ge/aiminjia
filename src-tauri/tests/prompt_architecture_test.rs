@@ -4,8 +4,8 @@ use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, Remind
 use app_lib::runtime::tools::catalog::ToolCatalog;
 
 use std::sync::{
-    Arc, LazyLock, Mutex,
     atomic::{AtomicUsize, Ordering},
+    Arc, LazyLock, Mutex,
 };
 
 use app_lib::runtime::chat::prompt::{

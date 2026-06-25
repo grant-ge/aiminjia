@@ -140,16 +140,12 @@ mod tests {
             .get_schemas_filtered(&ToolFilter::All, &ToolDescriptionContext::empty(), &empty)
             .await;
 
-        assert!(
-            !without_overrides
-                .iter()
-                .any(|def| def.name == "SkillMarketSearch")
-        );
-        assert!(
-            !without_overrides
-                .iter()
-                .any(|def| def.name == "SkillMarketInstall")
-        );
+        assert!(!without_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketSearch"));
+        assert!(!without_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketInstall"));
 
         let mut overrides = std::collections::HashMap::new();
         overrides.insert(
@@ -177,16 +173,12 @@ mod tests {
             )
             .await;
 
-        assert!(
-            with_overrides
-                .iter()
-                .any(|def| def.name == "SkillMarketSearch")
-        );
-        assert!(
-            with_overrides
-                .iter()
-                .any(|def| def.name == "SkillMarketInstall")
-        );
+        assert!(with_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketSearch"));
+        assert!(with_overrides
+            .iter()
+            .any(|def| def.name == "SkillMarketInstall"));
     }
 }
 

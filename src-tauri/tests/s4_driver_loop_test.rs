@@ -174,7 +174,7 @@ fn mock_executor_implements_trait() {
 
 // ── S4-T6: safeguard 模块 ──────────────────────────────────────────────────
 
-use app_lib::runtime::chat::safeguard::{SafeguardAction, check_iteration};
+use app_lib::runtime::chat::safeguard::{check_iteration, SafeguardAction};
 
 #[test]
 fn safeguard_continues_when_not_near_limit() {
@@ -1022,7 +1022,7 @@ use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::chat::TurnConfigOverrides;
 use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::transport::tauri_commands::chat::chat_runtime_impl::{
-    ToolSchemaFilter, build_visible_tool_defs,
+    build_visible_tool_defs, ToolSchemaFilter,
 };
 
 struct ToolDefsCapturingExecutor {

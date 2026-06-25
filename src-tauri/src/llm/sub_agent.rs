@@ -6,9 +6,9 @@ use crate::llm::gateway::LlmGateway;
 use crate::models::settings::AppSettings;
 use crate::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use crate::plugin::tool_trait::ToolError as LegacyToolError;
-use crate::runtime::agent::AgentRuntime;
 use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::agent::worker_runtime::SubagentWorkerRuntime;
+use crate::runtime::agent::AgentRuntime;
 use crate::runtime::ids::RunId;
 use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::permission::PermissionMode;
@@ -157,7 +157,7 @@ mod tests {
     use super::*;
     use crate::plugin::tool_trait::ToolError as LegacyToolError;
     use crate::runtime::tools::permission::{
-        PermissionDecision, PermissionReason, default_permission_ask,
+        default_permission_ask, PermissionDecision, PermissionReason,
     };
     use std::sync::Arc;
 
