@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 
@@ -844,7 +844,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "WriteMemory",
-            "保存一条项目记忆到本地记忆库。记忆按 workspace 分桶存储，跨对话持久化。\n\n类型说明：\n- user_preference：用户偏好\n- project_constraint：项目约束\n- reference_info：外部系统指针\n- feedback：AI 行为纠正或确认",
+            "保存一条会跨对话复用的本地记忆。记忆按 workspace 分桶存储，跨对话持久化。\n\n何时必须考虑调用：用户明确说“记住/以后都/我喜欢/我不喜欢/不要再/下次按这个来”，或用户纠正了你的行为、给出稳定项目约束、长期偏好、环境事实、工具坑、工作流经验。此时这是一个需要执行的保存动作，不能只回复“我记住了”。保存成功后再确认；保存失败时如实说明未持久化。\n\n不要保存：临时任务进度、本轮完成结果、completed-work log、临时 TODO、大段原始数据、很容易重新发现的普通事实。\n\n类型说明：\n- user_preference：用户长期偏好、沟通风格、输出格式偏好\n- project_constraint：项目约束、仓库约定、验证口径\n- reference_info：外部系统指针、稳定路径、账号/系统名等非密钥索引\n- feedback：用户对 AI 行为的纠正、确认或禁止事项",
         )
         .with_kind(ToolKind::Support),
         json!({
@@ -853,20 +853,20 @@ fn build_default_catalog() -> ToolCatalog {
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "记忆条目名称，简短唯一，用于索引"
+                    "description": "记忆条目名称，简短唯一，用于索引；优先包含主题和适用范围，不要写成“用户说了什么”"
                 },
                 "memory_type": {
                     "type": "string",
                     "enum": ["user_preference", "project_constraint", "reference_info", "feedback"],
-                    "description": "记忆类型"
+                    "description": "记忆类型；用户输出偏好用 user_preference，仓库/评测/工具约束用 project_constraint，行为纠正用 feedback"
                 },
                 "description": {
                     "type": "string",
-                    "description": "一句话描述，用于未来相关性判断"
+                    "description": "一句话描述，用于未来相关性判断；写清触发场景"
                 },
                 "content": {
                     "type": "string",
-                    "description": "记忆正文；feedback 类型建议包含规则本体、Why、How to apply"
+                    "description": "记忆正文；包含规则本体、适用范围、如何应用。不得包含明文密码、令牌、cookie、私钥或大段原始数据"
                 }
             }
         }),
@@ -875,7 +875,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "SearchMemory",
-            "在本地记忆库中按关键词搜索相关记忆条目，返回最多 5 条最相关结果。",
+            "在本地记忆库中按关键词搜索相关记忆条目，返回最多 5 条最相关结果。用于回答历史偏好、既有项目约束、过去确认过的做法、长期待办、用户要求“按以前的规则来”或需要核对记忆是否已存在的场景。搜索结果是线索，不是当前事实证明；涉及文件、代码、路径、权限或外部状态时，仍要回到当前文件或工具结果核实。没有命中时不要编造记忆。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true),
@@ -885,7 +885,7 @@ fn build_default_catalog() -> ToolCatalog {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "搜索关键词或问题描述"
+                    "description": "搜索关键词或问题描述；包含用户偏好/项目名/工具名/约束关键词，避免只写“记忆”这类泛词"
                 }
             }
         }),
@@ -897,7 +897,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "create_agenda_item",
-            "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。",
+            "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。\n\n使用场景：用户要求提醒、定时、每天/每周/每月执行、cron 式后台跟进、到点发送/检查/总结。start_at 必须是绝对 RFC3339/ISO date-time，例如 2026-05-07T01:00:00Z 或 2026-05-07T09:00:00+08:00；不要把“明早”“三小时后”“每天 9 点”或空字符串直接传给 start_at。遇到相对时间或周期时间时，先结合当前日期和 timezone 换算为下一次未来触发时间，再调用工具。循环任务使用 rule 表达频率，不要为同一循环拆成大量一次性日程。\n\n本工具 schema 没有 channel、target_user、target_session 等字段；如果用户要求这些目标，把它们明确写进 title 或 prompt。创建后如任务要求可验证结果，应调用 list_agenda_items 确认日程已存在、标题/prompt/start_at/rule 正确。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false),
@@ -905,12 +905,13 @@ fn build_default_catalog() -> ToolCatalog {
             "type": "object",
             "required": ["title", "prompt", "start_at"],
             "properties": {
-                "title": { "type": "string" },
-                "prompt": { "type": "string", "description": "到点要执行的内容" },
-                "start_at": { "type": "string", "format": "date-time" },
-                "timezone": { "type": "string", "default": "Asia/Shanghai" },
+                "title": { "type": "string", "description": "日程标题；可包含用户指定的 channel/target/session 等目标信息" },
+                "prompt": { "type": "string", "description": "到点要执行的内容；写清触发时要做什么、目标对象、输出或通知方式，不要只写短占位词" },
+                "start_at": { "type": "string", "format": "date-time", "description": "绝对 RFC3339/ISO 时间，例如 2026-05-07T01:00:00Z 或 2026-05-07T09:00:00+08:00；必须是未来触发点" },
+                "timezone": { "type": "string", "default": "Asia/Shanghai", "description": "用于解释用户自然语言时间和展示的 IANA 时区，默认 Asia/Shanghai" },
                 "rule": {
                     "type": "object",
+                    "description": "循环规则；只有用户要求每天/每周/每月/每年等重复触发时填写。一次性提醒不要填 rule",
                     "required": ["freq", "interval", "endCondition"],
                     "properties": {
                         "freq": { "type": "string", "enum": ["daily", "weekly", "monthly", "yearly"] },
@@ -1036,7 +1037,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "SkillMarketSearch",
-            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。",
+            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。\n\n搜索无候选、候选置信度低、技能已关闭或市场请求失败，不代表用户任务结束。记录技能发现结果后，继续完成其它可执行交付物；只有用户必须在多个候选中选择、或缺少安装授权/关键目标时才澄清。若恰好一个候选与任务高度匹配，先安装再 RefreshSkills，并按新技能继续执行。不要用本工具替代本地 SKILL.md 发现；本地技能用文件搜索和 Read。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)
@@ -1071,7 +1072,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "SkillMarketInstall",
-            "安装 SkillMarketSearch 返回的市场技能。调用前必须确认 packageId 与 pluginId 来自搜索候选；如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。",
+            "安装 SkillMarketSearch 返回的市场技能。调用前必须确认 packageId 与 pluginId 来自本轮搜索候选；如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。安装成功后调用 RefreshSkills；如果任务需要立即使用该技能，随后调用 Skill(skill_id=已安装 pluginId) 读取技能说明再执行。安装失败、alreadyInstalled 或 disabled 不是最终交付，继续处理用户任务中其它可执行部分，并把技能状态写入最终结果或阻塞说明。",
         )
         .with_kind(ToolKind::Support)
         .with_destructive(true)

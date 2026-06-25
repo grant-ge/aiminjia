@@ -29,7 +29,7 @@ impl RuntimeTool for CreateAgendaItemRuntimeTool {
     ) -> ToolDefinition {
         ToolDefinition::new(
             "create_agenda_item",
-            "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。",
+            "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。\n\n使用场景：用户要求提醒、定时、每天/每周/每月执行、cron 式后台跟进、到点发送/检查/总结。start_at 必须是绝对 RFC3339/ISO date-time，例如 2026-05-07T01:00:00Z 或 2026-05-07T09:00:00+08:00；不要把“明早”“三小时后”“每天 9 点”或空字符串直接传给 start_at。遇到相对时间或周期时间时，先结合当前日期和 timezone 换算为下一次未来触发时间，再调用工具。循环任务使用 rule 表达频率，不要为同一循环拆成大量一次性日程。\n\n本工具 schema 没有 channel、target_user、target_session 等字段；如果用户要求这些目标，把它们明确写进 title 或 prompt。创建后如任务要求可验证结果，应调用 list_agenda_items 确认日程已存在、标题/prompt/start_at/rule 正确。",
         )
     }
 

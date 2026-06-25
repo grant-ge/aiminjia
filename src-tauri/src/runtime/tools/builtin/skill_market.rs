@@ -141,7 +141,7 @@ impl RuntimeTool for SkillMarketSearchRuntimeTool {
     ) -> ToolDefinition {
         ToolDefinition::new(
             SEARCH_TOOL,
-            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。",
+            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。\n\n搜索无候选、候选置信度低、技能已关闭或市场请求失败，不代表用户任务结束。记录技能发现结果后，继续完成其它可执行交付物；只有用户必须在多个候选中选择、或缺少安装授权/关键目标时才澄清。若恰好一个候选与任务高度匹配，先安装再 RefreshSkills，并按新技能继续执行。不要用本工具替代本地 SKILL.md 发现；本地技能用文件搜索和 Read。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)
@@ -292,7 +292,7 @@ impl RuntimeTool for SkillMarketInstallRuntimeTool {
     ) -> ToolDefinition {
         ToolDefinition::new(
             INSTALL_TOOL,
-            "安装 SkillMarketSearch 返回的受信任市场技能。调用前必须确认 packageId 与 pluginId 来自本轮搜索候选；本工具不是 GitHub/URL/本地目录安装器，不能用来把未经审查的外部仓库、压缩包或用户代码装入 `~/skills`、`.agents/skills`、工作区 `skills/` 等自动加载目录。如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。",
+            "安装 SkillMarketSearch 返回的受信任市场技能。调用前必须确认 packageId 与 pluginId 来自本轮搜索候选；本工具不是 GitHub/URL/本地目录安装器，不能用来把未经审查的外部仓库、压缩包或用户代码装入 `~/skills`、`.agents/skills`、工作区 `skills/` 等自动加载目录。如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。安装成功后调用 RefreshSkills；如果任务需要立即使用该技能，随后调用 Skill(skill_id=已安装 pluginId) 读取技能说明再执行。安装失败、alreadyInstalled 或 disabled 不是最终交付，继续处理用户任务中其它可执行部分，并把技能状态写入最终结果或阻塞说明。",
         )
         .with_kind(ToolKind::Support)
         .with_destructive(true)

@@ -144,7 +144,7 @@ fn runtime_tool_default_predicates_follow_definition_flags() {
     use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, ToolResult};
     use async_trait::async_trait;
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     struct PredicateTool(ToolDefinition);
 
@@ -370,6 +370,109 @@ fn task_tools_respect_strict_output_and_semantic_completion() {
             && status.contains("字段级断言")
             && status.contains("schema"),
         "TaskUpdate description must not allow shallow verification to mark hard-constraint tasks completed: def={definition}; status={status}",
+    );
+}
+
+#[test]
+fn memory_tool_description_requires_persisting_explicit_preferences() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    let write = TOOL_CATALOG.get("WriteMemory").unwrap();
+    assert!(
+        write.description.contains("不能只回复")
+            && write.description.contains("保存成功后再确认")
+            && write.description.contains("不要保存")
+            && write.description.contains("临时任务进度"),
+        "WriteMemory description must steer explicit preferences into durable memory: {}",
+        write.description
+    );
+    let write_entry = TOOL_CATALOG.get_entry("WriteMemory").unwrap();
+    let content_description = write_entry.json_schema["properties"]["content"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(
+        content_description.contains("明文密码")
+            && content_description.contains("令牌")
+            && content_description.contains("大段原始数据"),
+        "WriteMemory content schema must forbid sensitive or raw bulk memory: {content_description}"
+    );
+
+    let search = TOOL_CATALOG.get("SearchMemory").unwrap();
+    assert!(
+        search.description.contains("历史偏好")
+            && search.description.contains("当前事实证明")
+            && search.description.contains("没有命中时不要编造记忆"),
+        "SearchMemory description must distinguish recall from current evidence: {}",
+        search.description
+    );
+}
+
+#[test]
+fn agenda_tool_description_requires_absolute_time_and_verification() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    let entry = TOOL_CATALOG.get_entry("create_agenda_item").unwrap();
+    let description = &entry.definition.description;
+    assert!(
+        description.contains("RFC3339")
+            && description.contains("不要把“明早”")
+            && description.contains("下一次未来触发时间")
+            && description.contains("schema 没有 channel")
+            && description.contains("list_agenda_items"),
+        "create_agenda_item description must guide date parsing and verification: {description}"
+    );
+
+    let start_at = entry.json_schema["properties"]["start_at"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(
+        start_at.contains("RFC3339") && start_at.contains("必须是未来触发点"),
+        "start_at schema must require an absolute future timestamp: {start_at}"
+    );
+}
+
+#[tokio::test]
+async fn agenda_runtime_definition_matches_absolute_time_guidance() {
+    use app_lib::runtime::tools::builtin::agenda::{AgendaToolDeps, CreateAgendaItemRuntimeTool};
+    use app_lib::runtime::tools::{RuntimeTool, ToolDescriptionContext};
+    use std::sync::Arc;
+
+    let dir = tempfile::tempdir().unwrap();
+    let tool = CreateAgendaItemRuntimeTool {
+        deps: Arc::new(AgendaToolDeps::new(
+            dir.path().to_path_buf(),
+            "alice".to_string(),
+        )),
+    };
+    let definition = tool.definition(&ToolDescriptionContext::empty()).await;
+    assert!(definition.description.contains("RFC3339"));
+    assert!(definition.description.contains("下一次未来触发时间"));
+    assert!(definition.description.contains("schema 没有 channel"));
+    assert!(definition.description.contains("list_agenda_items"));
+}
+
+#[test]
+fn skill_market_tools_do_not_turn_no_match_into_task_completion() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    let search = TOOL_CATALOG.get("SkillMarketSearch").unwrap();
+    assert!(
+        search.description.contains("不代表用户任务结束")
+            && search.description.contains("继续完成其它可执行交付物")
+            && search
+                .description
+                .contains("不要用本工具替代本地 SKILL.md 发现"),
+        "SkillMarketSearch description must keep no-match from stalling the task: {}",
+        search.description
+    );
+
+    let install = TOOL_CATALOG.get("SkillMarketInstall").unwrap();
+    assert!(
+        install.description.contains("安装成功后调用 RefreshSkills")
+            && install.description.contains("随后调用 Skill")
+            && install.description.contains("不是最终交付"),
+        "SkillMarketInstall description must describe post-install execution and failure recovery: {}",
+        install.description
     );
 }
 
