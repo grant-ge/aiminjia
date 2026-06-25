@@ -870,6 +870,7 @@ export function buildTurnsFromMessages(
         normalizeGeneratedFile(file, m.conversationId),
       );
       if (m.content.text) {
+        const turn = current;
         const parts = parseArtifactParts(m.content.text);
         let textPartIndex = 0;
         parts.forEach((part, partIndex) => {
@@ -886,14 +887,14 @@ export function buildTurnsFromMessages(
                   ? m
                   : { ...m, content: { ...m.content, text: displayText } },
             };
-            current.aiSegments.push(segment);
-            current.blocks.push({
+            turn.aiSegments.push(segment);
+            turn.blocks.push({
               kind: "assistantText",
               id: segmentId,
               segment,
             });
             if (!hasToolCalls && !m.error && !isInternalEventFollowup) {
-              current.completedFinalAnswer = segment;
+              turn.completedFinalAnswer = segment;
             }
             return;
           }
@@ -921,8 +922,8 @@ export function buildTurnsFromMessages(
                   },
                   m.conversationId,
                 );
-          current.generatedFiles.push(file);
-          current.blocks.push({ kind: "generatedFile", id: file.id, file });
+          turn.generatedFiles.push(file);
+          turn.blocks.push({ kind: "generatedFile", id: file.id, file });
         });
       }
       if (m.toolCalls?.length) {
