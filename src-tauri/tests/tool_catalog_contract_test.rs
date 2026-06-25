@@ -287,7 +287,8 @@ fn shell_tool_descriptions_redact_untrusted_decoded_payloads() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
     for id in ["Bash", "PowerShell"] {
-        let def = TOOL_CATALOG.get(id).unwrap();
+        let entry = TOOL_CATALOG.get_entry(id).unwrap();
+        let def = &entry.definition;
         assert!(
             def.description.contains("解码/反混淆规则")
                 && def.description.contains("base64")
@@ -301,6 +302,16 @@ fn shell_tool_descriptions_redact_untrusted_decoded_payloads() {
                 && def.description.contains("脱敏片段"),
             "{id} description must keep decoded command-like payloads classified and redacted: {}",
             def.description
+        );
+
+        let command_description = entry.json_schema["properties"]["command"]["description"]
+            .as_str()
+            .expect("shell command schema should describe decode redaction");
+        assert!(
+            command_description.contains("不得直接把完整明文打印到 stdout/stderr")
+                && command_description.contains("脚本变量中分类")
+                && command_description.contains("hash/指纹"),
+            "{id} command schema must keep unsafe decoded payloads out of tool stdout: {command_description}"
         );
     }
 }
