@@ -453,6 +453,12 @@ Auth smoke:
 - Result: `valid_runs=0/1`, `api_invalid=1`, anomaly ids include `AUTH_SESSION_INVALID`.
 - Interpretation: AIjia's current session key is still invalid, so full or 20-task regrade would not produce usable model scores yet.
 
+Auth source-state check:
+
+- Full-state WSL CLI check with `HOME=/mnt/c/Users/Administrator` returned `not logged in: run the desktop app login first so ~/.renlijia contains a valid JWT`.
+- Current worktree dev startup at `http://localhost:5173/` loaded the app but logged `no active user scope` and `未登录，无法读写技能配置`.
+- This rules out PawBench concurrency and Docker seed copying as the primary blocker for the current run. The source `~/.renlijia` login state itself is not usable by the runtime.
+
 Corrected full-run comparison:
 
 - Previous full run: `c294a3e9_full_150_c16_j4_20260625_025244\20260625_025249\pawbench\deepseek-v4-flash\aijia\20260625_025250.json`
