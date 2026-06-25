@@ -438,3 +438,60 @@ Next valid evaluation step:
 - Refresh AIjia login/session state first.
 - Re-run the affected task set with log redirection, lower judge concurrency, and anomaly reporting enabled.
 - Only compare `valid_avg` or manually recomputed valid scores; do not compare the invalid auth rerun's raw average to real model runs.
+
+## 2026-06-25 corrected full-run comparison and auth resmoke
+
+Current code checkpoints:
+
+- lotus commit: `4ccb4cef` (`fix(runtime): recover failed deliverable writes`)
+- PawBench commits: `875c672` (`fix(eval): classify invalid aijia sessions`) and `3c16fd1` (`fix(eval): mark scorer infra failures invalid`)
+
+Auth smoke:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\4ccb4cef_auth_resmoke_c1_j1_20260625_2\20260625_132446\pawbench\deepseek-v4-flash\aijia\20260625_132447.json`
+- Log path: `C:\Users\Administrator\Desktop\github\PawBench\run_logs\4ccb4cef_auth_resmoke_c1_j1_20260625_2.log`
+- Result: `valid_runs=0/1`, `api_invalid=1`, anomaly ids include `AUTH_SESSION_INVALID`.
+- Interpretation: AIjia's current session key is still invalid, so full or 20-task regrade would not produce usable model scores yet.
+
+Corrected full-run comparison:
+
+- Previous full run: `c294a3e9_full_150_c16_j4_20260625_025244\20260625_025249\pawbench\deepseek-v4-flash\aijia\20260625_025250.json`
+- Previous full score: raw average `0.6871211523136687`, corrected valid average `0.6892685424028495`, `148` valid runs, `2` API-invalid runs.
+- Latest full run: `0866a8a8_full_150_c16_j4_20260625\20260625_043004\pawbench\deepseek-v4-flash\aijia\20260625_043005.json`
+- Latest raw score: `0.5846403399116986`.
+- Latest corrected score using the new anomaly policy: `130` valid runs, `20` invalid runs, corrected valid average `0.6745850075904215`.
+- Invalid latest-run causes: `16` `JUDGE_INFRA_FAILURE` rows from `codex judge failed after 100 attempts`, plus `4` `RUNNER_BROKEN_PIPE` rows.
+
+Score interpretation:
+
+- The apparent drop from `0.6871` to `0.5846` is mostly a scoring-infrastructure artifact.
+- The corrected drop is smaller: `0.6893` -> `0.6746`.
+- On the `128` tasks that are valid in both runs, the average changed from `0.7137` to `0.6782`, a delta of about `-0.0355`.
+
+Largest valid-task drops:
+
+- `task_openclaw_comprehension`: `1.000` -> `0.000`
+- `task_csv_temp_decades`: `0.968` -> `0.000`; notes indicate command failure and no produced output.
+- `task_contract_analysis`: `0.940` -> `0.000`; notes indicate only a placeholder `contract_analysis.md`.
+- `M086_doc_figure_reproduction_line`: `0.892` -> `0.071`; required image not produced.
+- `M005_score_canon`: `0.769` -> `0.033`; required `output/output.html` not generated.
+- `M019_doc_extraction_radar_chart`: `0.982` -> `0.265`; CSV data was correct, chart generation failed.
+
+Largest valid-task gains:
+
+- `task_00096_create_protected_secrets_directory_with_access_rules`: `0.000` -> `0.976`
+- `task_video_transcript_extraction`: `0.050` -> `0.660`
+- `230-study-buddy-skill-cron-agent`: `0.250` -> `0.825`
+- `227-weekly-report-skill-cron-agent`: `0.487` -> `0.965`
+- `task_meeting_tech_decisions`: `0.400` -> `0.785`
+
+Remaining low valid tasks in latest run:
+
+- `23` valid tasks scored below `0.3`; `5` of those were exact zero.
+- Rough buckets from grader notes: `7` missing/no final deliverable, `6` tool/runtime/command failures, `6` incomplete content, `1` wrong-answer quality, and `3` sparse/empty-note cases.
+
+Next judgment:
+
+- Do not treat the latest full run as a true regression to `58`.
+- The next evaluable step is still to refresh AIjia auth, then rerun the 20 invalid latest-run tasks using `-LogFile` and low judge concurrency.
+- If the 20 invalid tasks average near the corrected valid average, the real full-run score is likely around the high-60s; if they recover to the previous c294 distribution, crossing `0.70` is plausible without another broad prompt rewrite.
