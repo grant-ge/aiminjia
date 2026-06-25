@@ -116,6 +116,7 @@ fn round_has_successful_teammate_spawn(round_results: &[ToolRoundResult]) -> boo
     })
 }
 
+#[cfg(test)]
 fn tool_calls_write_missing_target(
     tool_calls: &[RuntimeToolCallRequest],
     missing_targets: &[String],
@@ -3756,29 +3757,6 @@ impl RuntimeChatTurnDriver {
                         &tool_calls,
                         &unready_targets_before_tool_round,
                     );
-                    let missing_targets = if delivery_guard_count > 0 {
-                        unready_targets_before_tool_round.clone()
-                    } else {
-                        Vec::new()
-                    };
-                    if !missing_targets.is_empty()
-                        && !tool_calls_write_missing_target(&tool_calls, &missing_targets)
-                    {
-                        delivery_guard_count += 1;
-                        if !assistant_content.trim().is_empty() {
-                            state.messages.push(serde_json::json!({
-                                "role": "assistant",
-                                "content": assistant_content,
-                            }));
-                        }
-                        state.messages.push(serde_json::json!({
-                            "role": "user",
-                            "isMeta": true,
-                            "content": safeguard::delivery_guard_blocking_prompt(&missing_targets),
-                        }));
-                        pending_task_notifications.clear();
-                        continue 'turn;
-                    }
 
                     // Stage: Tools — emit the planned batch so the UI immediately
                     // shows "正在执行 X / 正在并行运行 N 个工具".  Per-tool

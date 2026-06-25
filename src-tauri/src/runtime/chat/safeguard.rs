@@ -358,17 +358,6 @@ pub fn delivery_guard_prompt(missing_targets: &[String]) -> String {
     )
 }
 
-pub fn delivery_guard_blocking_prompt(missing_targets: &[String]) -> String {
-    let list = missing_targets
-        .iter()
-        .map(|target| format!("- `{target}`"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!(
-        "<system-reminder>\n上一轮已经要求先交付命名文件，但你本轮仍准备调用不会直接生成目标文件的探索工具。系统已跳过这批工具调用，因为以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮只调用 Write、Edit，或调用 Bash/PowerShell/ShellTask 运行会直接写入上述目标路径的生成命令；PNG/PDF/XLSX 等二进制产物必须用真实生成命令落地，不能只写脚本不运行。不要调用 Read、Glob、Skill、TaskCreate 或其它探索工具。可以写入部分诊断、已知事实、阻塞原因和手动动作，但不能只写“待补充/继续分析”。\n</system-reminder>"
-    )
-}
-
 pub fn delivery_guard_failed_tool_prompt(missing_targets: &[String]) -> String {
     let list = missing_targets
         .iter()
