@@ -1002,9 +1002,9 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "RefreshSkills",
-            "通知 AIjia 重新扫描用户技能目录，让新装的技能立刻在对话和技能中心可见。\
-             用法：刚通过 lotus_skill.py install 或别的方式装完技能后调用一次。\
-             无参数。返回成功后下一 turn 的 catalog 含新技能。",
+            "通知 AIjia 重新扫描用户技能目录，让新增、覆盖或修改后的技能立刻在对话和技能中心可见。\
+             用法：刚通过 lotus_skill.py install、覆盖技能目录、编辑 SKILL.md 或别的方式更改技能文件后调用一次。\
+             无参数。返回成功后下一 turn 的 catalog 和 Skill 加载内容会使用最新磁盘版本。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(false),

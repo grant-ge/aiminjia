@@ -341,7 +341,12 @@ fn prompt_states_internal_capabilities_as_user_facing_principle() {
         "system prompt should keep internal capability names behind user-facing wording"
     );
 
-    for marker in ["用户问你是谁", "你的角色定义", "用户询问模式", "不使用需要用户手动切换"] {
+    for marker in [
+        "用户问你是谁",
+        "你的角色定义",
+        "用户询问模式",
+        "不使用需要用户手动切换",
+    ] {
         assert!(
             !prompt.contains(marker),
             "system prompt should not hard-code scripted self-description answers: {marker}"
@@ -363,4 +368,27 @@ fn skill_tool_description_keeps_skill_selection_internal() {
             "Skill description should not invite user-visible routing wording: {marker}"
         );
     }
+}
+
+#[test]
+fn refresh_skills_guidance_covers_existing_skill_changes() {
+    let parts = prompts::build_system_prompt_parts(None, None);
+    let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
+
+    assert!(
+        prompt.contains("修改技能") && prompt.contains("RefreshSkills"),
+        "base prompt should require RefreshSkills after modifying existing skills"
+    );
+
+    let catalog = ToolCatalog::default_catalog();
+    let refresh = catalog
+        .get("RefreshSkills")
+        .expect("RefreshSkills must exist in catalog");
+
+    assert!(
+        refresh.description.contains("修改")
+            && refresh.description.contains("覆盖")
+            && refresh.description.contains("新增"),
+        "RefreshSkills description should cover new, overwritten, and modified skills"
+    );
 }
