@@ -1,4 +1,4 @@
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -67,10 +67,10 @@ export function NetworkStatusIndicator() {
         type="button"
         size="sm"
         danger
+        loading={retrying}
         disabled={retrying}
         onClick={handleRetry}
       >
-        {retrying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
         {t('network.retryNow')}
       </Button>
     </div>

@@ -139,15 +139,14 @@ export function UserMessageBubble({
             link
             onClick={handleCopy}
             className="gap-1 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            icon={copied === 'ok'
+              ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              : <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+            }
             aria-label={t('userMessage.copy', '复制用户消息')}
             title={t('userMessage.copy', '复制用户消息')}
             data-testid="user-message-copy-button"
           >
-            {copied === 'ok' ? (
-              <Check className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
             <span>
               {copied === 'ok'
                 ? t('common.copied')

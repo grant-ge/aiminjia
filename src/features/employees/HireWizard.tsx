@@ -263,11 +263,11 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                 <Button
                   size="sm"
                   variant="outline"
+                  icon={<RefreshCw className={syncingTemplates ? 'animate-spin' : undefined} />}
                   onClick={handleSyncTemplates}
                   disabled={syncingTemplates}
                   data-aijia-hire-action="catalog-retry"
                 >
-                  <RefreshCw className={syncingTemplates ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
                   {syncingTemplates ? t('employee.config.wizard.syncing', '更新中…') : t('employee.config.wizard.syncRetry', '重新加载')}
                 </Button>
               </div>
@@ -378,7 +378,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                   <Button unstyled
                     type="button"
                     onClick={() => setEnableCron((v) => !v)}
-                    className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    className={`rounded px-2.5 py-0.5 text-xs font-medium transition-colors ${
                       enableCron
                         ? 'bg-green-100 text-green-700'
                         : 'bg-muted text-muted-foreground'

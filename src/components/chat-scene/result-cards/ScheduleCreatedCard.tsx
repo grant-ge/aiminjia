@@ -70,7 +70,7 @@ export function ScheduleCreatedCard({ payload }: ScheduleCreatedCardProps) {
           aria-label={t('resultCards.schedule.edit')}
           onClick={() => setEditorOpen(true)}
           disabled={!item}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 disabled:pointer-events-none disabled:opacity-45 group-hover:opacity-100"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 disabled:pointer-events-none disabled:opacity-45 group-hover:opacity-100"
           data-testid="schedule-created-card-edit"
         >
           <Pencil className="h-3.5 w-3.5" aria-hidden />

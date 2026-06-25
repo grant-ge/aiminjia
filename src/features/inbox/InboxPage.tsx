@@ -143,11 +143,10 @@ export function InboxPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-1.5"
+                icon={<CheckCheck className="h-3.5 w-3.5" />}
                 disabled={markingAll || unread === 0}
                 onClick={handleMarkAll}
               >
-                <CheckCheck className="h-3.5 w-3.5" />
                 {t('inbox.markAllRead')}
               </Button>
             </div>

@@ -20,7 +20,7 @@ export function UpdateAvailableLink() {
       onClick={openPanel}
       onMouseDown={(e) => e.stopPropagation()}
       title={t('updater.linkReadyTooltip')}
-      className="mr-2 flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+      className="mr-2 flex h-6 shrink-0 items-center gap-1.5 rounded px-2 text-xs font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
     >
       <span
         className="inline-block h-1.5 w-1.5 rounded-md ring-1 ring-white/75"

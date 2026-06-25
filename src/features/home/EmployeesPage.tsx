@@ -445,11 +445,10 @@ export function EmployeesPage() {
               type="button"
               variant="outline"
               size="md"
-              className="gap-1.5"
+              icon={<RefreshCw className={`h-3 w-3 ${syncingCatalog || catalogLoading ? 'animate-spin' : ''}`} />}
               disabled={syncingCatalog || catalogLoading}
               onClick={() => void handleSyncCatalog()}
             >
-              <RefreshCw className={`h-3 w-3 ${syncingCatalog || catalogLoading ? 'animate-spin' : ''}`} />
               {syncingCatalog || catalogLoading ? t('employeesPage.syncing') : t('employeesPage.syncServer')}
             </Button>
           )}
@@ -493,11 +492,10 @@ export function EmployeesPage() {
               type="button"
               variant="outline"
               size="sm"
-              className="gap-1.5"
+              icon={<RefreshCw className={`h-3.5 w-3.5 ${syncingCatalog ? 'animate-spin' : ''}`} />}
               disabled={syncingCatalog}
               onClick={() => void handleSyncCatalog()}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncingCatalog ? 'animate-spin' : ''}`} />
               {syncingCatalog ? t('employeesPage.syncing') : t('employeesPage.syncServer')}
             </Button>
           </div>
@@ -557,7 +555,7 @@ export function EmployeesPage() {
           {entries.length > todayEntries.length && (
             <Button unstyled
               type="button"
-              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setRoute({ kind: 'inbox' })}
             >
               {t('employeesPage.viewAll')}

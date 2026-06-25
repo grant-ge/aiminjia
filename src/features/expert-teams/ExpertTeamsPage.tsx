@@ -209,11 +209,10 @@ export function ExpertTeamsPage() {
               type="button"
               variant="outline"
               size="md"
-              className="gap-1.5"
+              icon={<RefreshCw className={`h-3 w-3 ${syncing || catalogLoading ? 'animate-spin' : ''}`} />}
               disabled={syncing || catalogLoading}
               onClick={() => void handleSync()}
             >
-              <RefreshCw className={`h-3 w-3 ${syncing || catalogLoading ? 'animate-spin' : ''}`} />
               {syncing || catalogLoading ? t('ExpertTeams.syncing') : t('ExpertTeams.syncServer')}
             </Button>
           )}
@@ -240,11 +239,10 @@ export function ExpertTeamsPage() {
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1.5"
+            icon={<RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />}
             disabled={syncing}
             onClick={() => void handleSync()}
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? t('ExpertTeams.syncing') : t('ExpertTeams.syncServer')}
           </Button>
         </div>

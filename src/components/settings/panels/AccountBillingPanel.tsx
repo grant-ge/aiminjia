@@ -122,9 +122,8 @@ export function AccountBillingPanel() {
           onClick={handleRefresh}
           disabled={loadingSummary || loadingRecords}
           aria-label="refresh"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+          icon={<RefreshCw className="h-4 w-4" />}
+        />
       </div>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-4">

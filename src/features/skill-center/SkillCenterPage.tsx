@@ -523,9 +523,12 @@ export function SkillCenterPage() {
               <AppDropdown
                 ariaLabel={t('skillCenter.importSkill')}
                 trigger={
-                  <Button size="md" data-aijia-skill-import-trigger>
+                  <Button
+                    size="md"
+                    suffixIcon={<ChevronDown className="h-3.5 w-3.5" />}
+                    data-aijia-skill-import-trigger
+                  >
                     {t('skillCenter.importSkill')}
-                    <ChevronDown className="h-3.5 w-3.5" />
                   </Button>
                 }
                 items={[
@@ -616,26 +619,25 @@ export function SkillCenterPage() {
                       variant="ghost"
                       data-aijia-skill-market-action="added"
                       aria-label={`使用 ${installedSkill ? localizeSkill(installedSkill, i18n.language).name : item.name || item.pluginId}`}
+                      icon={<Check className="h-3.5 w-3.5 group-hover:hidden" aria-hidden />}
+                      suffixIcon={<MessageSquare className="hidden h-3.5 w-3.5 group-hover:block" aria-hidden />}
                       onClick={() => {
                         if (installedSkill) handleUseSkill(installedSkill)
                       }}
                     >
-                      <Check className="h-3.5 w-3.5 group-hover:hidden" aria-hidden />
-                      <MessageSquare className="hidden h-3.5 w-3.5 group-hover:block" aria-hidden />
                       <span className="sr-only">已添加</span>
                     </Button>
                   ) : (
                     <Button
                       size="sm"
                       variant="ghost"
+                      icon={<Plus className="h-4 w-4" />}
                       loading={installingMarketId === item.pluginId}
                       disabled={installingMarketId === item.pluginId}
                       data-aijia-skill-market-action="add"
                       aria-label={`添加 ${item.name || item.pluginId}`}
                       onClick={() => void handleInstallMarketplace(item)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
+                    />
                   )
                 }
               />

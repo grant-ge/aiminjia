@@ -827,7 +827,7 @@ function UserQuestionPanel({
               <Button unstyled
                 type="button"
                 aria-label={t("pendingAction.interaction.previous")}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent disabled:opacity-35"
+                className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent disabled:opacity-35"
                 disabled={activeIndex === 0}
                 onClick={() => move(-1)}
               >
@@ -842,7 +842,7 @@ function UserQuestionPanel({
               <Button unstyled
                 type="button"
                 aria-label={t("pendingAction.interaction.next")}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent disabled:opacity-35"
+                className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent disabled:opacity-35"
                 disabled={activeIndex >= questions.length - 1}
                 onClick={() => move(1)}
               >
@@ -1201,7 +1201,7 @@ export function PendingActionSurface(props: Props) {
               role="tab"
               aria-selected={selected}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs transition-colors",
+                "rounded px-2.5 py-1 text-xs transition-colors",
                 selected
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

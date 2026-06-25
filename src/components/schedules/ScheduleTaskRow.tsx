@@ -27,7 +27,7 @@ const STATUS_BADGE: Record<AgendaItem['status'], string> = {
 }
 
 const ACTION_BUTTON_CLASS =
-  'h-7 w-7 rounded-md border border-transparent text-muted-foreground transition-[border-color,background-color,color] hover:border-foreground/15 hover:bg-foreground hover:text-background'
+  'h-7 w-7 rounded border border-transparent text-muted-foreground transition-[border-color,background-color,color] hover:border-foreground/15 hover:bg-foreground hover:text-background'
 
 export function ScheduleTaskRow({
   item,
@@ -119,20 +119,18 @@ export function ScheduleTaskRow({
               className={ACTION_BUTTON_CLASS}
               title={t('schedules.row.actions.restore')}
               aria-label={t('schedules.row.actions.restoreAria', { title: item.title })}
+              icon={<RotateCcw className="h-4 w-4" />}
               onClick={() => onRestore(item.id)}
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
+            />
             <Button
               variant="ghost"
               size="icon"
               className={ACTION_BUTTON_CLASS}
               title={t('schedules.row.actions.purge')}
               aria-label={t('schedules.row.actions.purgeAria', { title: item.title })}
+              icon={<Trash2 className="h-4 w-4" />}
               onClick={() => onPurge(item.id)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            />
           </>
         ) : (
           <>
@@ -143,10 +141,9 @@ export function ScheduleTaskRow({
                 className={ACTION_BUTTON_CLASS}
                 title={t('schedules.row.actions.runNow')}
                 aria-label={t('schedules.row.actions.runNowAria', { title: item.title })}
+                icon={<Play className="h-4 w-4" />}
                 onClick={() => onRunNow(item.id)}
-              >
-                <Play className="h-4 w-4" />
-              </Button>
+              />
             )}
             <Button
               variant="ghost"
@@ -154,30 +151,27 @@ export function ScheduleTaskRow({
               className={ACTION_BUTTON_CLASS}
               title={toggleLabel}
               aria-label={t(toggleAriaKey, { title: item.title })}
+              icon={isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
               onClick={() => onToggleStatus(item)}
-            >
-              {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-            </Button>
+            />
             <Button
               variant="ghost"
               size="icon"
               className={ACTION_BUTTON_CLASS}
               title={t('schedules.row.actions.edit')}
               aria-label={t('schedules.row.actions.editAria', { title: item.title })}
+              icon={<Pencil className="h-4 w-4" />}
               onClick={() => onEdit(item)}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
+            />
             <Button
               variant="ghost"
               size="icon"
               className={ACTION_BUTTON_CLASS}
               title={t('schedules.row.actions.cancel')}
               aria-label={t('schedules.row.actions.cancelAria', { title: item.title })}
+              icon={<X className="h-4 w-4" />}
               onClick={() => onCancel(item.id)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            />
           </>
         )}
       </div>

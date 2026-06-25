@@ -127,7 +127,7 @@ export function ChatTopBar({
             data-testid="chat-topbar-employee"
             onClick={employee.onClick}
             disabled={!employee.onClick}
-            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
+            className="flex min-w-0 items-center gap-2 rounded px-1.5 py-1 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
           >
             <ChatAvatar
               name={employee.name}

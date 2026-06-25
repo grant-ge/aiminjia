@@ -174,7 +174,7 @@ function FileLinkChip({
       // `px-1.5` 稍宽)让 icon 与文字之间不挤;尺寸略大于输入框 chip 是
       // 故意的——气泡 text-sm 比 composer text-sm 视觉密度更松,小一点的
       // chip 在这里反而显薄。
-      className="mx-0.5 inline-flex items-center gap-1 rounded-md bg-foreground/10 px-2 py-1 align-middle text-xs leading-none text-foreground transition-opacity hover:opacity-80"
+      className="mx-0.5 inline-flex items-center gap-1 rounded bg-foreground/10 px-2 py-1 align-middle text-xs leading-none text-foreground transition-opacity hover:opacity-80"
       title={text}
     >
       <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />

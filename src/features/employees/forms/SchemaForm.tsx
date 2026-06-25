@@ -469,7 +469,7 @@ function ArrayWidget({ prop, value, onChange, placeholder }: ArrayWidgetProps) {
         <Button unstyled
           type="button"
           onClick={commitDraft}
-          className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <Plus className="h-3 w-3" />
         </Button>

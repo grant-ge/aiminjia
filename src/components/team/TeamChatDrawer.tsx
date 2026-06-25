@@ -241,9 +241,8 @@ function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderPro
         size="icon"
         aria-label={t('team.process.close')}
         onClick={onClose}
-      >
-        <X className="h-4 w-4" />
-      </Button>
+        icon={<X className="h-4 w-4" />}
+      />
     </div>
   )
 }

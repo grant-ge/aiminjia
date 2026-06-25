@@ -156,8 +156,14 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
                 <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{copy.secretLabel}</div>
                 <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{secretValue}</div>
               </div>
-              <Button type="button" variant="secondary" size="sm" onClick={handleReveal} disabled={revealing}>
-                {revealedSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon={revealedSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                onClick={handleReveal}
+                disabled={revealing}
+              >
                 {revealedSecret ? t('channel.details.secretRevealed') : revealing ? t('channel.details.secretReading') : copy.secretRevealButton}
               </Button>
             </div>

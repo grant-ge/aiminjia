@@ -66,21 +66,30 @@ function WindowControls() {
   // button hover routes to --destructive instead of hardcoded red.
   return (
     <div className="flex shrink-0 items-center" onMouseDown={(e) => e.stopPropagation()}>
-      <Button link type="button" className="titlebar-window-button" onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
-        <svg width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>
-      </Button>
-      <Button link type="button" className="titlebar-window-button" onClick={() => getCurrentWindow().toggleMaximize()} aria-label="Maximize">
-        <svg width="10" height="10" viewBox="0 0 10 10"><rect fill="none" stroke="currentColor" strokeWidth="1" x="0.5" y="0.5" width="9" height="9"/></svg>
-      </Button>
+      <Button
+        link
+        type="button"
+        className="titlebar-window-button"
+        icon={<svg className="h-2.5 w-2.5" width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>}
+        onClick={() => getCurrentWindow().minimize()}
+        aria-label="Minimize"
+      />
+      <Button
+        link
+        type="button"
+        className="titlebar-window-button"
+        icon={<svg className="h-2.5 w-2.5" width="10" height="10" viewBox="0 0 10 10"><rect fill="none" stroke="currentColor" strokeWidth="1" x="0.5" y="0.5" width="9" height="9"/></svg>}
+        onClick={() => getCurrentWindow().toggleMaximize()}
+        aria-label="Maximize"
+      />
       <Button
         link
         type="button"
         className="titlebar-window-button titlebar-window-button-close"
+        icon={<svg className="h-2.5 w-2.5" width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d="M1.7.3.3 1.7 3.6 5 .3 8.3l1.4 1.4L5 6.4l3.3 3.3 1.4-1.4L6.4 5l3.3-3.3L8.3.3 5 3.6 1.7.3z"/></svg>}
         onClick={() => getCurrentWindow().close()}
         aria-label="Close"
-      >
-        <svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d="M1.7.3.3 1.7 3.6 5 .3 8.3l1.4 1.4L5 6.4l3.3 3.3 1.4-1.4L6.4 5l3.3-3.3L8.3.3 5 3.6 1.7.3z"/></svg>
-      </Button>
+      />
     </div>
   )
 }
@@ -99,14 +108,13 @@ function SidebarToggleButton({ className = '' }: { className?: string }) {
       aria-label={label}
       title={label}
       className={`titlebar-sidebar-toggle ${className}`}
+      icon={<Icon className="h-4 w-4" aria-hidden="true" />}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation()
         toggleSidebarHidden()
       }}
-    >
-      <Icon className="h-4 w-4" aria-hidden="true" />
-    </Button>
+    />
   )
 }
 
@@ -125,13 +133,12 @@ function TitleBarNavigationButtons() {
         title="后退"
         className="titlebar-navigation-button"
         disabled={!canGoBack}
+        icon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
         onClick={(e) => {
           e.stopPropagation()
           goBack()
         }}
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-      </Button>
+      />
       <Button
         link
         type="button"
@@ -139,13 +146,12 @@ function TitleBarNavigationButtons() {
         title="前进"
         className="titlebar-navigation-button"
         disabled={!canGoForward}
+        icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />}
         onClick={(e) => {
           e.stopPropagation()
           goForward()
         }}
-      >
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </Button>
+      />
     </div>
   )
 }

@@ -48,7 +48,7 @@ export function CronEditDialog({ open, initial, onSubmit, onCancel }: CronEditDi
                   key={p.cron}
                   type="button"
                   onClick={() => setValue(p.cron)}
-                  className={`rounded-md px-2 py-1 text-xs ${
+                  className={`rounded px-2 py-1 text-xs ${
                     value === p.cron
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-accent hover:bg-accent/80'

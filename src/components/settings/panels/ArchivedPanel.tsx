@@ -353,7 +353,7 @@ function CheckSquare({ checked, indeterminate, onClick }: CheckSquareProps) {
       aria-checked={indeterminate ? 'mixed' : checked}
       onClick={onClick}
       className={cn(
-        'flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors',
+        'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
         active
           ? 'border-primary bg-primary text-primary-foreground'
           : 'border-input bg-background hover:border-primary',
