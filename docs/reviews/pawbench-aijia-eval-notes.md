@@ -501,3 +501,34 @@ Next judgment:
 - Do not treat the latest full run as a true regression to `58`.
 - The next evaluable step is still to refresh AIjia auth, then rerun the 20 invalid latest-run tasks using `-LogFile` and low judge concurrency.
 - If the 20 invalid tasks average near the corrected valid average, the real full-run score is likely around the high-60s; if they recover to the previous c294 distribution, crossing `0.70` is plausible without another broad prompt rewrite.
+
+## 2026-06-25 scorer-failure regrade infrastructure
+
+Question:
+
+- The latest full run had 16 `codex judge failed after 100 attempts` rows and 4 `[Errno 32] Broken pipe` rows.
+- We needed to distinguish real model regressions from scorer/runtime infrastructure failures before making another system-prompt change.
+
+Finding:
+
+- The original `0866a8a8` full run cannot be strictly regraded offline because the run saved transcripts but did not save `workspaces/`.
+- PawBench hybrid and automated grading need the final workspace artifacts, not just transcript text. Regrading without workspace would create misleading zero/error rows.
+- A previous 20-task attempt at `0866a8a8_rejudge_failures_c8_j1_20260625` re-ran AIjia rather than purely regrading. It is not usable as replacement data because all 20 rows are marked API-invalid from current auth/session failure.
+
+PawBench infrastructure changes:
+
+- Commit `87c60dc` exposes `-SaveWorkspace` in `scripts/run-aijia-docker-eval.ps1`, passing through to `run_bench.py --save-workspace`.
+- Added `scripts/regrade_saved_workspaces.py` to re-run the official PawBench grader from saved `workspaces/` and `transcripts/` without re-running AIjia.
+- This is a general scorer recovery mechanism: it does not branch on PawBench task IDs, expected answers, output filenames, or benchmark-specific content.
+
+Validation:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/c/Users/Administrator/Desktop/github/PawBench && /root/pawbench-venv/bin/python -m py_compile scripts/regrade_saved_workspaces.py pawbench/grader.py pawbench/runner.py pawbench/backend.py'`
+- Regrade smoke on an old saved-workspace row completed and called the automated grader without launching AIjia.
+- Regrade check against the `0866a8a8` judge-failed row produced `Regrade skipped: saved workspace not found ...`, confirming that this full run cannot be honestly re-scored from transcript alone.
+
+Next evaluation口径:
+
+- Refresh AIjia login first; current direct WSL CLI call still returns `not logged in: run the desktop app login first so ~/.renlijia contains a valid JWT`.
+- After login is healthy, rerun the 20 invalid `0866a8a8` tasks at lower judge concurrency with `-LogFile` and `-SaveWorkspace`.
+- If agent output succeeds but judge fails again, use `scripts/regrade_saved_workspaces.py` on the saved run instead of burning another AIjia rerun.
