@@ -292,6 +292,8 @@ fn shell_tool_descriptions_redact_untrusted_decoded_payloads() {
             def.description.contains("解码/反混淆规则")
                 && def.description.contains("base64")
                 && def.description.contains("不要执行")
+                && def.description.contains("stdout/stderr")
+                && def.description.contains("保存在变量中先分类")
                 && def.description.contains("不要在最终回复全文复述")
                 && def.description.contains("即使语法残缺")
                 && def.description.contains("伪命令")
