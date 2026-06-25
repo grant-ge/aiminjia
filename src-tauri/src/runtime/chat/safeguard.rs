@@ -402,6 +402,65 @@ pub fn delivery_guard_text_only_prompt(missing_targets: &[String]) -> String {
     )
 }
 
+fn request_needs_artifact_quality_guard(request: &str) -> bool {
+    let lower = request.to_lowercase();
+    [
+        "hard constraint",
+        "hard constraints",
+        "exactly the following structure",
+        "use exactly",
+        "must include",
+        "must contain",
+        "must be valid",
+        "do not create any other files",
+        "schema",
+        "reason_code",
+        "attendee_unavailability",
+        "optional_attendees",
+        "preferred_windows",
+        "schedule_only_within_preferred_windows",
+        "constraints.yaml",
+        "硬约束",
+        "硬性约束",
+        "严格约束",
+        "精确结构",
+        "固定结构",
+        "固定字段",
+        "必填字段",
+        "输出字段",
+        "不要创建其它文件",
+        "不要创建其他文件",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+}
+
+pub fn artifact_quality_guard_prompt(targets: &[String]) -> String {
+    let list = targets
+        .iter()
+        .map(|target| format!("- `{target}`"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "<system-reminder>\n用户请求包含硬约束、固定 schema/结构或严格文件集合，且命名产物已经存在。不要直接最终回复；下一步必须对最终产物做一次语义交付复核：\n{list}\n\n请读取或解析这些最终文件，并和原始输入/约束逐项比对，而不是只检查文件存在、事件数量、JSON 可解析或目录列表。若用户要求 exactly/following structure/schema/template，最终文件不能增加额外顶层章节、调试统计、过程表格或多余字段。若最终字段中出现 attendee/assignee/resource/equipment、optional/candidate/backup、`ATTENDEE` 或类似实体，只要写进最终产物就按已安排/已分配处理，必须满足同一套硬约束；不可用的 optional/candidate 不能保留在最终字段中。验证脚本必须比较完整邮箱/账号/资源 ID，不要截断为本地部分、前缀或显示名。\n\n发现不一致时，先调用 Edit/Write/Bash/PowerShell 修正目标文件并重新验证；全部通过后，再用简短最终回复说明产物路径和验证证据。\n</system-reminder>"
+    )
+}
+
+pub fn maybe_artifact_quality_guard_prompt(
+    request: &str,
+    targets: &[String],
+    workspace_root: &Path,
+    guard_count: usize,
+) -> Option<String> {
+    if targets.is_empty() || guard_count > 0 || !request_needs_artifact_quality_guard(request) {
+        return None;
+    }
+    if !unready_requested_file_targets(targets, workspace_root).is_empty() {
+        return None;
+    }
+    Some(artifact_quality_guard_prompt(targets))
+}
+
 pub fn maybe_delivery_guard_prompt(
     targets: &[String],
     workspace_root: &Path,
@@ -621,6 +680,74 @@ Use exactly the following structure.
             .expect("missing target should prompt after exploration grace");
 
         assert!(prompt.contains("diagnosis-report.md"));
+    }
+
+    #[test]
+    fn artifact_quality_guard_prompts_for_ready_hard_constraint_outputs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("output")).unwrap();
+        std::fs::write(dir.path().join("output/scheduled.ics"), "BEGIN:VCALENDAR\nEND:VCALENDAR")
+            .unwrap();
+        std::fs::write(dir.path().join("output/unscheduled.json"), "[]").unwrap();
+        std::fs::write(
+            dir.path().join("output/decision_log.md"),
+            "### Scheduling Decision Log\n\n### Summary\nok",
+        )
+        .unwrap();
+        let request = "Save results into `output/scheduled.ics`, `output/unscheduled.json`, and `output/decision_log.md`. Use exactly the following structure. Lunch break and attendee_unavailability are hard constraints.";
+        let targets = vec![
+            "output/decision_log.md".to_string(),
+            "output/scheduled.ics".to_string(),
+            "output/unscheduled.json".to_string(),
+        ];
+
+        let prompt = maybe_artifact_quality_guard_prompt(request, &targets, dir.path(), 0)
+            .expect("ready high-risk artifacts should get one quality guard");
+
+        assert!(prompt.contains("语义交付复核"));
+        assert!(prompt.contains("额外顶层章节"));
+        assert!(prompt.contains("optional/candidate/backup"));
+        assert!(prompt.contains("完整邮箱"));
+    }
+
+    #[test]
+    fn artifact_quality_guard_waits_for_delivery_guard_when_target_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let request = "Generate `output/result.json` with the schema exactly and hard constraints.";
+        let targets = vec!["output/result.json".to_string()];
+
+        let prompt = maybe_artifact_quality_guard_prompt(request, &targets, dir.path(), 0);
+
+        assert!(prompt.is_none());
+    }
+
+    #[test]
+    fn artifact_quality_guard_skips_plain_file_requests_and_repeats() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("report.md"), "done").unwrap();
+        let targets = vec!["report.md".to_string()];
+
+        assert!(maybe_artifact_quality_guard_prompt(
+            "Create `report.md` with a short summary.",
+            &targets,
+            dir.path(),
+            0,
+        )
+        .is_none());
+        assert!(maybe_artifact_quality_guard_prompt(
+            "Modify `report.md` and rename one field in the example.",
+            &targets,
+            dir.path(),
+            0,
+        )
+        .is_none());
+        assert!(maybe_artifact_quality_guard_prompt(
+            "Create `report.md` with exactly the following structure.",
+            &targets,
+            dir.path(),
+            1,
+        )
+        .is_none());
     }
 
     #[test]

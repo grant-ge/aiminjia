@@ -2919,6 +2919,7 @@ impl RuntimeChatTurnDriver {
         let requested_file_targets =
             safeguard::extract_requested_file_targets(request.content.as_str());
         let mut delivery_guard_count = 0usize;
+        let mut artifact_quality_guard_count = 0usize;
 
         'turn: for iteration in 0..config.max_iterations {
             let mut preprocess_config = PreprocessConfig::default();
@@ -3650,6 +3651,27 @@ impl RuntimeChatTurnDriver {
                         continue 'turn;
                     }
 
+                    if let Some(msg) = safeguard::maybe_artifact_quality_guard_prompt(
+                        request.content.as_str(),
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        artifact_quality_guard_count,
+                    ) {
+                        artifact_quality_guard_count += 1;
+                        state.final_only_content = content.clone();
+                        state.messages.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": content,
+                        }));
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
                     turn_completed_normally = true;
                     break 'turn;
                 }
@@ -3999,6 +4021,22 @@ impl RuntimeChatTurnDriver {
                         iteration,
                     ) {
                         delivery_guard_count += 1;
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
+                    if let Some(msg) = safeguard::maybe_artifact_quality_guard_prompt(
+                        request.content.as_str(),
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        artifact_quality_guard_count,
+                    ) {
+                        artifact_quality_guard_count += 1;
                         state.messages.push(serde_json::json!({
                             "role": "user",
                             "isMeta": true,
