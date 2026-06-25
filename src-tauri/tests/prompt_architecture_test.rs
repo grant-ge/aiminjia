@@ -319,6 +319,37 @@ fn prompt_boundary_copy_does_not_expose_internal_mode_switching() {
 }
 
 #[test]
+fn prompt_identity_copy_keeps_digital_employee_internal() {
+    let parts = prompts::build_system_prompt_parts(None, None);
+    let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
+
+    for marker in ["数字员工", "digital employee", "虚拟协作者"] {
+        assert!(
+            !prompt.contains(marker),
+            "system prompt should not expose internal product identity wording: {marker}"
+        );
+    }
+}
+
+#[test]
+fn prompt_states_internal_capabilities_as_user_facing_principle() {
+    let parts = prompts::build_system_prompt_parts(None, None);
+    let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
+
+    assert!(
+        prompt.contains("内部能力名称") && prompt.contains("普通用户"),
+        "system prompt should keep internal capability names behind user-facing wording"
+    );
+
+    for marker in ["用户问你是谁", "你的角色定义", "用户询问模式", "不使用需要用户手动切换"] {
+        assert!(
+            !prompt.contains(marker),
+            "system prompt should not hard-code scripted self-description answers: {marker}"
+        );
+    }
+}
+
+#[test]
 fn skill_tool_description_keeps_skill_selection_internal() {
     let catalog = ToolCatalog::default_catalog();
     let skill = catalog.get("Skill").expect("Skill must exist in catalog");
