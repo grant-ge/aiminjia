@@ -334,6 +334,14 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
         "Write description must require semantic validation of final hard-constraint outputs: {}",
         write
     );
+    assert!(
+        write.contains("agent、数字员工、persona")
+            && write.contains("agent_config")
+            && write.contains("不要用 TaskCreate 代替")
+            && write.contains("未注册限制"),
+        "Write description must guide product-entity fallback config artifacts: {}",
+        write
+    );
 
     let edit_entry = TOOL_CATALOG.get_entry("Edit").unwrap();
     let edit = edit_entry.json_schema["description"].as_str().unwrap();
@@ -354,7 +362,14 @@ fn task_tools_respect_strict_output_and_semantic_completion() {
     assert!(
         create.description.contains("不要创建其它文件/目录")
             && create.description.contains("严格评分")
-            && create.description.contains("内部清单"),
+            && create.description.contains("内部清单")
+            && create.description.contains("不是产品实体")
+            && create
+                .description
+                .contains("不要用它来假装已经创建/配置了 agent")
+            && create
+                .description
+                .contains("改用 Write/Edit 生成明确命名的配置产物"),
         "TaskCreate description must avoid persistent task artifacts when output set is strict: {}",
         create.description
     );
