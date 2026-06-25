@@ -4,7 +4,6 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
-  Loader2,
   MessageCircleQuestion,
   Pencil,
   Search,
@@ -25,6 +24,7 @@ import {
 import type { RenderToolStep } from "@/hooks/useTurnRenderModel";
 import { useDevSettingsStore } from "@/stores/devSettingsStore";
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 const MIN_RUNNING_DISPLAY_MS = 800;
 
@@ -163,7 +163,7 @@ export function ToolStepGroupBlock({ steps }: ToolStepGroupBlockProps) {
 
   const leadingIcon =
     summary.runningCount > 0 ? (
-      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+      <Spinner size="sm" className="text-primary" />
     ) : summary.errorCount > 0 && showToolErrorIcon ? (
       <AlertCircle
         data-testid="tool-step-error-icon"

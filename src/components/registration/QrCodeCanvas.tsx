@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { Loader2 } from 'lucide-react'
+
+import { Spinner } from '@/components/ui/spinner'
 
 interface QrCodeCanvasProps {
   /** Any string payload (URL, token, etc.) to be encoded into a QR image. */
@@ -62,7 +63,7 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
           role="status"
           className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-md bg-white"
         >
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <Spinner size="lg" className="text-primary" />
           <p className="text-xs font-medium text-zinc-500">二维码加载中…</p>
         </div>
       )}
@@ -71,7 +72,7 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
           data-testid="qr-spinner-overlay"
           className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]"
         >
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <Spinner size="lg" className="text-primary" />
         </div>
       )}
     </div>

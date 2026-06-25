@@ -1,6 +1,7 @@
-import { Loader2, ShieldQuestionMark } from 'lucide-react'
+import { ShieldQuestionMark } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { Spinner } from '@/components/ui/spinner'
 import {
   Tooltip,
   TooltipContent,
@@ -27,10 +28,11 @@ export function SidebarRowStatusIndicator({
 
   if (status === 'loading') {
     return (
-      <Loader2
+      <Spinner
         aria-label={t('sidebar.conversationLoading')}
         data-icon="loader"
-        className="h-3.5 w-3.5 animate-spin text-muted-foreground"
+        size="sm"
+        className="text-muted-foreground"
       />
     )
   }

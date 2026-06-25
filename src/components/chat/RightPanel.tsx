@@ -5,7 +5,6 @@ import {
   XCircle,
   MinusCircle,
   Circle,
-  Loader2,
   File,
   FileSpreadsheet,
   FileText,
@@ -23,6 +22,7 @@ import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chatStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
+import { Spinner } from '@/components/ui/spinner'
 import type { GeneratedFile } from '@/types/message'
 import { Button } from '@/components/ui/button'
 
@@ -157,7 +157,7 @@ function TaskStatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'in_progress':
     case 'running':
-      return <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin text-primary" />
+      return <Spinner size="xs" className="mt-0.5 text-primary" />
     case 'completed':
       return (
         <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" style={{ color: '#16A34A' }} />
@@ -283,7 +283,7 @@ function ArtifactItem({
         onOpenExternal?.(previewTarget)
       }}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted/70',
+        'flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/70',
         active && 'bg-muted',
         !enabled && 'cursor-not-allowed opacity-50 hover:bg-transparent',
       )}

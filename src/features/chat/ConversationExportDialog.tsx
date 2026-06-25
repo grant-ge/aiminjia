@@ -1,4 +1,4 @@
-import { CheckCircle2, FolderOpen, Loader2, Package, XCircle } from 'lucide-react'
+import { CheckCircle2, FolderOpen, Package, XCircle } from 'lucide-react'
 
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import type { ExportConversationResult } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 export type ConversationExportStatus = 'idle' | 'exporting' | 'success' | 'error'
 
@@ -45,7 +46,7 @@ function StepRow({
         {done ? (
           <CheckCircle2 className="h-4 w-4 text-primary" aria-hidden />
         ) : active ? (
-          <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden />
+          <Spinner className="text-primary" aria-hidden />
         ) : (
           <span className="h-2 w-2 rounded-md bg-muted-foreground/40" />
         )}
@@ -143,8 +144,7 @@ export function ConversationExportDialog({
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
                 完成
               </Button>
-              <Button className="min-w-0" onClick={onReveal}>
-                <FolderOpen className="h-4 w-4" aria-hidden />
+              <Button className="min-w-0" icon={<FolderOpen className="h-4 w-4" aria-hidden />} onClick={onReveal}>
                 <span className="truncate">打开所在文件夹</span>
               </Button>
             </>
@@ -158,8 +158,7 @@ export function ConversationExportDialog({
               <Button onClick={onStart}>开始导出</Button>
             </>
           ) : (
-            <Button disabled>
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            <Button loading disabled>
               导出中
             </Button>
           )}

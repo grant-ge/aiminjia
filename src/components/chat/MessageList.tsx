@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, MessageCircleQuestion } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { AiBubble } from "@/components/chat/AiBubble";
 import { CompactBoundaryBar } from "@/components/chat/CompactBoundaryBar";
@@ -29,6 +30,7 @@ import { useChannelStore } from "@/stores/channelStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useGeneratedFilePreviewStore } from "@/stores/generatedFilePreviewStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useChat } from "@/hooks/useChat";
 import { useTeamOverview } from "@/hooks/useTeamOverview";
 import {
@@ -299,12 +301,20 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   // Sender identity for the chat row headers (avatar + name).
   // AI side follows the tenant brand (logoUrl + productName), so a custom
   // tenant logo / name automatically propagates into every chat. User side
-  // falls back to the colored-initial ChatAvatar when no profile image is
-  // configured (none of the current users have one).
+  // follows the local profile avatar settings for in-app conversations.
   const assistantName = useBrandingStore((s) => s.productName);
   const assistantLogo = useBrandingStore((s) => s.logoUrl);
   const authUserName = useAuthStore(
     (s) => s.user?.name ?? s.user?.username ?? "我",
+  );
+  const profileAvatarMode = useSettingsStore(
+    (s) => s.profileAvatarMode ?? "initial",
+  );
+  const profileAvatarEmoji = useSettingsStore(
+    (s) => s.profileAvatarEmoji ?? "",
+  );
+  const profileAvatarImagePath = useSettingsStore(
+    (s) => s.profileAvatarImagePath ?? "",
   );
   // In channel chats (WhatsApp/Telegram/dingtalk/...), the "user" role
   // bubbles come from the **external contact**, not the local AIjia operator.
@@ -315,7 +325,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   //     messages don't carry a stable real name (feishu/wecom/wechat only
   //     give user_id). To stay visually consistent across IM tabs, render the
   //     platform display name + platform logo as the "from" side identity.
-  //   - In-app (no channel binding): local auth user + neutral silhouette.
+  //   - In-app (no channel binding): local auth user + profile avatar setting.
   const channelConversation = useChannelStore((s) => {
     if (!activeConversationId) return null;
     return (
@@ -323,11 +333,20 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       null
     );
   });
-  const { userName, userAvatarUrl, userAvatarVariant } = (() => {
+  const { userName, userAvatarUrl, userAvatarEmoji, userAvatarVariant } = (() => {
     if (!channelConversation) {
+      const trimmedImagePath = profileAvatarImagePath.trim();
+      const trimmedEmoji = profileAvatarEmoji.trim();
       return {
         userName: authUserName,
-        userAvatarUrl: null as string | null,
+        userAvatarUrl:
+          profileAvatarMode === "image" && trimmedImagePath.length > 0
+            ? convertFileSrc(trimmedImagePath)
+            : null,
+        userAvatarEmoji:
+          profileAvatarMode === "emoji" && trimmedEmoji.length > 0
+            ? trimmedEmoji
+            : null,
         userAvatarVariant: "neutral" as "initial" | "neutral",
       };
     }
@@ -336,6 +355,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       return {
         userName: trimmed && trimmed.length > 0 ? trimmed : "WhatsApp 私聊",
         userAvatarUrl: null as string | null,
+        userAvatarEmoji: null as string | null,
         userAvatarVariant: "initial" as "initial" | "neutral",
       };
     }
@@ -344,6 +364,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         CHANNEL_PLATFORM_DISPLAY[channelConversation.platform] ??
         channelConversation.platform,
       userAvatarUrl: `/logos/${channelConversation.platform}.png`,
+      userAvatarEmoji: null as string | null,
       userAvatarVariant: "initial" as "initial" | "neutral",
     };
   })();
@@ -541,6 +562,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                   role="user"
                   name={userName}
                   avatarUrl={userAvatarUrl}
+                  avatarEmoji={userAvatarEmoji}
                   avatarVariant={userAvatarVariant}
                   timestamp={t.userMessage.createdAt}
                 >

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
 import { type ChannelConfigView, type ChannelRegistrationBeginResult } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 interface FeishuChannelConfigProps {
   onSaved?: () => void
@@ -79,7 +80,7 @@ function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading:
       )}
       {loading && (
         <div className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <Spinner size="lg" className="text-primary" />
         </div>
       )}
     </div>

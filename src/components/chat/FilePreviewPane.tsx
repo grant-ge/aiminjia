@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
-import { Download, ExternalLink, FileText, Loader2, X } from 'lucide-react'
+import { Download, ExternalLink, FileText, X } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { getFilePreview, getLocalFilePreview, openLocalFile, type FilePreview } from '@/lib/tauri'
 import type { PreviewTarget } from './generatedFileActions'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 interface FilePreviewPaneProps {
   target: PreviewTarget | null
@@ -112,10 +113,9 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
               type="button"
               variant="outline"
               size="sm"
-              className="gap-1.5"
+              icon={<Download className="h-3.5 w-3.5" />}
               onClick={handleDownload}
             >
-              <Download className="h-3.5 w-3.5" />
               {t('filePreview.download')}
             </Button>
           )}
@@ -123,10 +123,9 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1.5"
+            icon={<ExternalLink className="h-3.5 w-3.5" />}
             onClick={handleOpenExternal}
           >
-            <ExternalLink className="h-3.5 w-3.5" />
             {t('filePreview.openWithDefault')}
           </Button>
           {onClosePreview && (
@@ -136,9 +135,8 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
               size="icon"
               aria-label="Close preview"
               onClick={onClosePreview}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+              icon={<X className="h-4 w-4" />}
+            />
           )}
         </div>
       </div>
@@ -148,7 +146,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
       >
         {!isCurrentPreviewState ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Spinner className="mr-2" />
             {t('filePreview.loadingPreview')}
           </div>
         ) : previewState.status === 'error' ? (

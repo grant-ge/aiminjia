@@ -1,10 +1,11 @@
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { ToolTraceIO } from './ToolTraceIO'
 import type { RenderToolStep } from '@/hooks/useTurnRenderModel'
 import { useDevSettingsStore } from '@/stores/devSettingsStore'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 interface ToolStepRowProps {
   step: RenderToolStep
@@ -27,7 +28,7 @@ export function ToolStepRow({ step }: ToolStepRowProps) {
   // 水平 stub 上，视觉上"连线穿过 icon 中心"。
   const statusIcon: ReactNode =
     step.status === 'running' ? (
-      <Loader2 className="h-3 w-3 -translate-y-px animate-spin text-primary" />
+      <Spinner size="xs" className="-translate-y-px text-primary" />
     ) : step.status === 'error' && showToolErrorIcon ? (
       <AlertCircle data-testid="tool-step-row-error-icon" className="h-3 w-3 -translate-y-px text-destructive" />
     ) : step.status === 'error' ? (

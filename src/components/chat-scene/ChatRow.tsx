@@ -23,6 +23,7 @@ interface ChatRowProps {
   role: "user" | "assistant";
   name: string;
   avatarUrl?: string | null;
+  avatarEmoji?: string | null;
   /**
    * Fallback variant when `avatarUrl` is null. `'neutral'` paints the
    * gender-free brand-tinted silhouette (default for the current user),
@@ -50,6 +51,7 @@ export function ChatRow({
   role,
   name,
   avatarUrl,
+  avatarEmoji,
   avatarVariant,
   colorSeed,
   timestamp,
@@ -80,6 +82,7 @@ export function ChatRow({
           <ChatAvatar
             name={name}
             src={avatarUrl ?? null}
+            emoji={avatarEmoji ?? null}
             variant={avatarVariant}
             colorSeed={colorSeed}
           />

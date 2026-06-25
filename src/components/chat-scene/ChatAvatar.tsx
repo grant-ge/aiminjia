@@ -4,9 +4,10 @@
  * Renders a 28×28 circular avatar with three fallback layers:
  *   1. `src` (preferred — assistant uses `brandingStore.logoUrl`,
  *      user can supply a saved profile image)
- *   2. `variant='neutral'` (current-user initial with a subtle
+ *   2. `emoji` (current-user profile emoji when configured)
+ *   3. `variant='neutral'` (current-user initial with a subtle
  *      brand-tinted background)
- *   3. `initial` (first non-whitespace character of `name`) painted on a
+ *   4. `initial` (first non-whitespace character of `name`) painted on a
  *      deterministic color derived from the `colorSeed` (hashes the name
  *      by default)
  *
@@ -14,13 +15,16 @@
  * feel — AI assistant on the left with product logo, user on the right
  * with the neutral brand-tinted initial.
  */
+import { useEffect, useState, type CSSProperties } from "react";
+
 interface ChatAvatarProps {
   name: string
   src?: string | null
+  emoji?: string | null
   /**
    * Override the default fallback. `'neutral'` paints the first character
    * in the tenant brand color (good default for the current user, since we
-   * don't store profile photos yet).
+   * still need a stable fallback when no custom avatar is configured).
    * `'initial'` paints the first character on a palette color hashed
    * from `colorSeed` / `name` — kept for non-user contexts (e.g. a chat
    * room with multiple expert names where varied colors aid scanning).
@@ -70,6 +74,7 @@ function firstInitial(name: string): string {
 export function ChatAvatar({
   name,
   src,
+  emoji,
   variant = 'initial',
   colorSeed,
   size = 28,
@@ -80,18 +85,30 @@ export function ChatAvatar({
   // to fall through to the variant fallback (neutral icon / initial) in
   // that case — not render an <img src="">.
   const normalizedSrc = src && src.length > 0 ? src : null
-  const usingImage = normalizedSrc !== null
-  const usingNeutralFallback = !usingImage && variant === 'neutral'
+  const [imageFailed, setImageFailed] = useState(false)
+  useEffect(() => {
+    setImageFailed(false)
+  }, [normalizedSrc])
+  const normalizedEmoji = emoji?.trim() ?? ''
+  const usingImage = normalizedSrc !== null && !imageFailed
+  const usingEmoji = !usingImage && normalizedEmoji.length > 0
+  const usingNeutralFallback = !usingImage && !usingEmoji && variant === 'neutral'
   const initial = firstInitial(name)
   // Neutral variant: container fills with `--primary` at ~12% alpha and the
   // initial uses the full tenant brand color.
-  const dataVariant = usingImage ? 'image' : usingNeutralFallback ? 'neutral' : 'initial'
+  const dataVariant = usingImage
+    ? 'image'
+    : usingEmoji
+      ? 'emoji'
+      : usingNeutralFallback
+        ? 'neutral'
+        : 'initial'
   const bg = usingImage
     ? 'transparent'
-    : usingNeutralFallback
+    : usingNeutralFallback || usingEmoji
       ? 'rgba(var(--primary-rgb), 0.12)'
       : pickColor(colorSeed ?? name)
-  const style: React.CSSProperties = {
+  const style: CSSProperties = {
     width: size,
     height: size,
     background: bg,
@@ -113,11 +130,12 @@ export function ChatAvatar({
           width={size}
           height={size}
           className="h-full w-full object-cover"
-          // Hide broken images — the wrapper falls back to its colored bg.
-          onError={(e) => {
-            ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-          }}
+          onError={() => setImageFailed(true)}
         />
+      ) : usingEmoji ? (
+        <span aria-hidden className="text-base leading-none">
+          {normalizedEmoji}
+        </span>
       ) : usingNeutralFallback ? (
         <span aria-hidden className="text-primary">
           {initial}

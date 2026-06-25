@@ -246,6 +246,12 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   // Send button is disabled when there's nothing to send. During streaming
   // we still allow send (it queues via PendingQueueManager).
   const sendDisabled = disabled || isEmpty || submittingRef.current
+  const sendButtonLoading = submittingRef.current
+  const sendIcon = sendButtonLoading ? (
+    <span className="block h-3 w-3 rounded-full bg-current" />
+  ) : (
+    <ArrowUp />
+  )
   const stopIcon = <span className="block h-3 w-3 rounded-md bg-current" />
   const fullAccess = permissionMode === 'fullAccess'
   const deepReasoning = reasoningMode === 'deep'
@@ -286,7 +292,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                   type="button"
                   aria-label={t('composer.removeSkill', { name: skillCommand.label })}
                   onClick={onClearSkillCommand}
-                  className="ml-0.5 shrink-0 rounded-md p-0.5 transition-colors hover:bg-[var(--color-accent-muted)]"
+                  className="ml-0.5 shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--color-accent-muted)]"
                   style={{ color: 'var(--color-accent-700)' }}
                 >
                   <X className="h-3 w-3" />
@@ -348,9 +354,9 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                         : t('composer.permissionModeDefault'),
                     })}
                     icon={fullAccess ? <ShieldCheck /> : <Shield />}
+                    suffixIcon={<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
                   >
                     {fullAccess ? t('composer.permissionModeFull') : t('composer.permissionModeDefault')}
-                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
@@ -411,6 +417,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                     })}
                     aria-pressed={deepReasoning}
                     icon={<BrainCircuit />}
+                    suffixIcon={<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
                     style={
                       deepReasoning
                         ? { background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' }
@@ -418,7 +425,6 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                     }
                   >
                     {deepReasoning ? t('composer.reasoningModeDeep') : t('composer.reasoningModeAuto')}
-                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
@@ -497,9 +503,11 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                 onClick={() => {
                   void trySubmit()
                 }}
-                disabled={sendDisabled}
-                variant={sendDisabled ? 'secondary' : 'default'}
-                icon={<ArrowUp />}
+                disabled={sendDisabled || sendButtonLoading}
+                aria-busy={sendButtonLoading}
+                data-loading={sendButtonLoading ? 'true' : undefined}
+                variant={sendButtonLoading || !sendDisabled ? 'default' : 'secondary'}
+                icon={sendIcon}
               />
             )}
           </div>

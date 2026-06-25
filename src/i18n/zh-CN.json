@@ -337,6 +337,15 @@
       "languageZh": "中文",
       "languageEn": "English",
       "logout": "退出登录",
+      "profile": "个人信息",
+      "avatarIcon": "图标",
+      "avatarInitial": "用户名首字符",
+      "avatarUpload": "上传图片",
+      "avatarChooseImage": "选择图片",
+      "avatarUploading": "上传中...",
+      "avatarImageFiles": "图片",
+      "chooseAvatar": "选择头像",
+      "currentAvatar": "当前头像",
       "fontSize": "字体大小",
       "fontSizeDesc": "调整界面文字和间距的整体缩放",
       "fontSmall": "小",
@@ -1129,17 +1138,6 @@
       "hoursAgo": "{{count}} 小时前",
       "yesterday": "昨天"
     }
-  },
-  "employeeCard": {
-    "running": "运行中",
-    "hasReport": "有新汇报",
-    "needsSetup": "需要配置",
-    "idle": "空闲",
-    "pause": "暂停",
-    "resume": "恢复",
-    "hireNew": "雇佣新员工",
-    "nextRun": "下次：{{time}}",
-    "nextRunSoon": "下次：即将"
   },
   "employeeDrawer": {
     "statusRunning": "🔵 运行中",

@@ -4,12 +4,15 @@ use crate::models::settings::AppSettings;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_store::AppStorage;
+use crate::storage::UserScopedPathResolver;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
 /// Fields that contain sensitive API keys and should be encrypted at rest.
 const SENSITIVE_KEYS: &[&str] = &["primaryApiKey", "tavilyApiKey", "bochaApiKey"];
+const MAX_PROFILE_AVATAR_IMAGE_SIZE: u64 = 10 * 1024 * 1024;
 
 /// Check if a key is sensitive (standard fields or per-provider apiKey:* prefix).
 fn is_sensitive_key(key: &str) -> bool {
@@ -113,6 +116,56 @@ pub async fn update_settings(
     }
 
     Ok(())
+}
+
+fn profile_avatar_extension(path: &Path) -> Result<&'static str, String> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .ok_or_else(|| "请选择图片文件".to_string())?;
+
+    match extension.as_str() {
+        "png" => Ok("png"),
+        "jpg" => Ok("jpg"),
+        "jpeg" => Ok("jpeg"),
+        "webp" => Ok("webp"),
+        "gif" => Ok("gif"),
+        "bmp" => Ok("bmp"),
+        _ => Err("仅支持 png、jpg、jpeg、webp、gif、bmp 图片".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn save_profile_avatar_image(
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    file_path: String,
+) -> Result<String, String> {
+    let paths = cus.require_paths().map_err(|e| e.to_string())?;
+    let source = Path::new(&file_path);
+    let extension = profile_avatar_extension(source)?;
+    let metadata = std::fs::metadata(source).map_err(|e| format!("无法读取图片文件: {}", e))?;
+
+    if !metadata.is_file() {
+        return Err("请选择图片文件".to_string());
+    }
+    if metadata.len() > MAX_PROFILE_AVATAR_IMAGE_SIZE {
+        return Err("头像图片不能超过 10 MB".to_string());
+    }
+
+    let source = source
+        .canonicalize()
+        .map_err(|e| format!("无法读取图片文件: {}", e))?;
+    let avatars_dir = paths.base_dir().join("profile").join("avatars");
+    std::fs::create_dir_all(&avatars_dir).map_err(|e| e.to_string())?;
+    let destination = avatars_dir.join(format!(
+        "avatar-{}.{}",
+        uuid::Uuid::new_v4(),
+        extension
+    ));
+
+    std::fs::copy(&source, &destination).map_err(|e| format!("头像图片保存失败: {}", e))?;
+    Ok(destination.to_string_lossy().to_string())
 }
 
 /// Get the list of providers that have a saved API key.

@@ -16,6 +16,7 @@ export type ChatWidthMode = "centered" | "full";
 export type DefaultPermissionMode = "default" | "fullAccess";
 export type CloudGatewayMode = "legacy" | "v2";
 export type AppLogLevel = "error" | "warn" | "info" | "debug";
+export type ProfileAvatarMode = "initial" | "emoji" | "image";
 
 export interface Settings {
   primaryModel: LlmProvider;
@@ -35,6 +36,9 @@ export interface Settings {
   appLanguage?: AppLanguage;
   fontScale?: FontScale;
   chatWidthMode?: ChatWidthMode;
+  profileAvatarMode?: ProfileAvatarMode;
+  profileAvatarEmoji?: string;
+  profileAvatarImagePath?: string;
   defaultPermissionMode?: DefaultPermissionMode;
   accentColor?: string;
   uiHomeSelectedWorkspace?: string;
@@ -62,6 +66,9 @@ export const DEFAULT_SETTINGS: Settings = {
   appLanguage: "zh-CN",
   fontScale: "medium",
   chatWidthMode: "full",
+  profileAvatarMode: "initial",
+  profileAvatarEmoji: "",
+  profileAvatarImagePath: "",
   defaultPermissionMode: "default",
   accentColor: "",
   uiHomeSelectedWorkspace: "",

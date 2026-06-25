@@ -337,6 +337,15 @@
       "languageZh": "中文",
       "languageEn": "English",
       "logout": "Sign out",
+      "profile": "Profile",
+      "avatarIcon": "Icon",
+      "avatarInitial": "Username initial",
+      "avatarUpload": "Upload image",
+      "avatarChooseImage": "Choose image",
+      "avatarUploading": "Uploading...",
+      "avatarImageFiles": "Images",
+      "chooseAvatar": "Choose avatar",
+      "currentAvatar": "Current avatar",
       "fontSize": "Font size",
       "fontSizeDesc": "Scale interface text and spacing",
       "fontSmall": "Small",
@@ -1137,17 +1146,6 @@
       "hoursAgo": "{{count}} hr ago",
       "yesterday": "Yesterday"
     }
-  },
-  "employeeCard": {
-    "running": "Running",
-    "hasReport": "New report",
-    "needsSetup": "Needs setup",
-    "idle": "Idle",
-    "pause": "Pause",
-    "resume": "Resume",
-    "hireNew": "Hire employee",
-    "nextRun": "Next: {{time}}",
-    "nextRunSoon": "Next: soon"
   },
   "employeeDrawer": {
     "statusRunning": "🔵 Running",

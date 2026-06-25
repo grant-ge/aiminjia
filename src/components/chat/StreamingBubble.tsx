@@ -18,6 +18,7 @@ import type { TurnStageKind } from '@/lib/tauri'
 import { TypingIndicator } from '@/components/chat-scene/TypingIndicator'
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { stripHallucinatedXml } from '@/lib/sanitize'
+import { Spinner } from '@/components/ui/spinner'
 
 interface StreamingBubbleProps {
   content: string
@@ -197,22 +198,7 @@ export function StreamingBubble({
             className={`absolute left-0 ${indicatorPositionClass} flex items-center gap-2 text-xs`}
             style={{ color: 'var(--color-text-muted)' }}
           >
-            <svg
-              className="h-3.5 w-3.5 animate-spin"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-                strokeDasharray="50"
-                strokeDashoffset="20"
-                strokeLinecap="round"
-              />
-            </svg>
+            <Spinner size="sm" />
             <span>{status.label}</span>
           </div>
         ) : (

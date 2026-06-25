@@ -1499,6 +1499,16 @@ export function updateSettings(settings: Settings): Promise<void> {
 }
 
 /**
+ * Copy a chosen local profile avatar image into the active user profile dir.
+ *
+ * @param filePath - Absolute path selected by the user.
+ * @returns The copied absolute path under the current user directory.
+ */
+export function saveProfileAvatarImage(filePath: string): Promise<string> {
+  return invoke<string>("save_profile_avatar_image", { filePath });
+}
+
+/**
  * Validate an API key by making a lightweight test request to the provider.
  *
  * @param provider - The LLM provider identifier (e.g. 'deepseek-v3', 'openai')

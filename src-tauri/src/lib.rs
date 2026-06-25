@@ -1395,6 +1395,7 @@ pub fn run() {
             // Settings commands
             settings::get_settings,
             settings::update_settings,
+            settings::save_profile_avatar_image,
             settings::validate_api_key,
             settings::get_configured_providers,
             settings::switch_provider,
