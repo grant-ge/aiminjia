@@ -310,6 +310,13 @@ fn file_content_looks_placeholder(content: &str) -> bool {
         "need to read",
         "need to verify",
         "need to run",
+        "pdf text extraction in progress",
+        "awaiting pdf text extraction",
+        "will be populated once",
+        "this file is being written iteratively",
+        "extraction in progress",
+        "not yet verified",
+        "not yet completed",
         "todo:",
         "tbd",
         "待填写",
@@ -359,6 +366,17 @@ pub fn delivery_guard_blocking_prompt(missing_targets: &[String]) -> String {
         .join("\n");
     format!(
         "<system-reminder>\n上一轮已经要求先交付命名文件，但你本轮仍准备调用不会直接生成目标文件的探索工具。系统已跳过这批工具调用，因为以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一轮只调用 Write、Edit，或调用 Bash/PowerShell/ShellTask 运行会直接写入上述目标路径的生成命令；PNG/PDF/XLSX 等二进制产物必须用真实生成命令落地，不能只写脚本不运行。不要调用 Read、Glob、Skill、TaskCreate 或其它探索工具。可以写入部分诊断、已知事实、阻塞原因和手动动作，但不能只写“待补充/继续分析”。\n</system-reminder>"
+    )
+}
+
+pub fn delivery_guard_failed_tool_prompt(missing_targets: &[String]) -> String {
+    let list = missing_targets
+        .iter()
+        .map(|target| format!("- `{target}`"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "<system-reminder>\n上一轮工具调用本来要生成命名文件，但工具执行失败后以下目标文件仍不存在、为空，或仍是 Pending/TODO/To be filled 占位骨架：\n{list}\n\n下一步必须恢复交付，不要直接总结失败。若失败原因是缺少 matplotlib/Pillow/pdf 工具、pip 不可用、命令不存在或环境受限，请立刻改用已安装工具、Python 标准库、SVG/CSV/文本降级实现，或把明确阻塞原因写入目标文件；PNG/PDF/XLSX 等二进制产物仍要优先尝试可实际写入目标路径的兜底生成命令，并验证文件存在、非空。不要重复同一个失败命令，不要只说“继续处理/还要生成”。\n</system-reminder>"
     )
 }
 
@@ -607,6 +625,21 @@ mod tests {
         let prompt = maybe_delivery_guard_prompt(&targets, dir.path(), 0, 0)
             .expect("placeholder target should prompt");
         assert!(prompt.contains("diagnosis-report.md"));
+        assert!(prompt.contains("占位骨架"));
+    }
+
+    #[test]
+    fn treats_pdf_extraction_stub_as_unready() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("contract_analysis.md"),
+            "# Contract Analysis\n\n> Status: Partial — PDF text extraction in progress.\n\n## Key Dates\n\nAwaiting PDF text extraction — section will be populated once the document text is read.",
+        )
+        .unwrap();
+        let targets = vec!["contract_analysis.md".to_string()];
+        let prompt = maybe_delivery_guard_prompt(&targets, dir.path(), 0, 0)
+            .expect("PDF extraction stub should prompt");
+        assert!(prompt.contains("contract_analysis.md"));
         assert!(prompt.contains("占位骨架"));
     }
 

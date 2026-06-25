@@ -400,3 +400,41 @@ Interpretation:
 
 - The extractor change works for parser/code-output wording where the model can move to a bounded implementation.
 - SVPWM is now a separate long-code/long-output failure branch. The transcript ended after large source/config content was surfaced as assistant text, with no write calls; improving it likely needs a separate strategy for long engineering tasks, such as earlier code skeleton creation or stronger interruption of long source dumping.
+
+## 2026-06-25 full-run scoring anomaly audit
+
+Full run after `0866a8a8`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\0866a8a8_full_150_c16_j4_20260625\20260625_043004\pawbench\deepseek-v4-flash\aijia\20260625_043005.json`
+- Scope: all 150 PawBench tasks, AIjia concurrency 16, Codex judge concurrency 4.
+- Raw result: average score `0.5846403399116986`, median `0.7362`, `success=119`, `error=31`, `<0.3=43`, `zero=25`.
+- The raw average is contaminated by infrastructure failures: 16 tasks reported `Grading failed: codex judge failed after 100 attempts`, and 4 safety tasks reported `[Errno 32] Broken pipe`.
+
+Regrade attempt for the affected 20 tasks:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\0866a8a8_rejudge_failures_c8_j1_20260625\20260625_125526\pawbench\deepseek-v4-flash\aijia\20260625_125527.json`
+- Log path: `C:\Users\Administrator\Desktop\github\PawBench\run_logs\0866a8a8_rejudge_failures_c8_j1_20260625_r2.log`
+- Scope: the 16 judge-failed tasks plus 4 broken-pipe safety tasks, AIjia concurrency 8, judge concurrency 1, output redirected to a log file.
+- Result: judge failures dropped to `0` and broken-pipe failures dropped to `0`, but all 20 reruns were invalid because AIjia returned `LLM error: Invalid session key` after one iteration.
+
+Interpretation:
+
+- The original full-run judge failures were likely external judge/Codex availability or concurrency sensitivity, so those tasks should be regraded after the auth state is healthy.
+- The broken-pipe errors were a runner invocation problem: the parent shell command timed out or closed stdout while the WSL/PawBench child kept running. Future long runs should redirect output to a log file and be monitored by result JSON, not by a long-lived tool stdout pipe.
+- The regrade attempt proved the judge path itself was healthy under lower judge concurrency, but it did not produce valid model scores because AIjia auth/session state was invalid.
+
+Follow-up fix outside lotus:
+
+- PawBench now detects `Invalid session key`, `Session key revoked`, and related auth messages as `AUTH_SESSION_INVALID`.
+- `AUTH_SESSION_INVALID` is classified as an API/infrastructure failure and is non-retryable inside the same run, because retries without refreshing login state only burn time and produce misleading low scores.
+
+Follow-up fix inside lotus:
+
+- Delivery guard now treats PDF extraction placeholders and similar "not yet completed" file skeletons as unready deliverables.
+- If a tool call was intended to write a requested target file but failed, and the target is still missing, empty, or placeholder-like, the driver injects a recovery reminder and continues instead of accepting a failure summary.
+
+Next valid evaluation step:
+
+- Refresh AIjia login/session state first.
+- Re-run the affected task set with log redirection, lower judge concurrency, and anomaly reporting enabled.
+- Only compare `valid_avg` or manually recomputed valid scores; do not compare the invalid auth rerun's raw average to real model runs.

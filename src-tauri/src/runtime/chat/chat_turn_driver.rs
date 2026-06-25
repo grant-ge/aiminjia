@@ -120,29 +120,70 @@ fn tool_calls_write_missing_target(
     tool_calls: &[RuntimeToolCallRequest],
     missing_targets: &[String],
 ) -> bool {
-    tool_calls.iter().any(|call| {
-        if matches!(call.tool_name.as_str(), "Write" | "Edit") {
-            return call
-                .args
-                .get("file_path")
-                .and_then(|value| value.as_str())
-                .is_some_and(|path| file_path_targets_missing(path, missing_targets));
-        }
+    tool_calls
+        .iter()
+        .any(|call| tool_call_writes_missing_target(call, missing_targets))
+}
 
-        if !matches!(call.tool_name.as_str(), "Bash" | "PowerShell" | "ShellTask") {
-            return false;
-        }
-        let Some(command) = call
+fn delivery_write_call_ids_for_missing_targets(
+    tool_calls: &[RuntimeToolCallRequest],
+    missing_targets: &[String],
+) -> HashSet<String> {
+    tool_calls
+        .iter()
+        .filter(|call| tool_call_writes_missing_target(call, missing_targets))
+        .map(|call| call.tool_call_id.clone())
+        .collect()
+}
+
+fn tool_call_writes_missing_target(
+    call: &RuntimeToolCallRequest,
+    missing_targets: &[String],
+) -> bool {
+    if matches!(call.tool_name.as_str(), "Write" | "Edit") {
+        return call
             .args
-            .get("command")
-            .or_else(|| call.args.get("cmd"))
+            .get("file_path")
             .and_then(|value| value.as_str())
-        else {
-            return false;
-        };
-        missing_targets
-            .iter()
-            .any(|target| shell_command_writes_target(command, target))
+            .is_some_and(|path| file_path_targets_missing(path, missing_targets));
+    }
+
+    if !matches!(call.tool_name.as_str(), "Bash" | "PowerShell" | "ShellTask") {
+        return false;
+    }
+    let Some(command) = call
+        .args
+        .get("command")
+        .or_else(|| call.args.get("cmd"))
+        .and_then(|value| value.as_str())
+    else {
+        return false;
+    };
+    missing_targets
+        .iter()
+        .any(|target| shell_command_writes_target(command, target))
+}
+
+fn round_has_failed_delivery_write(
+    round_results: &[ToolRoundResult],
+    delivery_write_call_ids: &HashSet<String>,
+) -> bool {
+    if delivery_write_call_ids.is_empty() {
+        return false;
+    }
+    round_results.iter().any(|round_result| match round_result {
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_call_id,
+            is_error: true,
+            ..
+        }) => delivery_write_call_ids.contains(tool_call_id),
+        ToolRoundResult::Blocked(blocked) => {
+            delivery_write_call_ids.contains(&blocked.tool_call_id)
+        }
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired { tool_call_id, .. }) => {
+            delivery_write_call_ids.contains(tool_call_id)
+        }
+        _ => false,
     })
 }
 
@@ -3706,11 +3747,17 @@ impl RuntimeChatTurnDriver {
                     state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
-                    let missing_targets = if delivery_guard_count > 0 {
+                    let unready_targets_before_tool_round =
                         safeguard::unready_requested_file_targets(
                             &requested_file_targets,
                             &delivery_guard_workspace,
-                        )
+                        );
+                    let delivery_write_call_ids = delivery_write_call_ids_for_missing_targets(
+                        &tool_calls,
+                        &unready_targets_before_tool_round,
+                    );
+                    let missing_targets = if delivery_guard_count > 0 {
+                        unready_targets_before_tool_round.clone()
                     } else {
                         Vec::new()
                     };
@@ -3833,6 +3880,8 @@ impl RuntimeChatTurnDriver {
                     let round_results = self
                         .resolve_interaction_requests(turn, &cancel, round_results)
                         .await?;
+                    let delivery_write_failed_this_round =
+                        round_has_failed_delivery_write(&round_results, &delivery_write_call_ids);
                     let team_deleted_this_round = round_has_successful_team_delete(&round_results);
                     let teammate_spawned_this_round =
                         round_has_successful_teammate_spawn(&round_results);
@@ -3936,6 +3985,25 @@ impl RuntimeChatTurnDriver {
                     state
                         .generated_file_ids
                         .extend(results.new_generated_file_ids);
+
+                    if delivery_write_failed_this_round {
+                        let missing_after_failed_write = safeguard::unready_requested_file_targets(
+                            &requested_file_targets,
+                            &delivery_guard_workspace,
+                        );
+                        if !missing_after_failed_write.is_empty() {
+                            delivery_guard_count += 1;
+                            state.messages.push(serde_json::json!({
+                                "role": "user",
+                                "isMeta": true,
+                                "content": safeguard::delivery_guard_failed_tool_prompt(
+                                    &missing_after_failed_write
+                                ),
+                            }));
+                            pending_task_notifications.clear();
+                            continue 'turn;
+                        }
+                    }
 
                     if let Some(msg) = safeguard::maybe_delivery_guard_prompt_after_tool_round(
                         &requested_file_targets,
@@ -4773,6 +4841,27 @@ mod tests {
             &calls,
             &["output/relative_gain_bar.png".to_string()]
         ));
+    }
+
+    #[test]
+    fn delivery_guard_detects_failed_shell_write_to_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({
+                "command": "python3 - <<'PY'\nimport matplotlib.pyplot as plt\nplt.savefig('output/relative_gain_bar.png')\nPY"
+            }),
+        )];
+        let ids = delivery_write_call_ids_for_missing_targets(
+            &calls,
+            &["output/relative_gain_bar.png".to_string()],
+        );
+        let results = vec![completed_tool_result_with_content(
+            "Bash",
+            true,
+            "ModuleNotFoundError: No module named 'matplotlib'",
+        )];
+
+        assert!(round_has_failed_delivery_write(&results, &ids));
     }
 
     #[test]
