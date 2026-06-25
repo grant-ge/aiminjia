@@ -42,7 +42,9 @@ fn ask_user_question_catalog_forbids_model_supplied_other_option() {
     assert!(
         description.contains("不要在 options 中添加")
             && description.contains("其他")
-            && description.contains("Other"),
+            && description.contains("Other")
+            && description.contains("候选低/中置信")
+            && description.contains("继续其它可执行交付物"),
         "AskUserQuestion description must tell the model not to add custom/Other options: {description}"
     );
 
@@ -281,6 +283,25 @@ fn shell_tool_descriptions_guard_auto_loaded_skill_directories() {
 }
 
 #[test]
+fn shell_tool_descriptions_redact_untrusted_decoded_payloads() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    for id in ["Bash", "PowerShell"] {
+        let def = TOOL_CATALOG.get(id).unwrap();
+        assert!(
+            def.description.contains("解码/反混淆规则")
+                && def.description.contains("base64")
+                && def.description.contains("不要执行")
+                && def.description.contains("不要在最终回复全文复述")
+                && def.description.contains("hash/指纹")
+                && def.description.contains("脱敏片段"),
+            "{id} description must keep decoded command-like payloads classified and redacted: {}",
+            def.description
+        );
+    }
+}
+
+#[test]
 fn tool_descriptions_classify_recoverable_and_boundary_failures() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
@@ -474,6 +495,11 @@ fn skill_market_tools_do_not_turn_no_match_into_task_completion() {
     assert!(
         search.description.contains("不代表用户任务结束")
             && search.description.contains("继续完成其它可执行交付物")
+            && search.description.contains("低/中置信")
+            && search.description.contains("不要默认转成 AskUserQuestion")
+            && search
+                .description
+                .contains("不能让用户在明显不匹配的候选里二选一")
             && search
                 .description
                 .contains("不要用本工具替代本地 SKILL.md 发现"),

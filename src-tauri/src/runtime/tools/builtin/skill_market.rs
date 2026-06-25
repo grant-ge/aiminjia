@@ -141,7 +141,7 @@ impl RuntimeTool for SkillMarketSearchRuntimeTool {
     ) -> ToolDefinition {
         ToolDefinition::new(
             SEARCH_TOOL,
-            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。\n\n搜索无候选、候选置信度低、技能已关闭或市场请求失败，不代表用户任务结束。记录技能发现结果后，继续完成其它可执行交付物；只有用户必须在多个候选中选择、或缺少安装授权/关键目标时才澄清。若恰好一个候选与任务高度匹配，先安装再 RefreshSkills，并按新技能继续执行。不要用本工具替代本地 SKILL.md 发现；本地技能用文件搜索和 Read。",
+            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。\n\n搜索无候选、候选置信度低/中、技能已关闭或市场请求失败，不代表用户任务结束，也不要默认转成 AskUserQuestion。低/中置信候选只能作为“未找到合适技能”的证据记录，不能安装，不能让用户在明显不匹配的候选里二选一。记录技能发现结果后，继续完成其它可执行交付物；只有多个 high confidence 且都安全、明显匹配的候选必须由用户选择，或缺少安装授权/关键目标时才澄清。若恰好一个候选为 high confidence 且理由明显匹配，先安装再 RefreshSkills，并按新技能继续执行。不要用本工具替代本地 SKILL.md 发现；本地技能用文件搜索和 Read。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)
@@ -644,11 +644,11 @@ fn search_status_for_candidate_count(count: usize) -> (&'static str, &'static st
         0 => ("no_match", "未找到足够匹配的市场技能。不要安装无关技能。"),
         1 => (
             "matched",
-            "找到一个候选。只有当 confidence 为 high 且理由明显匹配时才可安装。",
+            "找到一个候选。只有当 confidence 为 high 且理由明显匹配时才可安装；若为 low/medium，记录未找到合适技能并继续其它交付物，不要默认 AskUserQuestion。",
         ),
         _ => (
             "needs_choice",
-            "找到多个候选。不要直接安装；必须先调用 AskUserQuestion 让用户选择。",
+            "找到多个候选。只有多个 high confidence 且明显匹配的候选才需要 AskUserQuestion；low/medium 或不相关候选应记录为未找到合适技能并继续其它交付物。",
         ),
     }
 }
@@ -1319,9 +1319,19 @@ mod tests {
     }
 
     #[test]
-    fn multiple_candidates_require_user_choice() {
-        assert_eq!(search_status_for_candidate_count(0).0, "no_match");
-        assert_eq!(search_status_for_candidate_count(1).0, "matched");
-        assert_eq!(search_status_for_candidate_count(2).0, "needs_choice");
+    fn candidate_status_messages_avoid_low_confidence_clarification_stalls() {
+        let no_match = search_status_for_candidate_count(0);
+        assert_eq!(no_match.0, "no_match");
+
+        let single = search_status_for_candidate_count(1);
+        assert_eq!(single.0, "matched");
+        assert!(single.1.contains("low/medium"));
+        assert!(single.1.contains("不要默认 AskUserQuestion"));
+
+        let multiple = search_status_for_candidate_count(2);
+        assert_eq!(multiple.0, "needs_choice");
+        assert!(multiple.1.contains("多个 high confidence"));
+        assert!(multiple.1.contains("low/medium"));
+        assert!(multiple.1.contains("继续其它交付物"));
     }
 }
