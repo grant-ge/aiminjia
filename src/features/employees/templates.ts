@@ -1,4 +1,4 @@
-// 内置员工模板"身份元数据"——只保留 EmployeeCard / HireWizard / localizeEmployeeDisplay
+// 内置员工模板"身份元数据"——只保留 HireWizard / localizeEmployeeDisplay
 // 需要的最小字段（templateId / name / role / description / resourceConfigKind / avatar / badge）。
 //
 // 历史背景（2026-06）：之前 BUILTIN_TEMPLATES 兼任 HireWizard 的"离线兜底员工列表"，
