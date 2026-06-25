@@ -289,7 +289,10 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
                 && def.description.contains("权限或安全拒绝")
                 && def.description.contains("不要换写法绕过")
                 && def.description.contains("optional/candidate/backup")
-                && def.description.contains("按已安排/已分配处理"),
+                && def.description.contains("按已安排/已分配处理")
+                && def.description.contains("字段级校验")
+                && def.description.contains("BEGIN:VEVENT")
+                && def.description.contains("ATTENDEE"),
             "{id} description must classify tool failures and boundary denials: {}",
             def.description
         );
@@ -303,6 +306,14 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
         "Write description must recover from read-before-write denial without bypassing it: {}",
         write
     );
+    assert!(
+        write.contains("字段级断言")
+            && write.contains("attendees")
+            && write.contains("ATTENDEE")
+            && write.contains("立即 Edit/重写目标文件"),
+        "Write description must require semantic validation of final hard-constraint outputs: {}",
+        write
+    );
 
     let edit_entry = TOOL_CATALOG.get_entry("Edit").unwrap();
     let edit = edit_entry.json_schema["description"].as_str().unwrap();
@@ -312,6 +323,33 @@ fn tool_descriptions_classify_recoverable_and_boundary_failures() {
             && edit.contains("不能只总结失败"),
         "Edit description must guide precise recovery after failed edits: {}",
         edit
+    );
+}
+
+#[test]
+fn task_tools_respect_strict_output_and_semantic_completion() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    let create = TOOL_CATALOG.get("TaskCreate").unwrap();
+    assert!(
+        create.description.contains("不要创建其它文件/目录")
+            && create.description.contains("严格评分")
+            && create.description.contains("内部清单"),
+        "TaskCreate description must avoid persistent task artifacts when output set is strict: {}",
+        create.description
+    );
+
+    let update = TOOL_CATALOG.get_entry("TaskUpdate").unwrap();
+    let definition = &update.definition.description;
+    let status = update.json_schema["properties"]["status"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(
+        definition.contains("字段级断言")
+            && definition.contains("文件存在")
+            && status.contains("字段级断言")
+            && status.contains("schema"),
+        "TaskUpdate description must not allow shallow verification to mark hard-constraint tasks completed: def={definition}; status={status}",
     );
 }
 
