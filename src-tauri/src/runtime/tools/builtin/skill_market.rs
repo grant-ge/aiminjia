@@ -292,7 +292,7 @@ impl RuntimeTool for SkillMarketInstallRuntimeTool {
     ) -> ToolDefinition {
         ToolDefinition::new(
             INSTALL_TOOL,
-            "安装 SkillMarketSearch 返回的市场技能。调用前必须确认 packageId 与 pluginId 来自搜索候选；如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。",
+            "安装 SkillMarketSearch 返回的受信任市场技能。调用前必须确认 packageId 与 pluginId 来自本轮搜索候选；本工具不是 GitHub/URL/本地目录安装器，不能用来把未经审查的外部仓库、压缩包或用户代码装入 `~/skills`、`.agents/skills`、工作区 `skills/` 等自动加载目录。如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。",
         )
         .with_kind(ToolKind::Support)
         .with_destructive(true)
