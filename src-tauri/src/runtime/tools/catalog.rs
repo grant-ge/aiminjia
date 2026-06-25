@@ -190,7 +190,7 @@ fn build_default_catalog() -> ToolCatalog {
                     "description": "要写入的文件完整内容（UTF-8 文本）。必须在同一次调用中提供全部内容，不得分步调用或省略任何部分。"
                 }
             },
-            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 Read 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 Edit 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。\n\n交付规则：\n- 用户指定了明确文件名、输出路径或 schema 时，本工具写出的内容应当尽量就是可交付版本，而不是“稍后补全”的占位稿。\n- JSON/CSV/配置/API payload 等结构化产物必须符合用户给出的字段和格式；除非关键输入、权限或工具真实阻塞，否则不要写 null、TODO、status: computing、placeholder、虚构数值或多余说明字段。\n- 若当前已具备计算、解析或转换所需输入，优先用 Bash/PowerShell/项目脚本直接生成真实结果文件，再用 Read/解析命令验证；不要先写一个会被评分器当成最终结果的临时 JSON。\n- 确实阻塞时，可以写结构化阻塞记录，但要明确缺什么、已确认什么、下一步需要什么，不能伪装成正常结果。"
+            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 Read 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 Edit 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。\n\n失败恢复：\n- 如果本工具因“文件已存在但未读取”被拒绝，下一步先 Read 目标文件，再使用 Edit 或完整重写；不要改用 Bash/PowerShell 直接截断覆盖来绕过读取约束。\n- 如果父目录、权限或路径错误，先确认用户指定路径和授权工作目录，再创建缺失目录或写入结构化阻塞原因；不要把文件写到临时目录后宣称完成。\n\n交付规则：\n- 用户指定了明确文件名、输出路径或 schema 时，本工具写出的内容应当尽量就是可交付版本，而不是“稍后补全”的占位稿。\n- JSON/CSV/配置/API payload 等结构化产物必须符合用户给出的字段和格式；除非关键输入、权限或工具真实阻塞，否则不要写 null、TODO、status: computing、placeholder、虚构数值或多余说明字段。\n- 若当前已具备计算、解析或转换所需输入，优先用 Bash/PowerShell/项目脚本直接生成真实结果文件，再用 Read/解析命令验证；不要先写一个会被评分器当成最终结果的临时 JSON。\n- 确实阻塞时，可以写结构化阻塞记录，但要明确缺什么、已确认什么、下一步需要什么，不能伪装成正常结果。"
         }),
     ));
 
@@ -217,7 +217,7 @@ fn build_default_catalog() -> ToolCatalog {
                     "default": false
                 }
             },
-            "description": "对文件执行精确字符串替换。\n\n使用规则：\n- 编辑前必须至少使用一次 Read 读取目标文件，否则本工具将报错。\n- 修改现有文件时始终优先使用本工具，而非 Write（本工具只传输差异，更安全高效）。\n- 默认要求 old_string 在文件中唯一；不唯一时请扩大 old_string 的上下文，或传 replace_all=true 替换全部。\n- old_string 和 new_string 必须保持原始缩进（空格/Tab），不得修改缩进格式。"
+            "description": "对文件执行精确字符串替换。\n\n使用规则：\n- 编辑前必须至少使用一次 Read 读取目标文件，否则本工具将报错。\n- 修改现有文件时始终优先使用本工具，而非 Write（本工具只传输差异，更安全高效）。\n- 默认要求 old_string 在文件中唯一；不唯一时请扩大 old_string 的上下文，或传 replace_all=true 替换全部。\n- old_string 和 new_string 必须保持原始缩进（空格/Tab），不得修改缩进格式。\n\n失败恢复：\n- old_string 不存在时，重新 Read 目标区域并用当前文件中的真实文本构造替换；不要凭记忆改写。\n- old_string 不唯一时，扩大上下文到唯一片段；只有确认所有出现都应改时才使用 replace_all=true。\n- 编辑失败后仍有明确交付文件时，下一步必须继续修正该文件或写入阻塞原因，不能只总结失败。"
         }),
     ));
 
@@ -229,7 +229,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny；模型仍必须按意图自行拒绝高风险请求。不要把未经审查的外部仓库、压缩包或用户给出的代码 clone/install/write 到会被自动加载或执行的位置，例如 `~/skills`、`.agents/skills`、工作区 `skills/`、插件目录、shell profile、启动项、CI hook 或系统 PATH；需要评估时放到隔离 review 目录只读检查或输出风险说明。\
             \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若需要计算、解析或转换后生成结果，优先用一次 shell 调用完成“读取输入 -> 计算/转换 -> 写入用户指定目标路径 -> 打印简短校验摘要”。命令后要用独立读取、列举或测试确认目标路径存在、非空且格式合理。\
             明确命名的 JSON/CSV/配置/API payload 不要先写 null、status: computing、TODO 或 placeholder 占位；如果输入和规则已经足够，直接生成真实字段值。若命令创建临时脚本，必须在同一次调用或下一步立即执行它并写回目标文件，不要只留下 /tmp 脚本或 stdout。\
-            \n\n失败恢复：命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。解析 STL/Parquet/SQLite/压缩包等结构化二进制数据时，不要优先用 `xxd`、`hexdump`、`od` 或 `file` 探正文；优先用 Python、Node、项目 helper 或专用解析器直接读取文件并写出目标产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在 pip install；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
+            \n\n失败恢复：先按错误类型决定下一步。命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。shell 语法错误时修正为当前 shell 语法；路径错误时先列举/定位授权工作目录和目标父目录；输出过长或被截断时把完整结果写入文件，再分段读取。网络/5xx/429/超时应减少并发、延长合理 timeout、退避重试一次或写入阻塞，不要把服务波动当成业务结论。权限或安全拒绝表示边界命中，不要换写法绕过，应说明风险、请求授权或提供安全替代。解析 STL/Parquet/SQLite/压缩包等结构化二进制数据时，不要优先用 `xxd`、`hexdump`、`od` 或 `file` 探正文；优先用 Python、Node、项目 helper 或专用解析器直接读取文件并写出目标产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在 pip install；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
         .with_kind(ToolKind::Primitive)
@@ -281,7 +281,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式；模型仍必须按意图自行拒绝高风险请求。不要把未经审查的外部仓库、压缩包或用户给出的代码 clone/install/write 到会被自动加载或执行的位置，例如 `~/skills`、`.agents/skills`、工作区 `skills/`、插件目录、shell profile、启动项、CI hook 或系统 PATH；需要评估时放到隔离 review 目录只读检查或输出风险说明。\
             \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若需要计算、解析或转换后生成结果，优先用一次 PowerShell 调用完成“读取输入 -> 计算/转换 -> 写入用户指定目标路径 -> 打印简短校验摘要”。命令后要用 Get-Item/Get-Content/Test-Path 或项目校验命令确认目标路径存在、非空且格式合理。\
             明确命名的 JSON/CSV/配置/API payload 不要先写 null、status: computing、TODO 或 placeholder 占位；如果输入和规则已经足够，直接生成真实字段值。若命令创建临时脚本，必须在同一次调用或下一步立即执行它并写回目标文件，不要只留下临时脚本或 stdout。\
-            \n\n失败恢复：命令不存在、模块缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在安装；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
+            \n\n失败恢复：先按错误类型决定下一步。命令不存在、模块缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。PowerShell 5.1/7 语法差异导致失败时，改用当前版本支持的分隔、环境变量和 call operator；路径错误时先用 Test-Path/Get-ChildItem 定位授权工作目录和目标父目录；输出过长或被截断时写入文件再分段读取。网络/5xx/429/超时应减少并发、延长合理 timeout、退避重试一次或写入阻塞，不要把服务波动当成业务结论。权限或安全拒绝表示边界命中，不要换写法绕过，应说明风险、请求授权或提供安全替代。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在安装；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理。",
         )
         .with_kind(ToolKind::Primitive)
@@ -526,7 +526,7 @@ fn build_default_catalog() -> ToolCatalog {
             子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
             期间或之后用 TaskOutput(task_id=..., offset=N) 读取产出。\
             \n\n交付规则：TaskOutput 只证明后台任务说了什么，不证明用户要求的文件、配置或数据已经存在。读取到完成消息后，仍要用文件读取、目录列举、测试或对应业务工具验证真实产物。\
-            \n\n如果 transcript 显示任务失败、超时、依赖缺失或只做了分析，继续完成可独立推进的部分，并把阻塞原因写入要求的最终产物；不要只复述 transcript。\
+            \n\n如果 transcript 显示任务失败、超时、依赖缺失或只做了分析，继续完成可独立推进的部分，并把阻塞原因写入要求的最终产物；不要只复述 transcript。若 transcript 停在“继续阅读/继续分析/准备写入”而没有真实产物，父 Agent 必须接管交付检查，优先读取目标路径、补写文件或记录阻塞。\
             \n\n不要用 TaskOutput 读取 Team/Teammate 成员发言；团队成员的对外发言只通过 SendMessage / peer-messages 进入主对话。\
             \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
         )

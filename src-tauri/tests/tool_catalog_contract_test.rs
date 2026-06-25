@@ -278,6 +278,42 @@ fn shell_tool_descriptions_guard_auto_loaded_skill_directories() {
 }
 
 #[test]
+fn tool_descriptions_classify_recoverable_and_boundary_failures() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    for id in ["Bash", "PowerShell"] {
+        let def = TOOL_CATALOG.get(id).unwrap();
+        assert!(
+            def.description.contains("错误类型")
+                && def.description.contains("网络/5xx/429/超时")
+                && def.description.contains("权限或安全拒绝")
+                && def.description.contains("不要换写法绕过"),
+            "{id} description must classify tool failures and boundary denials: {}",
+            def.description
+        );
+    }
+
+    let write_entry = TOOL_CATALOG.get_entry("Write").unwrap();
+    let write = write_entry.json_schema["description"].as_str().unwrap();
+    assert!(
+        write.contains("文件已存在但未读取")
+            && write.contains("不要改用 Bash/PowerShell 直接截断覆盖"),
+        "Write description must recover from read-before-write denial without bypassing it: {}",
+        write
+    );
+
+    let edit_entry = TOOL_CATALOG.get_entry("Edit").unwrap();
+    let edit = edit_entry.json_schema["description"].as_str().unwrap();
+    assert!(
+        edit.contains("old_string 不存在")
+            && edit.contains("old_string 不唯一")
+            && edit.contains("不能只总结失败"),
+        "Edit description must guide precise recovery after failed edits: {}",
+        edit
+    );
+}
+
+#[test]
 fn catalog_non_long_running_tools_keep_timeout_unset() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
