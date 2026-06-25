@@ -15,7 +15,6 @@ import { ChatRow } from "@/components/chat-scene/ChatRow";
 import { GeneratedFileCard } from "@/components/chat-scene/GeneratedFileCard";
 import { PeerMessageBanner } from "@/components/chat-scene/PeerMessageBanner";
 import { parseDispatchHeader } from "@/components/chat-scene/parseDispatchHeader";
-import { SuggestChipGroup } from "@/components/chat-scene/SuggestChipGroup";
 import { ToolStepGroupBlock } from "@/components/chat-scene/ToolStepGroupBlock";
 import { ToolTraceIO } from "@/components/chat-scene/ToolTraceIO";
 import { UserMessageBubble } from "@/components/chat-scene/UserMessageBubble";
@@ -628,7 +627,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
               })
             ) : (
               // 兜底：turn 没有 blocks（罕见——测试 mock 或异常会话）。
-              // 直接渲染 aiSegments / generatedFiles / suggestions / teamSession，
+              // 直接渲染 aiSegments / generatedFiles / teamSession，
               // 不再尝试展示工具卡（没 blocks 时本来就没工具调用数据可显示）。
               <>
                 {teamSession ? (
@@ -640,8 +639,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                   </TeamVisualProvider>
                 ) : null}
                 {t.aiSegments.length > 0 ||
-                t.generatedFiles.length > 0 ||
-                t.suggestions.length > 0 ? (
+                t.generatedFiles.length > 0 ? (
                   <ChatRow
                     role="assistant"
                     name={assistantName}
@@ -672,14 +670,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                         onReveal={() => void handleReveal(f)}
                       />
                     ))}
-                    {t.suggestions.length > 0 ? (
-                      <SuggestChipGroup
-                        items={t.suggestions.map((s) => ({
-                          label: s,
-                          onClick: () => {},
-                        }))}
-                      />
-                    ) : null}
                   </ChatRow>
                 ) : null}
               </>
@@ -915,14 +905,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           <ToolReceiptBlock key={b.id} receipt={b.receipt} step={b.step} />
         );
       }
-      if (b.kind === "suggestions") {
-        return (
-          <SuggestChipGroup
-            key={`sug-${idx}`}
-            items={b.suggestions.map((s) => ({ label: s, onClick: () => {} }))}
-          />
-        );
-      }
+      if (b.kind === "suggestions") return null;
       if (b.kind === "teamMarker") {
         if (!ctx.teamSession) return null;
         return (
