@@ -15,7 +15,7 @@ use crate::runtime::chat::compaction::{
     append_literal_anchor_hints, append_transcript_path_hint,
     compact_transcript_path_for_conversation_dir, AutoCompactConfig, CompactTrigger,
 };
-use crate::runtime::chat::context_builder::build_iteration_context;
+use crate::runtime::chat::context_builder::{build_iteration_context, build_local_skill_context};
 use crate::runtime::chat::multimodal::{
     build_anthropic_image_blocks, retain_text_fallback_attachments,
 };
@@ -2863,6 +2863,15 @@ impl RuntimeChatTurnDriver {
             }
             Some(instruction) => instruction,
             None => skill_catalog,
+        };
+        let local_skill_context =
+            build_local_skill_context(&config.workspace_path, config.authorized_workspace.as_ref());
+        let skill_context = if local_skill_context.is_empty() {
+            skill_context
+        } else if skill_context.is_empty() {
+            local_skill_context
+        } else {
+            format!("{local_skill_context}\n\n{skill_context}")
         };
         let skill_context = match request.channel_context.as_deref() {
             Some(channel_context)

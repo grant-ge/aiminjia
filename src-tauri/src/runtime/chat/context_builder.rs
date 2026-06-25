@@ -79,6 +79,72 @@ pub fn build_iteration_context(
     ctx
 }
 
+pub fn build_local_skill_context(
+    workspace_path: &std::path::Path,
+    authorized_workspace: Option<&crate::runtime::store::AuthorizedWorkspaceRef>,
+) -> String {
+    let root = authorized_workspace
+        .map(|ws| ws.root_path.as_path())
+        .unwrap_or(workspace_path);
+    let mut paths = Vec::new();
+    push_skill_entry_if_file(root, root.join("SKILL.md"), &mut paths);
+    push_one_level_skill_entries(root, root.join(".agents").join("skills"), &mut paths);
+    push_one_level_skill_entries(root, root.join("skills"), &mut paths);
+    if paths.is_empty() {
+        return String::new();
+    }
+    paths.sort();
+    paths.dedup();
+    paths.truncate(12);
+
+    let mut out = String::from(
+        "\n\n[本地技能入口]\n当前工作区存在本地 SKILL.md。非平凡文件/数据/代码任务在手写实现前，先用 Read 读取相关入口并按其方法执行；这些不是 Skill(find-skills) 的 skill_id。\n",
+    );
+    for path in paths {
+        out.push_str("- ");
+        out.push_str(&path);
+        out.push('\n');
+    }
+    out
+}
+
+fn push_one_level_skill_entries(
+    root: &std::path::Path,
+    dir: std::path::PathBuf,
+    paths: &mut Vec<String>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() || file_type.is_symlink() {
+            continue;
+        }
+        push_skill_entry_if_file(root, entry.path().join("SKILL.md"), paths);
+        if paths.len() >= 12 {
+            break;
+        }
+    }
+}
+
+fn push_skill_entry_if_file(
+    root: &std::path::Path,
+    path: std::path::PathBuf,
+    paths: &mut Vec<String>,
+) {
+    if !path.is_file() {
+        return;
+    }
+    let display = path
+        .strip_prefix(root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| path.to_string_lossy().replace('\\', "/"));
+    paths.push(display);
+}
+
 /// 构建会话级环境信息段落，注入到 dynamic context。
 ///
 /// 输出内容：
@@ -349,6 +415,28 @@ mod tests {
         assert!(notes_pos < conn_pos);
         assert!(conn_pos < ana_pos);
         assert!(ana_pos < skill_pos);
+    }
+
+    #[test]
+    fn test_build_local_skill_context_lists_workspace_skill_entrypoints() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("SKILL.md"), "root").unwrap();
+        std::fs::create_dir_all(tmp.path().join("skills").join("mesh-analysis")).unwrap();
+        std::fs::write(
+            tmp.path()
+                .join("skills")
+                .join("mesh-analysis")
+                .join("SKILL.md"),
+            "mesh",
+        )
+        .unwrap();
+
+        let result = build_local_skill_context(tmp.path(), None);
+
+        assert!(result.contains("[本地技能入口]"));
+        assert!(result.contains("- SKILL.md"));
+        assert!(result.contains("- skills/mesh-analysis/SKILL.md"));
+        assert!(result.contains("Skill(find-skills)"));
     }
 
     #[tokio::test]
