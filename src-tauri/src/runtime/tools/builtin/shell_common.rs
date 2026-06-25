@@ -135,6 +135,56 @@ pub fn format_command_failure(
     message
 }
 
+pub fn auto_loaded_skill_install_deny_message(command: &str) -> Option<String> {
+    let normalized = command.to_ascii_lowercase().replace('\\', "/");
+    if !looks_like_external_code_fetch(&normalized) || !targets_auto_loaded_skill_dir(&normalized) {
+        return None;
+    }
+    Some(
+        "Refusing: unreviewed external code must not be cloned, installed, or written into auto-loaded skill directories such as ~/skills, .agents/skills, or workspace skills/. Clone to an isolated review directory first, inspect it read-only, and warn the user about the security risk before any installation."
+            .to_string(),
+    )
+}
+
+fn looks_like_external_code_fetch(command: &str) -> bool {
+    let has_remote = command.contains("https://")
+        || command.contains("http://")
+        || command.contains("git@")
+        || command.contains("ssh://");
+    has_remote
+        && [
+            "git clone",
+            "gh repo clone",
+            "curl ",
+            "wget ",
+            "invoke-webrequest",
+            "invoke-restmethod",
+            "iwr ",
+            "irm ",
+            " iwr ",
+            " irm ",
+        ]
+        .iter()
+        .any(|marker| command.contains(marker))
+}
+
+fn targets_auto_loaded_skill_dir(command: &str) -> bool {
+    [
+        "~/skills",
+        "$home/skills",
+        "${home}/skills",
+        "$env:userprofile/skills",
+        "%userprofile%/skills",
+        ".agents/skills",
+        " skills/",
+        " ./skills/",
+        " skills ",
+        " ./skills ",
+    ]
+    .iter()
+    .any(|marker| command.contains(marker))
+}
+
 fn command_failure_recovery_hint(output: &str) -> Option<&'static str> {
     let lower = output.to_ascii_lowercase();
     if lower.contains("modulenotfounderror: no module named")

@@ -379,6 +379,39 @@ async fn bash_denies_write_to_etc() {
 }
 
 #[tokio::test]
+async fn bash_denies_external_repo_clone_to_auto_loaded_skill_dir() {
+    let tmp = TempDir::new().unwrap();
+    let ctx = make_ctx(&tmp);
+
+    let tool = BashTool::default();
+    let input = json!({
+        "command": "GIT_SSL_NO_VERIFY=1 git clone --depth 1 https://github.com/example/skill.git ~/skills/example"
+    });
+    let decision = tool.check_permissions(&input, &ctx).await;
+
+    let Some(PermissionDecision::Deny { message, .. }) = decision else {
+        panic!("clone into ~/skills should be denied");
+    };
+    assert!(message.contains("auto-loaded skill directories"));
+    assert!(message.contains("isolated review directory"));
+}
+
+#[tokio::test]
+async fn bash_allows_reading_existing_workspace_skill_files() {
+    let tmp = TempDir::new().unwrap();
+    let ctx = make_ctx(&tmp);
+
+    let tool = BashTool::default();
+    let input = json!({ "command": "sed -n '1,80p' skills/mesh-analysis/SKILL.md" });
+    let decision = tool.check_permissions(&input, &ctx).await;
+
+    assert!(
+        !matches!(decision, Some(PermissionDecision::Deny { .. })),
+        "read-only inspection of existing workspace skills should not hit install guard"
+    );
+}
+
+#[tokio::test]
 async fn bash_fails_without_capability_context() {
     let tool = BashTool::default();
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");

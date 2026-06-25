@@ -21,9 +21,10 @@ use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
 
 use super::shell_common::{
-    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, inject_bundled_runtime_path, inject_trace_env,
-    interpret_command_result, kill_child_process_tree, optional_transcript_path,
+    auto_loaded_skill_install_deny_message, collect_reader, content_from_output,
+    emit_shell_failure_diagnostic, format_cancel_message, format_command_failure,
+    inject_bundled_runtime_path, inject_trace_env, interpret_command_result,
+    kill_child_process_tree, optional_transcript_path,
     read_merged_streams_with_progress_and_optional_transcript, tail_n_lines,
     truncated_to_max_bytes, ExitKind, MAX_OUTPUT_BYTES,
 };
@@ -683,6 +684,12 @@ impl RuntimeTool for BashTool {
                     reason: PermissionReason::Other("dangerous_pattern".to_string()),
                 });
             }
+        }
+        if let Some(message) = auto_loaded_skill_install_deny_message(command) {
+            return Some(PermissionDecision::Deny {
+                message,
+                reason: PermissionReason::Other("auto_loaded_skill_directory".to_string()),
+            });
         }
 
         if let Some(message) = command_hits_denied_path(command, ctx) {
