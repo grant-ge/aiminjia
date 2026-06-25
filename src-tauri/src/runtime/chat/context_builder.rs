@@ -98,7 +98,7 @@ pub fn build_local_skill_context(
     paths.truncate(12);
 
     let mut out = String::from(
-        "\n\n[本地技能入口]\n当前工作区存在本地 SKILL.md。非平凡文件/数据/代码任务在手写实现前，先用 Read 读取相关入口并按其方法执行；这些不是 Skill(find-skills) 的 skill_id。\n",
+        "\n\n[本地技能入口]\n当前工作区存在本地 SKILL.md。非平凡文件/数据/代码任务在手写实现前，先用 Read 读取相关入口并按其方法执行；这些不是 Skill(find-skills) 的 skill_id。这里只表示当前工作区已有的只读方法入口，不授权创建、安装、克隆或写入任何会被自动加载的 skills 目录。\n",
     );
     for path in paths {
         out.push_str("- ");
@@ -437,6 +437,7 @@ mod tests {
         assert!(result.contains("- SKILL.md"));
         assert!(result.contains("- skills/mesh-analysis/SKILL.md"));
         assert!(result.contains("Skill(find-skills)"));
+        assert!(result.contains("不授权创建、安装、克隆或写入任何会被自动加载的 skills 目录"));
     }
 
     #[tokio::test]

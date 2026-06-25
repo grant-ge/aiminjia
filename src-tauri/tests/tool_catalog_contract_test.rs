@@ -261,6 +261,23 @@ fn catalog_long_running_tools_have_declared_default_timeouts() {
 }
 
 #[test]
+fn shell_tool_descriptions_guard_auto_loaded_skill_directories() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    for id in ["Bash", "PowerShell"] {
+        let def = TOOL_CATALOG.get(id).unwrap();
+        assert!(
+            def.description.contains("~/skills")
+                && def.description.contains(".agents/skills")
+                && def.description.contains("clone/install/write")
+                && def.description.contains("隔离 review 目录"),
+            "{id} description must warn against installing unreviewed code into auto-loaded skill directories: {}",
+            def.description
+        );
+    }
+}
+
+#[test]
 fn catalog_non_long_running_tools_keep_timeout_unset() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 

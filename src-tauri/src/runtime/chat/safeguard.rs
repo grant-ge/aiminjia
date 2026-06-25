@@ -282,7 +282,29 @@ pub fn extract_requested_file_targets(request: &str) -> Vec<String> {
             targets.insert(value);
         }
     }
-    targets.into_iter().collect()
+    drop_shadowed_bare_targets(targets)
+}
+
+fn drop_shadowed_bare_targets(targets: BTreeSet<String>) -> Vec<String> {
+    let shadowed_basenames: BTreeSet<String> = targets
+        .iter()
+        .filter(|target| target.contains('/'))
+        .filter_map(|target| Path::new(target).file_name())
+        .map(|name| name.to_string_lossy().to_string())
+        .collect();
+
+    targets
+        .into_iter()
+        .filter(|target| {
+            if target.contains('/') {
+                return true;
+            }
+            let Some(file_name) = Path::new(target).file_name() else {
+                return true;
+            };
+            !shadowed_basenames.contains(file_name.to_string_lossy().as_ref())
+        })
+        .collect()
 }
 
 pub fn missing_requested_file_targets(targets: &[String], workspace_root: &Path) -> Vec<String> {
@@ -530,6 +552,34 @@ mod tests {
             vec![
                 "output/relative_gain_bar.png".to_string(),
                 "output/thinking_relative_impact.csv".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn prefers_directory_qualified_output_over_section_heading_basename() {
+        let request = r#"
+Save the results into `output/` with the following files:
+   - `output/scheduled.ics`
+   - `output/unscheduled.json`
+   - `output/decision_log.md`
+
+### `scheduled.ics`
+Must be a valid iCalendar file.
+
+### `unscheduled.json`
+A JSON array.
+
+### `decision_log.md`
+Use exactly the following structure.
+"#;
+        let targets = extract_requested_file_targets(request);
+        assert_eq!(
+            targets,
+            vec![
+                "output/decision_log.md".to_string(),
+                "output/scheduled.ics".to_string(),
+                "output/unscheduled.json".to_string(),
             ]
         );
     }

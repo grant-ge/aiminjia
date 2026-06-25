@@ -226,7 +226,7 @@ fn build_default_catalog() -> ToolCatalog {
             "Bash",
             "在授权工作目录中执行 shell 命令。默认 timeout 120000ms；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
-            \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
+            \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny；模型仍必须按意图自行拒绝高风险请求。不要把未经审查的外部仓库、压缩包或用户给出的代码 clone/install/write 到会被自动加载或执行的位置，例如 `~/skills`、`.agents/skills`、工作区 `skills/`、插件目录、shell profile、启动项、CI hook 或系统 PATH；需要评估时放到隔离 review 目录只读检查或输出风险说明。\
             \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若需要计算、解析或转换后生成结果，优先用一次 shell 调用完成“读取输入 -> 计算/转换 -> 写入用户指定目标路径 -> 打印简短校验摘要”。命令后要用独立读取、列举或测试确认目标路径存在、非空且格式合理。\
             明确命名的 JSON/CSV/配置/API payload 不要先写 null、status: computing、TODO 或 placeholder 占位；如果输入和规则已经足够，直接生成真实字段值。若命令创建临时脚本，必须在同一次调用或下一步立即执行它并写回目标文件，不要只留下 /tmp 脚本或 stdout。\
             \n\n失败恢复：命令不存在、依赖缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。解析 STL/Parquet/SQLite/压缩包等结构化二进制数据时，不要优先用 `xxd`、`hexdump`、`od` 或 `file` 探正文；优先用 Python、Node、项目 helper 或专用解析器直接读取文件并写出目标产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在 pip install；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
@@ -278,7 +278,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n- **不要**使用 Unix 专属命令（grep/find/rm/cat/ls -la 等不存在或行为不同）\
             \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
-            \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式。\
+            \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式；模型仍必须按意图自行拒绝高风险请求。不要把未经审查的外部仓库、压缩包或用户给出的代码 clone/install/write 到会被自动加载或执行的位置，例如 `~/skills`、`.agents/skills`、工作区 `skills/`、插件目录、shell profile、启动项、CI hook 或系统 PATH；需要评估时放到隔离 review 目录只读检查或输出风险说明。\
             \n\n交付规则：需要创建或更新文本产物时，优先使用 Write/Edit；若需要计算、解析或转换后生成结果，优先用一次 PowerShell 调用完成“读取输入 -> 计算/转换 -> 写入用户指定目标路径 -> 打印简短校验摘要”。命令后要用 Get-Item/Get-Content/Test-Path 或项目校验命令确认目标路径存在、非空且格式合理。\
             明确命名的 JSON/CSV/配置/API payload 不要先写 null、status: computing、TODO 或 placeholder 占位；如果输入和规则已经足够，直接生成真实字段值。若命令创建临时脚本，必须在同一次调用或下一步立即执行它并写回目标文件，不要只留下临时脚本或 stdout。\
             \n\n失败恢复：命令不存在、模块缺失、路径不可达或超时时，不要反复原样重试；改用已安装工具、小脚本、项目校验命令或把真实阻塞原因写入要求的产物。若生成 PNG/图表等二进制产物时缺少 matplotlib/Pillow 等包，不要卡在安装；优先用已安装库，或用 Python 标准库写入可检查的简版 PNG/SVG 替代实现，并验证目标文件存在非空。\
