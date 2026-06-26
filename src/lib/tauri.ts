@@ -395,6 +395,14 @@ export interface NetworkStatusPayload {
   errorKind: NetworkErrorKind | null;
 }
 
+const HIGH_FREQUENCY_EVENT_DIAGNOSTIC_NAMES = new Set<string>([
+  TAURI_EVENTS.STREAMING_DELTA,
+  TAURI_EVENTS.TOOL_PROGRESS,
+  TAURI_EVENTS.TURN_HEARTBEAT,
+]);
+
+const SLOW_EVENT_HANDLER_DIAGNOSTIC_MS = 250;
+
 /** Mirror of backend `PersistedTurnStage` (turn_stage.json on disk). */
 export interface PersistedTurnStage {
   schemaVersion: number;
@@ -2076,32 +2084,40 @@ export function createInstrumentedEventHandler<T>(
       typeof performance !== "undefined" ? performance.now() : Date.now();
     const conversationId = getConversationIdFromPayload(event.payload);
     const runId = getRunIdFromPayload(event.payload);
+    const traceEveryStep = !HIGH_FREQUENCY_EVENT_DIAGNOSTIC_NAMES.has(eventName);
 
-    recordDiagnostic({
-      event: "event.received",
-      conversationId,
-      runId,
-      payload: { eventName, payload: event.payload },
-    });
-    recordDiagnostic({
-      event: "event.handler.started",
-      conversationId,
-      runId,
-      payload: { eventName },
-    });
+    if (traceEveryStep) {
+      recordDiagnostic({
+        event: "event.received",
+        conversationId,
+        runId,
+        payload: { eventName, payload: event.payload },
+      });
+      recordDiagnostic({
+        event: "event.handler.started",
+        conversationId,
+        runId,
+        payload: { eventName },
+      });
+    }
 
     try {
       await handler(event);
       const endedAt =
         typeof performance !== "undefined" ? performance.now() : Date.now();
-      recordDiagnostic({
-        event: "event.handler.completed",
-        ok: true,
-        conversationId,
-        runId,
-        durationMs: Math.round(endedAt - startedAt),
-        payload: { eventName },
-      });
+      const durationMs = Math.round(endedAt - startedAt);
+      if (traceEveryStep || durationMs >= SLOW_EVENT_HANDLER_DIAGNOSTIC_MS) {
+        recordDiagnostic({
+          event: traceEveryStep
+            ? "event.handler.completed"
+            : "event.handler.slow",
+          ok: true,
+          conversationId,
+          runId,
+          durationMs,
+          payload: { eventName },
+        });
+      }
     } catch (error) {
       const endedAt =
         typeof performance !== "undefined" ? performance.now() : Date.now();
