@@ -66,7 +66,6 @@ export function AuthGate({ children }: PropsWithChildren) {
         .then((result) => {
           if (result.installed.length > 0) {
             console.info('[builtin-skills] installed:', result.installed)
-            void useSkillStore.getState().reload()
           }
           if (result.skipped.length > 0) {
             console.info('[builtin-skills] skipped:', result.skipped)
@@ -74,6 +73,11 @@ export function AuthGate({ children }: PropsWithChildren) {
         })
         .catch((err) => {
           console.warn('[builtin-skills] sync failed:', err)
+        })
+        .finally(() => {
+          void useSkillStore.getState().reload().catch((err) => {
+            console.warn('[builtin-skills] skillStore reload failed:', err)
+          })
         })
 
       workplaceDirectoryCatalog(i18n.language)
