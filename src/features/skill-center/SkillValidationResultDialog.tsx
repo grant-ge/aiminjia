@@ -1,6 +1,6 @@
 import { Check, X } from 'lucide-react'
 
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { SkillValidationKind } from '@/stores/skillStore'
 import { Button } from '@/components/ui/button'
 
@@ -64,34 +64,36 @@ export function SkillValidationResultDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ul className="flex flex-col gap-2 text-sm">
-          {RULES.map((rule) => {
-            const isFailed = rule.id === failed
-            return (
-              <li key={rule.id} className="flex items-start gap-2">
-                {isFailed ? (
-                  <X className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-label="未通过" />
-                ) : (
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-label="已通过" />
-                )}
-                <span className={isFailed ? 'text-foreground' : 'text-muted-foreground'}>{rule.label}</span>
-              </li>
-            )
-          })}
-        </ul>
+        <DialogBody data-testid="skill-validation-dialog-body" className="flex flex-col gap-4">
+          <ul className="flex flex-col gap-2 text-sm">
+            {RULES.map((rule) => {
+              const isFailed = rule.id === failed
+              return (
+                <li key={rule.id} className="flex items-start gap-2">
+                  {isFailed ? (
+                    <X className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-label="未通过" />
+                  ) : (
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-label="已通过" />
+                  )}
+                  <span className={isFailed ? 'text-foreground' : 'text-muted-foreground'}>{rule.label}</span>
+                </li>
+              )
+            })}
+          </ul>
 
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-          {detailLine(failure.kind, failure.detail)}
-        </div>
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+            {detailLine(failure.kind, failure.detail)}
+          </div>
+        </DialogBody>
 
-        <div className="flex items-center justify-end gap-2">
-          <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter data-testid="skill-validation-dialog-footer">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button size="sm" onClick={onRetry}>
+          <Button onClick={onRetry}>
             重新选择目录
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

@@ -86,7 +86,7 @@ function TiltedFileIcon({ title, sub }: { title: string; sub: string }) {
         <path d="M13 21H34" className="stroke-foreground/20" strokeWidth="3" strokeLinecap="round" />
         <path d="M13 29H29" className="stroke-foreground/15" strokeWidth="3" strokeLinecap="round" />
       </svg>
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[0.5625rem] font-semibold tracking-[0.14em] text-muted-foreground">
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap text-[0.5625rem] font-semibold tracking-[0.14em] text-muted-foreground">
         {label}
       </div>
     </div>

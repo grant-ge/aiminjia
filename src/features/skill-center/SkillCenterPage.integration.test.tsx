@@ -140,8 +140,10 @@ describe('SkillCenterPage', () => {
     })
 
     await waitFor(() => expect(screen.getByText('技能目录不符合规范')).toBeInTheDocument())
+    expect(screen.getByTestId('skill-validation-dialog-body')).toHaveClass('px-6')
+    expect(screen.getByTestId('skill-validation-dialog-footer')).toHaveClass('px-6', 'pb-6')
     expect(screen.getByText(/未找到 SKILL.md/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重新选择目录' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新选择目录' })).toHaveClass('h-8')
   })
 
   it('upload 抛出 parseFailed 时校验对话框透传 detail', async () => {

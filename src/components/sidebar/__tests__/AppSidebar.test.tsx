@@ -329,6 +329,8 @@ describe("AppSidebar", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "重命名聊天" }),
     );
+    expect(screen.getByTestId("conversation-rename-dialog-body")).toHaveClass("px-6");
+    expect(screen.getByTestId("conversation-rename-dialog-footer")).toHaveClass("px-6", "pb-6");
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "新的标题" },
     });

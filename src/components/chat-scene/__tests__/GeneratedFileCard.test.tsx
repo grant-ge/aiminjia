@@ -57,6 +57,12 @@ describe('GeneratedFileCard', () => {
     expect(screen.getByRole('button', { name: '更多操作：绩效分析总结 · Q2' })).toBeInTheDocument()
   })
 
+  it('keeps short file extension labels on a single line inside the icon', () => {
+    renderCard({ title: 'xiaoxin_preview.png', sub: '图片' })
+
+    expect(screen.getByText('PNG')).toHaveClass('whitespace-nowrap')
+  })
+
   it('keeps legacy onOpen as the default open action and disables missing reveal action', () => {
     const onOpen = vi.fn()
 
