@@ -30,7 +30,7 @@ export interface RunTriggerPrechecksParams {
  * Note on resource_config: only `monitoring-urls` is a HARD requirement (小研
  * needs at least one URL to do anything). `sales-table` is a SOFT requirement
  * — the employee can fall back to asking the user inside the chat (path A) and
- * persisting the answers to memory; HireWizard resource setup is a faster
+ * persisting the answers to memory; employee detail resource setup is a faster
  * path B that pre-fills the same shape.
  *
  * Dingtalk auth is NOT a precheck: the `dingtalk-workspace` skill checks

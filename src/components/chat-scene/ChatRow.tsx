@@ -11,9 +11,9 @@
  * or `AiBubble`); this wrapper just gives it a header strip with sender
  * identity. Used by `MessageList`.
  *
- * The DispatchBanner (派活提示) and team progress / generated-file cards
- * are full-width centered system messages and should NOT be wrapped —
- * the caller decides whether to render <ChatRow> at all.
+ * Team progress / generated-file cards are full-width centered system
+ * messages and should NOT be wrapped — the caller decides whether to render
+ * <ChatRow> at all.
  */
 import type { ReactNode } from "react";
 import { ChatAvatar } from "./ChatAvatar";

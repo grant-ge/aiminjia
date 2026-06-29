@@ -14,7 +14,6 @@ import { savePreviewTargetToDisk } from "@/components/chat/fileDownload";
 import { ChatRow } from "@/components/chat-scene/ChatRow";
 import { GeneratedFileCard } from "@/components/chat-scene/GeneratedFileCard";
 import { PeerMessageBanner } from "@/components/chat-scene/PeerMessageBanner";
-import { parseDispatchHeader } from "@/components/chat-scene/parseDispatchHeader";
 import { ToolStepGroupBlock } from "@/components/chat-scene/ToolStepGroupBlock";
 import { ToolTraceIO } from "@/components/chat-scene/ToolTraceIO";
 import { UserMessageBubble } from "@/components/chat-scene/UserMessageBubble";
@@ -543,12 +542,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           );
         }
         const teamSession = teamSessionForTurnIdx[i];
-        // Employee dispatch prompts are represented by the chat top bar now
-        // (employee avatar + identity + default skill), so the synthetic
-        // user-message banner should not take space in the message stream.
-        const isDispatchTurn = !!(
-          t.userMessage && parseDispatchHeader(t.userMessage.text)
-        );
         const aiAnchorIso = t.aiSegments[0]?.message.createdAt ?? null;
         return (
           <div key={i} className="flex flex-col gap-5">
@@ -556,25 +549,23 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}
             {t.userMessage ? (
-              isDispatchTurn ? null : (
-                <ChatRow
-                  role="user"
-                  name={userName}
-                  avatarUrl={userAvatarUrl}
-                  avatarEmoji={userAvatarEmoji}
-                  avatarVariant={userAvatarVariant}
-                  timestamp={t.userMessage.createdAt}
-                >
-                  <UserMessageBubble
-                    text={t.userMessage.text}
-                    commandText={t.userMessage.commandText}
-                    skillCommand={t.userMessage.skillCommand}
-                    reasoningMode={t.userMessage.reasoningMode}
-                    files={t.userMessage.files}
-                    conversationId={activeConversationId ?? undefined}
-                  />
-                </ChatRow>
-              )
+              <ChatRow
+                role="user"
+                name={userName}
+                avatarUrl={userAvatarUrl}
+                avatarEmoji={userAvatarEmoji}
+                avatarVariant={userAvatarVariant}
+                timestamp={t.userMessage.createdAt}
+              >
+                <UserMessageBubble
+                  text={t.userMessage.text}
+                  commandText={t.userMessage.commandText}
+                  skillCommand={t.userMessage.skillCommand}
+                  reasoningMode={t.userMessage.reasoningMode}
+                  files={t.userMessage.files}
+                  conversationId={activeConversationId ?? undefined}
+                />
+              </ChatRow>
             ) : null}
             {t.shouldCollapseCompletedProcess && t.completedFinalAnswer ? (
               renderCompletedFinalAnswerTurn(t.blocks, {

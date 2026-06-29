@@ -6,8 +6,6 @@ import { Blocks, BrainCircuit, Check, Copy } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
-import { DispatchBanner } from './DispatchBanner'
-import { parseDispatchHeader } from './parseDispatchHeader'
 import type { FileAttachment, ReasoningMode, SkillCommandBreadcrumb } from '@/types/message'
 import { Button } from '@/components/ui/button'
 
@@ -53,15 +51,6 @@ export function UserMessageBubble({
 
   // If this is a team event XML message, skip rendering (PeerMessageBanner handles it)
   if (TEAM_EVENT_RE.test((text ?? '').trim())) return null
-
-  // If this user message is actually a dispatch prompt synthesized by
-  // `build_dispatch_prompt` (employee派活 path), render the centered banner
-  // instead of the right-aligned bubble. Parser returns null for normal user
-  // messages, so old conversations + non-dispatch turns are unaffected.
-  const dispatchHeader = parseDispatchHeader(text)
-  if (dispatchHeader) {
-    return <DispatchBanner header={dispatchHeader} />
-  }
 
   const command = skillCommand?.command ?? commandText?.split(/\s+/)[0]
   const tokenLabel = skillCommand?.label ?? skillCommand?.id ?? command?.replace(/^\//, '')
