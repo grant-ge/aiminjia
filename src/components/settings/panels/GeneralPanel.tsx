@@ -214,7 +214,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                 setAvatarUploadError(null)
                 handleInitialAvatar()
               }}
-              className="flex items-center gap-3 rounded-md px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
+              className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
             >
               <span className={profileAvatarMode === 'initial' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
               <span className="text-base font-medium">{t('settings.general.avatarInitial')}</span>
@@ -226,7 +226,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               aria-checked={profileAvatarMode === 'emoji'}
               aria-label="Emoji"
               onClick={handleEmojiAvatarMode}
-              className="flex items-center gap-3 rounded-md px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
+              className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
             >
               <span className={profileAvatarMode === 'emoji' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
               <span className="text-base font-medium">Emoji</span>
@@ -261,7 +261,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               aria-checked={profileAvatarMode === 'image'}
               aria-label={t('settings.general.avatarUpload')}
               onClick={handleImageAvatarMode}
-              className="flex items-center gap-3 rounded-md px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
+              className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
             >
               <span className={profileAvatarMode === 'image' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
               <span className="text-base font-medium">{t('settings.general.avatarUpload')}</span>

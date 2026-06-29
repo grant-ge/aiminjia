@@ -34,6 +34,7 @@ import {
   getEmployeeVisual,
   getLocalEmployeeAvatarUrl,
 } from '@/features/employees/employeeVisual'
+import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
 
 // ─── daily feed ──────────────────────────────────────────────────────────────
@@ -124,8 +125,6 @@ function categoryDescription(category: EmployeeCatalogCategory | null): string |
 const ALL_CATALOG_GROUP_KEY = '__all__'
 
 const CHIP_EMOJI_RE = /[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]/gu
-const EMPLOYEE_TEMPLATE_CHIP_CLASS =
-  'max-w-full truncate rounded-[2px] bg-muted px-2 py-0.5 text-2xs text-muted-foreground'
 
 function stripChipEmoji(value: string): string {
   return value.replace(CHIP_EMOJI_RE, '').replace(/\s+/g, ' ').trim()
@@ -189,22 +188,23 @@ function EmployeeDirectoryCard({
 
       <div className="mt-auto flex max-h-6 flex-wrap gap-1.5 overflow-hidden">
         {badgeLabel && (
-          <span className={EMPLOYEE_TEMPLATE_CHIP_CLASS}>
+          <Tag size="xs" className="max-w-full truncate">
             {badgeLabel}
-          </span>
+          </Tag>
         )}
         {template.version && (
-          <span className={EMPLOYEE_TEMPLATE_CHIP_CLASS}>
+          <Tag size="xs" className="max-w-full truncate">
             v{template.version}
-          </span>
+          </Tag>
         )}
         {skills.slice(0, 3).map((skill) => (
-          <span
+          <Tag
             key={skill.raw}
-            className={EMPLOYEE_TEMPLATE_CHIP_CLASS}
+            size="xs"
+            className="max-w-full truncate"
           >
             {skill.label}
-          </span>
+          </Tag>
         ))}
       </div>
     </Button>

@@ -47,6 +47,9 @@ const TOOL_PREFERENCE_SECTION: &str = r#"
 - 当本轮包含工具调用、多步操作或多个子任务时，必须先完成所有工具调用，再输出最终回复。
 - 工具调用完成前，不要输出总结、结论或“已完成”类最终话术。
 - 最终回复必须汇总本轮所有已完成事项、关键结果、失败或跳过项；如果用户要求先做 A 再做 B 再做 C，最终回复必须覆盖 A/B/C，不要只回答最后一个子任务。
+- 最终回复是完成态折叠后用户默认可见的唯一答案，必须能独立说明本轮处理结果；不要依赖前面的过程说明、工具摘要或中间回复仍然可见。
+- 如果用户的一句话里包含多个事项、多个输入对象或多个目标，最终回复必须逐一覆盖这些事项。用户上传的图片、文件、链接、技能命令、文本问题，都要判断是否构成本轮需要回应的对象。
+- 如果你已经在工具前或中间回复里确认、描述、处理过某个输入对象，最终回复也必须用一句话保留这个结论；不能因为前面说过就从最终回复里省略。
 - 最终回复应简洁，不要复述工具日志。
 
 【Markdown 格式】
@@ -690,7 +693,9 @@ mod tests {
             "must prefer Markdown links when referencing local files, URLs, or source documents"
         );
         assert!(
-            parts.static_section.contains("必须先完成所有工具调用，再输出最终回复"),
+            parts
+                .static_section
+                .contains("必须先完成所有工具调用，再输出最终回复"),
             "must require final replies after all tool calls"
         );
     }
@@ -726,6 +731,42 @@ mod tests {
                 .count(),
             1,
             "final reply ordering guidance must appear once"
+        );
+    }
+
+    #[test]
+    fn test_final_reply_guidance_covers_collapsed_visible_answer() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(None, None);
+        let visible_answer = "最终回复是完成态折叠后用户默认可见的唯一答案";
+        let multiple_inputs = "多个输入对象";
+        let keep_intermediate_conclusion = "不能因为前面说过就从最终回复里省略";
+
+        assert!(
+            parts.static_section.contains(visible_answer),
+            "final reply guidance must explain that final text is the collapsed visible answer"
+        );
+        assert!(
+            parts.static_section.contains(multiple_inputs),
+            "final reply guidance must cover multiple input objects, not only explicit subtasks"
+        );
+        assert!(
+            parts
+                .static_section
+                .contains(keep_intermediate_conclusion),
+            "final reply guidance must keep important intermediate conclusions visible"
+        );
+        assert_eq!(
+            parts.static_section.matches(visible_answer).count(),
+            1,
+            "collapsed visible answer guidance must appear once"
         );
     }
 

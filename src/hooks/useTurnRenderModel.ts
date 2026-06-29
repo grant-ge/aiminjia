@@ -10,6 +10,9 @@ import {
   isPreviewActionEnabledForFile,
   isPreviewableFileType,
 } from "@/components/chat/generatedFileActions";
+import {
+  collectArtifactMarkdownPaths,
+} from "@/components/chat-scene/markdown/artifactMarkdown";
 import { useChatStore } from "@/stores/chatStore";
 import type { ToolExecution } from "@/stores/streamingStore";
 import type {
@@ -198,164 +201,6 @@ function toolExecStatusToStep(
   return s === "executing" ? "running" : s === "error" ? "error" : "done";
 }
 
-// ── Artifact mark parsing ─────────────────────────────────────────────────
-
-const ARTIFACT_RE = /!\[artifact\]\((.+?)\)/g;
-
-const ARTIFACT_EXT_TO_TYPE: Record<string, GeneratedFile["fileType"]> = {
-  md: "markdown",
-  markdown: "markdown",
-  html: "html",
-  json: "json",
-  csv: "csv",
-  txt: "txt",
-  text: "txt",
-  png: "image",
-  jpg: "image",
-  jpeg: "image",
-  gif: "image",
-  webp: "image",
-  bmp: "image",
-  svg: "image",
-  xlsx: "excel",
-  xls: "excel",
-  docx: "word",
-  doc: "word",
-  pptx: "ppt",
-  ppt: "ppt",
-  pdf: "pdf",
-};
-
-interface ParsedArtifactFile {
-  filePath: string;
-  fileName: string;
-  fileType: GeneratedFile["fileType"];
-}
-
-type ParsedArtifactPart =
-  | { kind: "text"; text: string }
-  | { kind: "artifact"; file: ParsedArtifactFile };
-
-function parseArtifactParts(text: string): ParsedArtifactPart[] {
-  const parts: ParsedArtifactPart[] = [];
-  const protectedRanges = collectMarkdownCodeRanges(text);
-  let cursor = 0;
-  for (const m of text.matchAll(ARTIFACT_RE)) {
-    const index = m.index ?? 0;
-    if (isIndexInRanges(index, protectedRanges)) {
-      continue;
-    }
-    if (index > cursor) {
-      parts.push({ kind: "text", text: text.slice(cursor, index) });
-    }
-    const filePath = m[1].trim();
-    const fileName = filePath.split(/[\\/]/).pop() || filePath;
-    const ext = fileName.includes(".")
-      ? fileName.split(".").pop()?.toLowerCase()
-      : undefined;
-    const fileType: GeneratedFile["fileType"] =
-      (ext ? ARTIFACT_EXT_TO_TYPE[ext] : undefined) ?? "file";
-    parts.push({ kind: "artifact", file: { filePath, fileName, fileType } });
-    cursor = index + m[0].length;
-  }
-  if (cursor < text.length) {
-    parts.push({ kind: "text", text: text.slice(cursor) });
-  }
-  return parts.length ? parts : [{ kind: "text", text }];
-}
-
-function collectMarkdownCodeRanges(text: string): Array<[number, number]> {
-  return mergeRanges([
-    ...collectFencedCodeRanges(text),
-    ...collectInlineCodeRanges(text),
-  ]);
-}
-
-function collectFencedCodeRanges(text: string): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
-  const lineRe = /^(?:[ \t]*)(`{3,}|~{3,}).*$/gm;
-  let open:
-    | { start: number; marker: "`" | "~"; length: number }
-    | null = null;
-
-  for (const match of text.matchAll(lineRe)) {
-    const fence = match[1];
-    const marker = fence[0] as "`" | "~";
-    const length = fence.length;
-    const start = match.index ?? 0;
-    if (!open) {
-      open = { start, marker, length };
-      continue;
-    }
-    if (marker === open.marker && length >= open.length) {
-      ranges.push([open.start, start + match[0].length]);
-      open = null;
-    }
-  }
-
-  if (open) {
-    ranges.push([open.start, text.length]);
-  }
-  return ranges;
-}
-
-function collectInlineCodeRanges(text: string): Array<[number, number]> {
-  const fencedRanges = collectFencedCodeRanges(text);
-  const ranges: Array<[number, number]> = [];
-  let index = 0;
-
-  while (index < text.length) {
-    if (isIndexInRanges(index, fencedRanges)) {
-      index += 1;
-      continue;
-    }
-    if (text[index] !== "`") {
-      index += 1;
-      continue;
-    }
-
-    let length = 1;
-    while (text[index + length] === "`") {
-      length += 1;
-    }
-    if (length >= 3) {
-      index += length;
-      continue;
-    }
-
-    const marker = "`".repeat(length);
-    const close = text.indexOf(marker, index + length);
-    if (close === -1) {
-      index += length;
-      continue;
-    }
-    ranges.push([index, close + length]);
-    index = close + length;
-  }
-
-  return ranges;
-}
-
-function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
-  const sorted = ranges
-    .filter(([start, end]) => end > start)
-    .sort((a, b) => a[0] - b[0]);
-  const merged: Array<[number, number]> = [];
-  for (const range of sorted) {
-    const previous = merged[merged.length - 1];
-    if (previous && range[0] <= previous[1]) {
-      previous[1] = Math.max(previous[1], range[1]);
-    } else {
-      merged.push([...range]);
-    }
-  }
-  return merged;
-}
-
-function isIndexInRanges(index: number, ranges: Array<[number, number]>): boolean {
-  return ranges.some(([start, end]) => index >= start && index < end);
-}
-
 // ── File size & metadata formatting ──────────────────────────────────────
 
 function formatFileSize(bytes: number | undefined): string | null {
@@ -453,16 +298,6 @@ function normalizeGeneratedFile(
     canReveal,
     primaryAction: canPreview ? "preview" : "open",
   };
-}
-
-function findMatchingGeneratedFileIndex(
-  files: RenderGeneratedFile[],
-  artifact: ParsedArtifactFile,
-): number {
-  return files.findIndex(
-    (file) =>
-      file.filePath === artifact.filePath || file.fileName === artifact.fileName,
-  );
 }
 
 function ensureToolGroup(
@@ -866,65 +701,35 @@ export function buildTurnsFromMessages(
       } else {
         current.completedFinalAnswer = undefined;
       }
-      const remainingStructuredFiles = (m.content.generatedFiles ?? []).map((file) =>
-        normalizeGeneratedFile(file, m.conversationId),
-      );
+      const artifactPaths = m.content.text
+        ? collectArtifactMarkdownPaths(m.content.text)
+        : [];
+      const remainingStructuredFiles =
+        artifactPaths.length > 0
+          ? []
+          : (m.content.generatedFiles ?? [])
+              .map((file) => normalizeGeneratedFile(file, m.conversationId));
       if (m.content.text) {
-        const turn = current;
-        const parts = parseArtifactParts(m.content.text);
-        let textPartIndex = 0;
-        parts.forEach((part, partIndex) => {
-          if (part.kind === "text") {
-            const displayText = part.text.trim();
-            if (!displayText) return;
-            const segmentId =
-              parts.length === 1 ? m.id : `${m.id}-text-${textPartIndex++}`;
-            const segment: RenderAiSegment = {
-              id: segmentId,
-              text: displayText,
-              message:
-                displayText === m.content.text
-                  ? m
-                  : { ...m, content: { ...m.content, text: displayText } },
-            };
-            turn.aiSegments.push(segment);
-            turn.blocks.push({
-              kind: "assistantText",
-              id: segmentId,
-              segment,
-            });
-            if (!hasToolCalls && !m.error && !isInternalEventFollowup) {
-              turn.completedFinalAnswer = segment;
-            }
-            return;
+        const displayText = m.content.text.trim();
+        if (displayText) {
+          const segment: RenderAiSegment = {
+            id: m.id,
+            text: displayText,
+            message:
+              displayText === m.content.text
+                ? m
+                : { ...m, content: { ...m.content, text: displayText } },
+          };
+          current.aiSegments.push(segment);
+          current.blocks.push({
+            kind: "assistantText",
+            id: m.id,
+            segment,
+          });
+          if (!hasToolCalls && !m.error && !isInternalEventFollowup) {
+            current.completedFinalAnswer = segment;
           }
-
-          const structuredIndex = findMatchingGeneratedFileIndex(
-            remainingStructuredFiles,
-            part.file,
-          );
-          const file =
-            structuredIndex >= 0
-              ? remainingStructuredFiles.splice(structuredIndex, 1)[0]
-              : normalizeGeneratedFile(
-                  {
-                    id: `artifact-${m.id}-${partIndex}-${part.file.fileName}`,
-                    fileName: part.file.fileName,
-                    filePath: part.file.filePath,
-                    fileType: part.file.fileType,
-                    fileSize: 0,
-                    category: "report",
-                    version: 1,
-                    isLatest: true,
-                    createdAt: m.createdAt || new Date().toISOString(),
-                    description: "",
-                    actions: [],
-                  },
-                  m.conversationId,
-                );
-          turn.generatedFiles.push(file);
-          turn.blocks.push({ kind: "generatedFile", id: file.id, file });
-        });
+        }
       }
       if (m.toolCalls?.length) {
         for (const tc of m.toolCalls) {

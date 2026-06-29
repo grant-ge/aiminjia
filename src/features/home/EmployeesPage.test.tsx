@@ -397,7 +397,7 @@ describe('EmployeesPage', () => {
     expect(screen.queryByText('⚙️ 自动巡检')).not.toBeInTheDocument()
   })
 
-  it('renders employee template chips with a unified muted style', async () => {
+  it('renders employee template tags with the shared muted xs style', async () => {
     render(<EmployeesPage />)
 
     const chips = [
@@ -407,10 +407,10 @@ describe('EmployeesPage', () => {
     ]
 
     for (const chip of chips) {
-      expect(chip).toHaveClass('rounded-[2px]')
-      expect(chip).not.toHaveClass('rounded-md')
+      expect(chip).toHaveClass('rounded')
       expect(chip).toHaveClass('bg-muted')
-      expect(chip).toHaveClass('text-2xs')
+      expect(chip).toHaveClass('h-[18px]')
+      expect(chip).toHaveClass('text-[10px]')
       expect(chip).toHaveClass('text-muted-foreground')
       expect(chip).not.toHaveClass('text-xs')
       expect(chip).not.toHaveClass('bg-accent')

@@ -3267,7 +3267,7 @@ export function employeeActiveRun(
 }
 
 /**
- * Returns the catalog of templates the new-hire wizard should display.
+ * Returns the catalog of templates the employee directory should display.
  *
  * Never hits the network. Reads `~/.renlijia/employee-templates-cache/`,
  * which is populated by `employeeTemplateRefresh()` or

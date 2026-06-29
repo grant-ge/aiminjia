@@ -593,10 +593,7 @@ mod title_tests {
 
     #[test]
     fn sanitize_title_rejects_multi_line_output_without_repairing_it() {
-        assert_eq!(
-            sanitize_title("标题：\nReact 19 新特性详解"),
-            ""
-        );
+        assert_eq!(sanitize_title("标题：\nReact 19 新特性详解"), "");
         assert_eq!(sanitize_title("'hello'\nworld"), "");
     }
 

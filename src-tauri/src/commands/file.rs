@@ -1139,9 +1139,11 @@ mod tests {
                 .await
                 .expect("absolute directory availability")
         );
-        assert!(!is_local_directory_available("relative/workspace".to_string())
-            .await
-            .expect("relative directory availability"));
+        assert!(
+            !is_local_directory_available("relative/workspace".to_string())
+                .await
+                .expect("relative directory availability")
+        );
         assert!(
             !is_local_directory_available(source.to_string_lossy().to_string())
                 .await

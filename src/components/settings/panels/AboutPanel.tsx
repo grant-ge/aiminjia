@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 import { getLogLevel, setLogLevel } from '@/lib/tauri'
 import type { AppLogLevel } from '@/types/settings'
+import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { Button } from '@/components/ui/button'
 
 interface AboutPanelLinks {
@@ -66,13 +67,13 @@ export function AboutPanel({
 }: AboutPanelProps) {
   const { t } = useTranslation()
   const [uploadingLogs, setUploadingLogs] = useState(false)
-  const [logLevel, setLogLevelState] = useState('info')
+  const [logLevel, setLogLevelState] = useState<AppLogLevel>('info')
 
   useEffect(() => {
     getLogLevel().then(setLogLevelState).catch(() => {})
   }, [])
 
-  const handleLogLevelChange = (level: string) => {
+  const handleLogLevelChange = (level: AppLogLevel) => {
     setLogLevelState(level)
     setLogLevel(level).catch(() => {})
   }
@@ -148,33 +149,21 @@ export function AboutPanel({
             <span className="text-base font-semibold text-foreground">{t('settings.about.logLevel')}</span>
             <div className="text-sm text-muted-foreground">{t('settings.about.logLevelDesc')}</div>
           </div>
-          <div
-            className="inline-flex shrink-0 rounded-lg bg-muted p-1"
-            role="radiogroup"
-            aria-label={t('settings.about.logLevel')}
-          >
-            {LOG_LEVEL_OPTIONS.map((option) => {
-              const selected = logLevel === option.value
+          <SegmentedControl
+            testId="settings-log-level-control"
+            ariaLabel={t('settings.about.logLevel')}
+            className="shrink-0"
+            value={logLevel}
+            onValueChange={handleLogLevelChange}
+            options={LOG_LEVEL_OPTIONS.map((option) => {
               const label = t(option.labelKey)
-              return (
-                <Button unstyled
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={label}
-                  onClick={() => handleLogLevelChange(option.value)}
-                  className={
-                    selected
-                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
-                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
-                  }
-                >
-                  {label}
-                </Button>
-              )
+              return {
+                ariaLabel: label,
+                label,
+                value: option.value,
+              }
             })}
-          </div>
+          />
         </div>
       </section>
     </div>

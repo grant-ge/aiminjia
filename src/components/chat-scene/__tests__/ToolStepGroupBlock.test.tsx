@@ -37,7 +37,10 @@ describe('ToolStepGroupBlock — 折叠态', () => {
   it('包含 running → 显示 spinner 和 runningSuffix …', () => {
     const steps = [step('Read', 'running'), step('Read', 'done')]
     const { container } = render(<ToolStepGroupBlock steps={steps} />)
-    expect(container.querySelector('.animate-spin')).toBeTruthy()
+    const spinner = container.querySelector('.animate-spin')
+    expect(spinner).toBeTruthy()
+    expect(spinner).toHaveClass('h-3', 'w-3', 'border')
+    expect(spinner).not.toHaveClass('border-2')
     expect(screen.getByRole('button', { name: /读取了 2 个文件…/ })).toBeInTheDocument()
   })
 

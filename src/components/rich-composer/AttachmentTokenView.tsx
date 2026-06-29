@@ -8,8 +8,8 @@ import {
   Image as ImageIcon,
   X,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import type { ComposerAttachmentToken } from './types'
+import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
 
 const FILE_TYPE_ICON = {
@@ -39,32 +39,37 @@ export function AttachmentTokenView({ node, deleteNode }: AttachmentTokenViewPro
   return (
     <NodeViewWrapper
       as="span"
-      data-attachment-chip
       contentEditable={false}
-      className={cn(
-        'inline-flex max-w-[180px] items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs leading-none text-foreground',
-      )}
     >
-      <AttachmentIcon
-        aria-label={`${attrs.fileType} attachment`}
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-      />
-      <span className="truncate">{attrs.fileName}</span>
-      <Button unstyled
-        type="button"
-        aria-label="remove attachment"
-        // mousedown inside contentEditable=false re-positions the editor selection before
-        // click fires; preventing default keeps the cursor where the user already had it.
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          deleteNode()
-        }}
-        className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-background"
+      <Tag
+        data-attachment-chip
+        size="sm"
+        className="max-w-[180px] text-muted-foreground"
+        icon={
+          <AttachmentIcon
+            aria-label={`${attrs.fileType} attachment`}
+            aria-hidden={false}
+            className="text-muted-foreground"
+          />
+        }
       >
-        <X className="h-3 w-3" />
-      </Button>
+        <span className="truncate">{attrs.fileName}</span>
+        <Button unstyled
+          type="button"
+          aria-label="remove attachment"
+          // mousedown inside contentEditable=false re-positions the editor selection before
+          // click fires; preventing default keeps the cursor where the user already had it.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            deleteNode()
+          }}
+          className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-background"
+        >
+          <X className="h-3 w-3" />
+        </Button>
+      </Tag>
     </NodeViewWrapper>
   )
 }

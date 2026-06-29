@@ -158,11 +158,7 @@ pub async fn save_profile_avatar_image(
         .map_err(|e| format!("无法读取图片文件: {}", e))?;
     let avatars_dir = paths.base_dir().join("profile").join("avatars");
     std::fs::create_dir_all(&avatars_dir).map_err(|e| e.to_string())?;
-    let destination = avatars_dir.join(format!(
-        "avatar-{}.{}",
-        uuid::Uuid::new_v4(),
-        extension
-    ));
+    let destination = avatars_dir.join(format!("avatar-{}.{}", uuid::Uuid::new_v4(), extension));
 
     std::fs::copy(&source, &destination).map_err(|e| format!("头像图片保存失败: {}", e))?;
     Ok(destination.to_string_lossy().to_string())

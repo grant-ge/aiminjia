@@ -31,7 +31,7 @@ export function SidebarRowStatusIndicator({
       <Spinner
         aria-label={t('sidebar.conversationLoading')}
         data-icon="loader"
-        size="sm"
+        size="xs"
         className="text-muted-foreground"
       />
     )

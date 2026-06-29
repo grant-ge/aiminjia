@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
 import type { FileAttachment, ReasoningMode, SkillCommandBreadcrumb } from '@/types/message'
+import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
 
 // Team event XML patterns — rendered by PeerMessageBanner instead
@@ -79,33 +80,27 @@ export function UserMessageBubble({
           }
         >
           {tokenLabel ? (
-            <span
+            <Tag
               data-testid="user-skill-token"
               // bubble 外层是 bg-sidebar，内嵌 token 用前景色低透明底维持层次。
-              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-foreground/10 px-2 py-1 text-xs font-semibold leading-none text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              size="sm"
+              className="mr-2 translate-y-[1px] bg-foreground/10 px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
               title={command}
+              icon={<Blocks aria-hidden="true" style={{ transform: 'translateY(1px)' }} />}
             >
-              <Blocks
-                aria-hidden="true"
-                className="shrink-0"
-                style={{ width: '0.75rem', height: '0.75rem', transform: 'translateY(1px)' }}
-              />
               <span>{tokenLabel}</span>
-            </span>
+            </Tag>
           ) : null}
           {showDeepReasoning ? (
-            <span
+            <Tag
               data-testid="user-reasoning-token"
-              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-foreground/10 px-2 py-1 text-xs font-semibold leading-none text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              size="sm"
+              className="mr-2 translate-y-[1px] bg-foreground/10 px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
               title={t('composer.reasoningModeDeepLong')}
+              icon={<BrainCircuit aria-hidden="true" style={{ transform: 'translateY(1px)' }} />}
             >
-              <BrainCircuit
-                aria-hidden="true"
-                className="shrink-0"
-                style={{ width: '0.75rem', height: '0.75rem', transform: 'translateY(1px)' }}
-              />
               <span>{t('composer.reasoningModeDeep')}</span>
-            </span>
+            </Tag>
           ) : null}
           {text ? (
             <UserBubbleMarkdown text={text} files={files} conversationId={conversationId} />

@@ -163,7 +163,7 @@ export function ToolStepGroupBlock({ steps }: ToolStepGroupBlockProps) {
 
   const leadingIcon =
     summary.runningCount > 0 ? (
-      <Spinner size="sm" className="text-primary" />
+      <Spinner size="xs" className="text-primary" />
     ) : summary.errorCount > 0 && showToolErrorIcon ? (
       <AlertCircle
         data-testid="tool-step-error-icon"

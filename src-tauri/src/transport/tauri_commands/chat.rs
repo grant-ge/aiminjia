@@ -4697,7 +4697,10 @@ impl TauriChatCommandAdapter {
             user_scoped_path_resolver: None,
             event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
-            authorized_workspace: None,
+            authorized_workspace: chat_runtime_impl::load_authorized_workspace(
+                &self.services.app,
+                &conversation_id,
+            ),
             read_file_state: None,
             cancellation: None,
             permission_mode: request.permission_mode,

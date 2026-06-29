@@ -22,7 +22,10 @@ describe('SidebarRowStatusIndicator', () => {
   it('renders loader for loading status', () => {
     const { container } = render(<SidebarRowStatusIndicator status="loading" />)
 
-    expect(container.querySelector('[data-icon="loader"]')).toBeInTheDocument()
+    const loader = container.querySelector('[data-icon="loader"]')
+    expect(loader).toBeInTheDocument()
+    expect(loader).toHaveClass('h-3', 'w-3', 'border')
+    expect(loader).not.toHaveClass('border-2')
     expect(screen.getByLabelText('对话运行中')).toBeInTheDocument()
   })
 

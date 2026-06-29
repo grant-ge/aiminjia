@@ -5,10 +5,10 @@ import { cn } from '@/lib/utils'
 type SpinnerSize = 'xs' | 'sm' | 'md' | 'lg'
 
 const sizeClasses: Record<SpinnerSize, string> = {
-  xs: 'h-3 w-3 border-[1.5px]',
-  sm: 'h-3.5 w-3.5 border-2',
-  md: 'h-4 w-4 border-2',
-  lg: 'h-8 w-8 border-2',
+  xs: 'h-3 w-3 border',
+  sm: 'h-3.5 w-3.5 border',
+  md: 'h-4 w-4 border',
+  lg: 'h-8 w-8 border',
 }
 
 export interface SpinnerProps extends React.HTMLAttributes<HTMLSpanElement> {
