@@ -824,13 +824,14 @@ impl ChannelManager {
                 // route assistant replies back. chat_id == conv_key for telegram.
                 let chat_id: i64 = conv_key.parse().unwrap_or(0);
                 let user_id: i64 = msg.sender_id.parse().unwrap_or(0);
+                let last_inbound_message_id = msg.reply_group_id.parse::<i64>().ok();
                 concrete_telegram_for_worker
                     .remember_session(
                         session_id.clone(),
                         super::telegram::types::TelegramSessionTarget {
                             chat_id,
                             user_id,
-                            last_inbound_message_id: None,
+                            last_inbound_message_id,
                         },
                     )
                     .await;

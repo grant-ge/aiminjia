@@ -20,9 +20,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::stream::BoxStream;
 use futures::StreamExt;
-use tokio::sync::{mpsc, RwLock};
+use futures::stream::BoxStream;
+use tokio::sync::{RwLock, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 
 use super::api::TelegramApi;
@@ -140,6 +140,27 @@ impl TelegramConnector {
 
     pub fn config_store(&self) -> Arc<ChannelConfigStore> {
         self.config_store.clone()
+    }
+
+    /// Best-effort status feedback for the latest inbound user message in a
+    /// remembered Telegram session. `emoji=None` clears the reaction.
+    pub async fn react_to_latest_inbound(
+        &self,
+        session_id: &str,
+        emoji: Option<&str>,
+    ) -> Result<()> {
+        let target = {
+            let guard = self.session_targets.read().await;
+            guard.get(session_id).cloned()
+        }
+        .ok_or_else(|| anyhow::anyhow!("telegram session target missing"))?;
+        let message_id = target
+            .last_inbound_message_id
+            .ok_or_else(|| anyhow::anyhow!("telegram inbound message_id missing"))?;
+        self.api
+            .set_message_reaction(target.chat_id, message_id, emoji)
+            .await?;
+        Ok(())
     }
 
     pub fn status_callback(
