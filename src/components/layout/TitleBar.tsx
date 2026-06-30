@@ -253,7 +253,6 @@ export function TitleBar() {
       style={barStyle}
       onMouseDown={handleDragStart}
     >
-      <CompactTenantBrand />
       <SidebarToggleButton className="ml-2" />
       <TitleBarNavigationButtons />
       <div className="flex-1" data-tauri-drag-region />
