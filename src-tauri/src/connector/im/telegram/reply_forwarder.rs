@@ -1,9 +1,8 @@
-//! TelegramReplyForwarder — 镜像 WecomReplyForwarder：监听 MessagePersisted →
-//! 一次性发整段 markdown 到 Telegram chat。
+//! TelegramReplyForwarder — 监听 RuntimeEventBus，把 AI 输出转发到
+//! TelegramConnector::send(AiCardChunk) 的文本编辑流式路径。
 //!
-//! 跟 wecom 一样：Telegram Bot API 不支持 CardKit / 实时 patch 协议，per-delta
-//! 发 `sendMessage` 会变成"每个 chunk 一条消息"的灾难，所以只处理
-//! `MessagePersisted`——assistant 完整回复持久化后一次性下发 markdown。
+//! Telegram Bot API 没有 CardKit，但支持 editMessageText；connector 内部
+//! 维护 preview message 状态，避免 per-delta 新发多条消息。
 //!
 //! 过滤：用 `connector.has_session()` 判定 session 是否属于 telegram；不属于的
 //! 事件忽略（同一个 RuntimeEventBus 上挂着多个平台 forwarder，互不影响）。
@@ -162,6 +161,11 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
             return Ok(());
         }
 
+        let target = || ReplyTarget {
+            session_id: session_id.clone(),
+            external_conversation_key: String::new(),
+        };
+
         match &event.kind {
             RuntimeEventKind::RunStarted => {
                 self.set_status_reaction(
@@ -171,8 +175,55 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                 )
                 .await;
             }
-            RuntimeEventKind::StreamError { error, .. } => {
+            RuntimeEventKind::StreamDelta { content } => {
                 log::debug!(
+                    "[telegram-reply-forwarder] event=stream_delta session={} bytes={}",
+                    session_id,
+                    content.len()
+                );
+                if let Err(e) = self
+                    .connector
+                    .send(
+                        target(),
+                        ReplyContent::AiCardChunk {
+                            delta: content.clone(),
+                            final_chunk: false,
+                        },
+                    )
+                    .await
+                {
+                    log::warn!(
+                        "[telegram-reply-forwarder] send stream delta failed (session={}): {:?}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+            RuntimeEventKind::StreamDone => {
+                log::debug!(
+                    "[telegram-reply-forwarder] event=stream_done session={}",
+                    session_id
+                );
+                if let Err(e) = self
+                    .connector
+                    .send(
+                        target(),
+                        ReplyContent::AiCardChunk {
+                            delta: String::new(),
+                            final_chunk: true,
+                        },
+                    )
+                    .await
+                {
+                    log::warn!(
+                        "[telegram-reply-forwarder] send stream final failed (session={}): {:?}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+            RuntimeEventKind::StreamError { error, .. } => {
+                log::warn!(
                     "[telegram-reply-forwarder] StreamError session={} error={}",
                     session_id,
                     error
@@ -183,6 +234,17 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                     "stream-error",
                 )
                 .await;
+                if let Err(e) = self
+                    .connector
+                    .send(target(), ReplyContent::AiCardFail)
+                    .await
+                {
+                    log::warn!(
+                        "[telegram-reply-forwarder] send fail marker failed (session={}): {:?}",
+                        session_id,
+                        e
+                    );
+                }
             }
             RuntimeEventKind::TurnCompleted { outcome, .. } if outcome.is_success() => {
                 if Self::should_force_completion_error_for_tests() {
@@ -221,6 +283,13 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                 if role != "assistant" {
                     return Ok(());
                 }
+                if self.connector.has_active_or_recent_draft(&session_id).await {
+                    log::debug!(
+                        "[telegram-reply-forwarder] event=message_persisted_skip_draft session={}",
+                        session_id
+                    );
+                    return Ok(());
+                }
                 let Some(text) = Self::extract_markdown(content) else {
                     log::debug!(
                         "[telegram-reply-forwarder] empty assistant content for session={}, skip",
@@ -228,17 +297,13 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                     );
                     return Ok(());
                 };
-                let target = ReplyTarget {
-                    session_id: session_id.clone(),
-                    external_conversation_key: String::new(),
-                };
                 if let Err(e) = self
                     .connector
-                    .send(target, ReplyContent::Markdown(text))
+                    .send(target(), ReplyContent::Markdown(text))
                     .await
                 {
                     log::warn!(
-                        "[telegram-reply-forwarder] send Markdown failed (session={}): {:?}",
+                        "[telegram-reply-forwarder] send Markdown fallback failed (session={}): {:?}",
                         session_id,
                         e
                     );
