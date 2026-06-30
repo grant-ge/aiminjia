@@ -865,7 +865,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           b.kind === "assistantText",
       )?.segment.message.createdAt ?? ctx.aiAnchorIso;
 
-    const renderBlock = (b: RenderTurnBlock, idx: number) => {
+    const renderBlock = (b: RenderTurnBlock) => {
       if (b.kind === "assistantText") {
         return <AiBubble key={b.id} message={b.segment.message} />;
       }
@@ -920,7 +920,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     const walkAndGroup = (
       slice: RenderTurnBlock[],
       keyPrefix: string,
-      baseIdx: number,
     ): ReactNode[] => {
       const nodes: ReactNode[] = [];
       let pending: Array<Extract<RenderTurnBlock, { kind: "toolStep" }>> = [];
@@ -935,12 +934,12 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         );
         pending = [];
       };
-      slice.forEach((b, i) => {
+      slice.forEach((b) => {
         if (b.kind === "toolStep") {
           pending.push(b);
         } else {
           flush();
-          nodes.push(renderBlock(b, baseIdx + i));
+          nodes.push(renderBlock(b));
         }
       });
       flush();
@@ -961,9 +960,8 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     const persistedNodes = walkAndGroup(
       blocks.slice(0, splitAt),
       "persisted",
-      0,
     );
-    const liveNodes = walkAndGroup(blocks.slice(splitAt), "live", splitAt);
+    const liveNodes = walkAndGroup(blocks.slice(splitAt), "live");
     const children: ReactNode[] = [
       ...persistedNodes,
       ctx.inlineStreamingContent ? (

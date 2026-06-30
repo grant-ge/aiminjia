@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/common/Switch'
+import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { getSettings, runtimeDiagnostics, type RuntimeDiagnostics, updateSettings } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
+
+const TOGGLE_OPTIONS: Array<{ value: 'off' | 'on'; label: string }> = [
+  { value: 'off', label: '关' },
+  { value: 'on', label: '开' },
+]
 
 function useResolverLabel(): Record<RuntimeDiagnostics['activeResolver'], string> {
   const { t } = useTranslation()
@@ -99,10 +104,12 @@ export function RuntimePanel() {
             {t('settings.runtime.managedRuntimeDesc')}
           </div>
         </div>
-        <Switch
-          checked={managedRuntimeEnabled}
-          onCheckedChange={(checked) => void handleManagedRuntimeChange(checked)}
-          aria-label={t('settings.runtime.managedRuntime')}
+        <SegmentedControl<'off' | 'on'>
+          ariaLabel={t('settings.runtime.managedRuntime')}
+          className="w-20 shrink-0"
+          value={managedRuntimeEnabled ? 'on' : 'off'}
+          onValueChange={(value) => void handleManagedRuntimeChange(value === 'on')}
+          options={TOGGLE_OPTIONS}
         />
       </div>
 

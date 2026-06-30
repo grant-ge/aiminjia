@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
 import { UpdateAvailableLink } from './UpdateAvailableLink'
 import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUpdaterStore } from '@/lib/updaterStore'
-import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore } from '@/stores/uiStore'
 import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
@@ -153,25 +152,6 @@ function TitleBarNavigationButtons() {
           goForward()
         }}
       />
-    </div>
-  )
-}
-
-function CompactTenantBrand() {
-  const productName = useBrandingStore((s) => s.productName)
-  const logoUrl = useBrandingStore((s) => s.logoUrl)
-
-  return (
-    <div
-      data-testid="titlebar-tenant-brand"
-      data-tauri-drag-region
-      className="ml-2 flex h-7 max-w-[140px] shrink-0 select-none items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-sidebar-foreground"
-      title={productName}
-    >
-      <span className="h-5 w-5 shrink-0 overflow-hidden rounded border border-sidebar-border bg-card">
-        <img src={logoUrl} alt="Brand logo" className="h-full w-full object-cover" />
-      </span>
-      <span className="truncate text-xs font-semibold">{productName}</span>
     </div>
   )
 }

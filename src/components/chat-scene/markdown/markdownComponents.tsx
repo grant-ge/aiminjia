@@ -20,7 +20,7 @@ export function createMarkdownComponents({
   return {
     p({ children }) {
       const hasArtifactImage = Children.toArray(children).some(
-        (child) => isValidElement(child) && child.props.alt === ARTIFACT_ALT,
+        (child) => isValidElement<{ alt?: unknown }>(child) && child.props.alt === ARTIFACT_ALT,
       )
       return hasArtifactImage ? <div>{children}</div> : <p>{children}</p>
     },
