@@ -6,6 +6,7 @@ import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUpdaterStore } from '@/lib/updaterStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore } from '@/stores/uiStore'
+import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
 
 function handleDragStart(e: React.MouseEvent) {
@@ -196,11 +197,14 @@ export function getDevBadgeLabel(port?: string): string {
 // Color picked from semantic blue so it stays distinct from any tenant accent.
 function DevBadge() {
   return (
-    <span
-      className="pointer-events-none mr-2 rounded-md bg-[var(--color-semantic-purple)] px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-primary-foreground shadow-[var(--shadow-sm)]"
+    <Tag
+      size="xs"
+      variant="solid"
+      color="primary"
+      className="pointer-events-none mr-2 border-transparent bg-[var(--color-semantic-purple)] tracking-widest shadow-[var(--shadow-sm)]"
     >
       {getDevBadgeLabel()}
-    </span>
+    </Tag>
   )
 }
 

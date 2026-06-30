@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { getDevBadgeLabel, TitleBar } from './TitleBar'
@@ -74,11 +74,12 @@ describe('TitleBar', () => {
     vi.stubEnv('DEV', true)
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     render(<TitleBar />)
-    expect(screen.getByText(getDevBadgeLabel())).toBeInTheDocument()
+    const badge = screen.getByText(getDevBadgeLabel())
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveClass('inline-flex', 'border')
   })
 
   it('places sidebar toggle on the left side of the macOS title bar', () => {
-    vi.stubEnv('DEV', true)
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     const { container } = render(<TitleBar />)
 
@@ -90,7 +91,6 @@ describe('TitleBar', () => {
     expect(leftGroup).toHaveClass('pl-20')
     expect(toggle).toHaveAttribute('data-aijia-sidebar-toggle', 'true')
     expect(container.querySelector('.lucide-panel-left')).toBeInTheDocument()
-    expect(titleBar.lastElementChild).toHaveTextContent(getDevBadgeLabel())
   })
 
   it('removes the macOS traffic-light padding while fullscreen', async () => {
@@ -194,23 +194,21 @@ describe('TitleBar', () => {
       const titleBar = container.firstElementChild as HTMLElement
       const toggle = screen.getByLabelText('隐藏侧栏')
 
-      expect(titleBar.children[1]).toBe(toggle)
+      expect(titleBar.firstElementChild).toBe(toggle)
       expect(toggle).toHaveClass('ml-2')
 
       fireEvent.mouseDown(toggle, { buttons: 1, detail: 1 })
       expect(startDragging).not.toHaveBeenCalled()
     })
 
-    it('shows a compact tenant brand before the sidebar toggle on Windows', () => {
+    it('does not show the tenant brand in the Windows title bar', () => {
       const { container } = render(<TitleBar />)
       const titleBar = container.firstElementChild as HTMLElement
-      const brand = screen.getByTestId('titlebar-tenant-brand')
       const toggle = screen.getByLabelText('隐藏侧栏')
 
-      expect(titleBar.firstElementChild).toBe(brand)
-      expect(titleBar.children[1]).toBe(toggle)
-      expect(screen.getByText('AI 猫')).toBeInTheDocument()
-      expect(within(brand).getByRole('img', { name: /brand logo/i })).toHaveAttribute('src', '/app-icon.png')
+      expect(screen.queryByTestId('titlebar-tenant-brand')).not.toBeInTheDocument()
+      expect(titleBar.firstElementChild).toBe(toggle)
+      expect(screen.queryByText('AI 猫')).not.toBeInTheDocument()
     })
   })
 })
