@@ -85,6 +85,9 @@ pub struct HeadlessRunOutput {
     pub stream_messages: Vec<serde_json::Value>,
 }
 
+const MAX_ITERATIONS_INCOMPLETE_ANSWER: &str =
+    "Reached maximum iterations before completing the requested deliverable.";
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HeadlessTokenUsage {
@@ -574,18 +577,22 @@ impl HeadlessDriver {
     }
 
     fn enrich_output_from_db(&self, mut output: HeadlessRunOutput) -> HeadlessRunOutput {
+        let output_hit_max_iterations = output.error_subtype.as_deref() == Some("error_max_turns");
         let Ok(messages) = self.db.get_messages_v2(self.session_id.as_str()) else {
+            if output_hit_max_iterations {
+                normalize_max_iterations_output(&mut output);
+            }
             return output;
         };
 
-        let hit_max_iterations = output.error_subtype.as_deref() == Some("error_max_turns")
+        let hit_max_iterations = output_hit_max_iterations
             || latest_assistant_message(&messages)
                 .and_then(|message| message.error.as_ref())
                 .map(is_max_iterations_error)
                 .unwrap_or(false);
 
         if let Some(message) = answer_assistant_message(&messages, hit_max_iterations) {
-            if output.answer.trim().is_empty() || hit_max_iterations {
+            if output.answer.trim().is_empty() {
                 let text = message.text().trim();
                 if !text.is_empty() {
                     output.answer = text.to_string();
@@ -607,6 +614,11 @@ impl HeadlessDriver {
                 output.error_subtype = Some(error_subtype_from_message_error(error));
                 output.execution_error = Some(readable_message_error(error));
             }
+        }
+
+        if hit_max_iterations {
+            normalize_max_iterations_output(&mut output);
+            return output;
         }
 
         if output.answer.trim().is_empty() {
@@ -644,6 +656,18 @@ impl HeadlessDriver {
     }
 }
 
+fn normalize_max_iterations_output(output: &mut HeadlessRunOutput) {
+    output.answer = output
+        .execution_error
+        .as_deref()
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .unwrap_or(MAX_ITERATIONS_INCOMPLETE_ANSWER)
+        .to_string();
+    output.is_error = true;
+    output.error_subtype = Some("error_max_turns".to_string());
+}
+
 fn latest_assistant_message(messages: &[StoredMessage]) -> Option<&StoredMessage> {
     messages
         .iter()
@@ -657,22 +681,7 @@ fn answer_assistant_message(
 ) -> Option<&StoredMessage> {
     let latest = latest_assistant_message(messages)?;
     if hit_max_iterations {
-        return messages
-            .iter()
-            .rev()
-            .find(|message| {
-                let text = message.text();
-                let text = text.trim();
-                message.role == "assistant"
-                    && !text.is_empty()
-                    && !is_max_iterations_notice_text(text)
-                    && !message
-                        .error
-                        .as_ref()
-                        .map(is_max_iterations_error)
-                        .unwrap_or(false)
-            })
-            .or(Some(latest));
+        return None;
     }
     Some(latest)
 }
@@ -687,13 +696,6 @@ fn latest_assistant_model(messages: &[StoredMessage]) -> Option<String> {
 
 fn is_max_iterations_error(error: &MessageError) -> bool {
     matches!(&error.kind, ErrorKind::MaxIterations)
-}
-
-fn is_max_iterations_notice_text(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    text.contains("处理上限")
-        || lower.contains("max_iterations")
-        || lower.contains("max iterations")
 }
 
 fn readable_message_error(error: &MessageError) -> String {
@@ -758,7 +760,7 @@ mod headless_output_tests {
     }
 
     #[test]
-    fn max_iterations_prefers_last_real_assistant_answer() {
+    fn max_iterations_does_not_backfill_previous_assistant_answer() {
         let messages = vec![
             stored_message("user", "question", None),
             stored_message("assistant", "FINAL ANSWER: 17000", None),
@@ -773,16 +775,11 @@ mod headless_output_tests {
             ),
         ];
 
-        let answer = answer_assistant_message(&messages, true)
-            .expect("answer message")
-            .text()
-            .to_string();
-
-        assert_eq!(answer, "FINAL ANSWER: 17000");
+        assert!(answer_assistant_message(&messages, true).is_none());
     }
 
     #[test]
-    fn max_iterations_falls_back_to_template_when_no_real_answer_exists() {
+    fn max_iterations_does_not_use_error_template_as_answer() {
         let messages = vec![
             stored_message("user", "question", None),
             stored_message(
@@ -796,27 +793,48 @@ mod headless_output_tests {
             ),
         ];
 
-        let answer = answer_assistant_message(&messages, true)
-            .expect("answer message")
-            .text()
-            .to_string();
-
-        assert_eq!(answer, "analysis reached max iterations template");
+        assert!(answer_assistant_message(&messages, true).is_none());
     }
 
     #[test]
-    fn max_iterations_skips_notice_text_without_message_error() {
+    fn max_iterations_replaces_partial_collected_answer() {
+        let mut output = HeadlessRunOutput {
+            answer: "I still need to keep reading files before I can finish.".to_string(),
+            error_subtype: Some("error_max_turns".to_string()),
+            ..HeadlessRunOutput::default()
+        };
+
+        normalize_max_iterations_output(&mut output);
+
+        assert_eq!(output.answer, MAX_ITERATIONS_INCOMPLETE_ANSWER);
+        assert!(output.is_error);
+        assert_eq!(output.error_subtype.as_deref(), Some("error_max_turns"));
+    }
+
+    #[test]
+    fn max_iterations_prefers_readable_execution_error() {
+        let mut output = HeadlessRunOutput {
+            answer: "partial answer".to_string(),
+            execution_error: Some("max iterations reached after 40 turns".to_string()),
+            ..HeadlessRunOutput::default()
+        };
+
+        normalize_max_iterations_output(&mut output);
+
+        assert_eq!(output.answer, "max iterations reached after 40 turns");
+        assert!(output.is_error);
+        assert_eq!(output.error_subtype.as_deref(), Some("error_max_turns"));
+    }
+
+    #[test]
+    fn normal_turn_uses_latest_assistant_answer() {
         let messages = vec![
             stored_message("user", "question", None),
+            stored_message("assistant", "draft", None),
             stored_message("assistant", "FINAL ANSWER: 3", None),
-            stored_message(
-                "assistant",
-                "⚠️ 本步分析较为复杂,已达处理上限(15 次迭代)。",
-                None,
-            ),
         ];
 
-        let answer = answer_assistant_message(&messages, true)
+        let answer = answer_assistant_message(&messages, false)
             .expect("answer message")
             .text()
             .to_string();
