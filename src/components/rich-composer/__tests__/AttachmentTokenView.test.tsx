@@ -22,6 +22,15 @@ describe('AttachmentTokenView', () => {
     expect(screen.getByText('plan.pdf')).toBeInTheDocument()
   })
 
+  it('uses the shared tag shell for composer attachment tokens', () => {
+    const node = { attrs: mkAttrs() } as never
+    render(<AttachmentTokenView node={node} deleteNode={() => {}} />)
+    const token = screen.getByText('plan.pdf').closest('[data-attachment-chip]')
+    expect(token).toHaveClass('h-5', 'rounded', 'bg-muted')
+    expect(token).toHaveClass('text-muted-foreground')
+    expect(token).not.toHaveClass('py-0.5')
+  })
+
   it('文件 kind → 显示 fileType 图标', () => {
     const node = { attrs: mkAttrs({ fileType: 'pdf' }) } as never
     render(<AttachmentTokenView node={node} deleteNode={() => {}} />)

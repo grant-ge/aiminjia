@@ -943,7 +943,7 @@ describe("buildTurnsFromMessages", () => {
     );
   });
 
-  it("uses structured generatedFiles instead of artifact markers for generated outputs", () => {
+  it("keeps artifact markers in assistant text when structured generatedFiles match", () => {
     const generatedFile = {
       id: "file-image",
       fileName: "image-task-imgtask_lreq_1781059192913657260-1.png",
@@ -971,17 +971,17 @@ describe("buildTurnsFromMessages", () => {
 
     const turn = buildTurnsFromMessages([userMsg("u1", "go"), msg], [])[0];
 
-    expect(turn.generatedFiles).toHaveLength(1);
-    expect(turn.generatedFiles[0]).toEqual(
-      expect.objectContaining({
-        id: "file-image",
-        filePath: generatedFile.filePath,
-      }),
-    );
-    expect(turn.blocks.filter((block) => block.kind === "generatedFile")).toHaveLength(1);
+    expect(turn.generatedFiles).toHaveLength(0);
+    expect(turn.blocks).toHaveLength(1);
+    expect(turn.blocks[0]).toMatchObject({
+      kind: "assistantText",
+      segment: {
+        text: "done\n\n![artifact](/Users/oayzz/.renlijia/generated/images/image-task-imgtask_lreq_1781059192913657260-1.png)",
+      },
+    });
   });
 
-  it("keeps artifact cards in the marker's original message position", () => {
+  it("leaves artifact marker positioning to the markdown renderer", () => {
     const turn = buildTurnsFromMessages(
       [
         userMsg("u1", "make a report"),
@@ -993,20 +993,10 @@ describe("buildTurnsFromMessages", () => {
       [],
     )[0];
 
-    expect(turn.blocks.map((block) => block.kind)).toEqual([
-      "assistantText",
-      "generatedFile",
-      "assistantText",
-    ]);
+    expect(turn.blocks.map((block) => block.kind)).toEqual(["assistantText"]);
     expect(
       turn.blocks[0].kind === "assistantText" ? turn.blocks[0].segment.text : "",
-    ).toBe("前面这段解释。");
-    expect(
-      turn.blocks[1].kind === "generatedFile" ? turn.blocks[1].file.filePath : "",
-    ).toBe("/tmp/report.md");
-    expect(
-      turn.blocks[2].kind === "assistantText" ? turn.blocks[2].segment.text : "",
-    ).toBe("后面继续解释。");
+    ).toBe("前面这段解释。\n\n![artifact](/tmp/report.md)\n\n后面继续解释。");
   });
 
   it("does not render artifact cards for markers inside code spans or code blocks", () => {

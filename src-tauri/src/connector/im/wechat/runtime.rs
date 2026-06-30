@@ -295,6 +295,7 @@ async fn run_long_poll(
 
             let channel_msg = ChannelMessage {
                 msg_id: msg_id_str,
+                native_message_id: None,
                 conversation_type: ConversationType::Private,
                 conversation_key: from_user_id.clone(),
                 sender_id: from_user_id.clone(),

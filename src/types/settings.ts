@@ -16,6 +16,7 @@ export type ChatWidthMode = "centered" | "full";
 export type DefaultPermissionMode = "default" | "fullAccess";
 export type CloudGatewayMode = "legacy" | "v2";
 export type AppLogLevel = "error" | "warn" | "info" | "debug";
+export type ProfileAvatarMode = "initial" | "emoji" | "image";
 
 export interface Settings {
   primaryModel: LlmProvider;
@@ -35,6 +36,9 @@ export interface Settings {
   appLanguage?: AppLanguage;
   fontScale?: FontScale;
   chatWidthMode?: ChatWidthMode;
+  profileAvatarMode?: ProfileAvatarMode;
+  profileAvatarEmoji?: string;
+  profileAvatarImagePath?: string;
   defaultPermissionMode?: DefaultPermissionMode;
   managedRuntimeEnabled?: boolean;
   accentColor?: string;
@@ -43,6 +47,7 @@ export interface Settings {
   uiSidebarCollapsedProjects?: string;
   uiSidebarConversationStatuses?: string;
   contextWindow?: number | null;
+  imChannelKeepAwakeEnabled?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -63,6 +68,9 @@ export const DEFAULT_SETTINGS: Settings = {
   appLanguage: "zh-CN",
   fontScale: "medium",
   chatWidthMode: "full",
+  profileAvatarMode: "initial",
+  profileAvatarEmoji: "",
+  profileAvatarImagePath: "",
   defaultPermissionMode: "default",
   managedRuntimeEnabled: true,
   accentColor: "",
@@ -70,6 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
   uiHomeRecentWorkspaces: "",
   uiSidebarCollapsedProjects: "",
   uiSidebarConversationStatuses: "",
+  imChannelKeepAwakeEnabled: false,
 };
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

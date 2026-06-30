@@ -237,18 +237,11 @@ export function RegisterCard({ productName, onBack, onSuccess }: RegisterCardPro
         <Button
           type="submit"
           size="lg"
+          loading={submitting}
           disabled={submitting}
           className="w-full"
         >
-          {submitting ? (
-            <span className="flex items-center justify-center gap-2">
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              {t('register.registering')}
-            </span>
-          ) : t('register.register')}
+          {submitting ? t('register.registering') : t('register.register')}
         </Button>
         <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
           <span>{t('login.haveAccount')}</span>

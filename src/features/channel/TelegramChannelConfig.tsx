@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
-import { CheckCircle2, ExternalLink, Loader2, X } from 'lucide-react'
+import { CheckCircle2, ExternalLink, X } from 'lucide-react'
 import { QrCodeCanvas } from '@/components/registration/QrCodeCanvas'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { Input } from '@/components/ui/input'
@@ -225,9 +225,9 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
               type="button"
               variant="secondary"
               className="w-full"
+              icon={<ExternalLink className="h-4 w-4" />}
               onClick={() => void openExternal('https://t.me/BotFather')}
             >
-              <ExternalLink className="mr-2 h-4 w-4" />
               {t('channel.telegram.config.openBotFather')}
             </Button>
             <label className="text-xs font-semibold text-foreground" htmlFor="tg-token">
@@ -261,10 +261,10 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
           </Button>
           <Button
             className="flex-1"
+            loading={saving}
             disabled={!token.trim() || saving}
             onClick={() => void handleSaveToken()}
           >
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('channel.actions.next')}
           </Button>
         </div>
@@ -313,13 +313,10 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
                     {p.username && <span className="ml-1 text-muted-foreground">@{p.username}</span>}
                   </span>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => void handleApprove(p.code)}>
-                      <CheckCircle2 className="mr-1 h-4 w-4" />
+                    <Button size="sm" icon={<CheckCircle2 className="h-4 w-4" />} onClick={() => void handleApprove(p.code)}>
                       {t('channel.telegram.config.approve')}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => void handleReject(p.code)}>
-                      <X className="h-4 w-4" />
-                    </Button>
+                    <Button size="sm" variant="ghost" icon={<X className="h-4 w-4" />} onClick={() => void handleReject(p.code)} />
                   </div>
                 </div>
               ))}

@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.5.37-beta.1"
+version = "0.5.37-1"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
@@ -22,7 +22,7 @@ tauri-build = { version = "2.5.4", features = [] }
 
 [dependencies]
 # Tauri core
-tauri = { version = "2.10.0", features = ["devtools", "tray-icon"] }
+tauri = { version = "2.10.0", features = ["protocol-asset", "devtools", "tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tracing = "0.1"
@@ -137,7 +137,7 @@ libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_Power"] }
 which = "6"
 encoding_rs = "0.8"
 

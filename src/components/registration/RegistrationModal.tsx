@@ -144,7 +144,7 @@ export function RegistrationModal(props: RegistrationModalProps) {
               {props.mode === 'url' && (
                 <>
                   {props.userCode && (
-                    <div className="rounded-md border border-border bg-muted/25 px-4 py-3 text-center">
+                    <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3 text-center">
                       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">用户码</div>
                       <div className="mt-1 font-mono text-lg font-semibold text-foreground">{props.userCode}</div>
                     </div>

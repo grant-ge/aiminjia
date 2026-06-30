@@ -24,7 +24,7 @@ export function ScheduleTemplateCard({ template, onPick }: ScheduleTemplateCardP
   return (
     <div
       data-testid="schedule-template-card"
-      className="group flex w-full items-start justify-between gap-2 rounded-md border border-border/70 bg-background/65 px-2.5 py-2 transition-[border-color,background-color] hover:border-foreground/20 hover:bg-background"
+      className="group flex w-full items-start justify-between gap-2 rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-[rgba(var(--background-rgb),0.65)] px-2.5 py-2 transition-[border-color,background-color] hover:border-[rgba(var(--foreground-rgb),0.20)] hover:bg-background"
     >
       <div className="min-w-0">
         <div className="text-[0.8125rem] font-semibold leading-5 text-foreground">{template.title}</div>

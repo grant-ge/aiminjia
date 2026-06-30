@@ -97,7 +97,7 @@ export function TitleBarEnvSwitcher() {
         trigger={
           <Button unstyled
             type="button"
-            className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-semantic-green)] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-primary-foreground shadow-[var(--shadow-sm)] transition-[filter] hover:brightness-95"
+            className="inline-flex items-center gap-0.5 rounded bg-[var(--color-semantic-green)] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-primary-foreground shadow-[var(--shadow-sm)] transition-[filter] hover:brightness-95"
           >
             {currentLabel}
             <ChevronDown className="h-3 w-3" />

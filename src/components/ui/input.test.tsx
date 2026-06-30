@@ -16,7 +16,7 @@ describe('Input', () => {
     expect(input).toHaveClass('bg-card')
     expect(input).toHaveClass('hover:border-primary')
     expect(input).toHaveClass('focus-visible:border-primary')
-    expect(input).toHaveClass('focus-visible:ring-primary/15')
+    expect(input).toHaveClass('focus-visible:ring-[rgba(var(--primary-rgb),0.15)]')
     expect(input).not.toHaveClass('shadow-sm')
     expect(input.className).not.toContain('#1677ff')
   })
@@ -26,7 +26,7 @@ describe('Input', () => {
 
     const input = screen.getByLabelText('标题')
     expect(input).toHaveClass('aria-invalid:border-destructive')
-    expect(input).toHaveClass('aria-invalid:focus-visible:ring-destructive/15')
+    expect(input).toHaveClass('aria-invalid:focus-visible:ring-[rgba(var(--destructive-rgb),0.15)]')
   })
 
   it('merges custom className and forwards refs', () => {

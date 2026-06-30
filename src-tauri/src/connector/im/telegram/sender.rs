@@ -29,6 +29,12 @@ pub enum SenderError {
     Transport(String),
 }
 
+struct PreparedMarkdown {
+    clean_markdown: String,
+    chunks: Vec<String>,
+    attachments: Vec<AttachmentRef>,
+}
+
 impl TelegramSender {
     pub fn new(api: Arc<TelegramApi>) -> Self {
         Self { api }
@@ -48,53 +54,291 @@ impl TelegramSender {
         raw_markdown: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SenderError> {
-        // 提取附件并把 markdown 中的占位符替换成「📎 label」
-        let attachments = extract_local_paths(raw_markdown);
-        let mut clean_markdown = raw_markdown.to_string();
-        for a in &attachments {
-            let placeholder = format!("📎 {}", a.display_label);
-            clean_markdown = clean_markdown.replace(&a.original_segment, &placeholder);
-        }
+        let prepared = prepare_markdown(raw_markdown);
+        let first_chunk_id = self
+            .send_prepared_chunks(chat_id, &prepared, reply_to_message_id)
+            .await?;
+        self.send_attachments(chat_id, &prepared.attachments, first_chunk_id)
+            .await;
+        Ok(())
+    }
 
-        let html = markdown_to_telegram_html(&clean_markdown);
-        let chunks = split_telegram_html(&html, MAX_MESSAGE_BYTES);
+    /// 发送第一条 draft preview。非 final 阶段只保留第一片，避免一轮流式输出刷出多条消息。
+    pub async fn send_draft_preview_with_reply(
+        &self,
+        chat_id: i64,
+        raw_markdown: &str,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<Option<i64>, SenderError> {
+        let prepared = prepare_markdown(raw_markdown);
+        let Some(first_chunk) = prepared.chunks.first() else {
+            log::info!("[telegram-draft] event=preview_empty chunk_count=0");
+            return Ok(None);
+        };
+        let chunk_count = prepared.chunks.len();
+        let attachment_count = prepared.attachments.len();
+        match self
+            .send_html_chunk_with_reply(chat_id, first_chunk, reply_to_message_id)
+            .await
+        {
+            Ok(message_id) => {
+                log::info!(
+                    "[telegram-draft] event=preview_sent message_id={} chunk_count={} attachment_count={} text_bytes={}",
+                    message_id,
+                    chunk_count,
+                    attachment_count,
+                    raw_markdown.len()
+                );
+                Ok(Some(message_id))
+            }
+            Err(SenderError::Transport(desc)) if desc.starts_with("parse error:") => {
+                log::warn!(
+                    "[telegram-draft] event=preview_parse_fallback chunk_count={} reason={}",
+                    chunk_count,
+                    desc
+                );
+                let plain = first_plain_chunk(&prepared.clean_markdown);
+                let msg = self
+                    .api
+                    .send_message_with_reply(chat_id, &plain, None, reply_to_message_id)
+                    .await
+                    .map_err(map_err)?;
+                log::info!(
+                    "[telegram-draft] event=preview_sent_plain_fallback message_id={} chunk_count={} text_bytes={}",
+                    msg.message_id,
+                    chunk_count,
+                    raw_markdown.len()
+                );
+                Ok(Some(msg.message_id))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// 编辑已有 preview。HTML 解析失败时降级为 plain text edit。
+    pub async fn edit_draft_preview(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        raw_markdown: &str,
+    ) -> Result<(), SenderError> {
+        let prepared = prepare_markdown(raw_markdown);
+        let Some(first_chunk) = prepared.chunks.first() else {
+            log::info!(
+                "[telegram-draft] event=preview_edit_empty message_id={}",
+                message_id
+            );
+            return Ok(());
+        };
+        let plain_fallback = first_plain_chunk(&prepared.clean_markdown);
+        let result = self
+            .edit_html_chunk(chat_id, message_id, first_chunk, &plain_fallback)
+            .await;
+        match &result {
+            Ok(()) => log::info!(
+                "[telegram-draft] event=preview_edit_ok message_id={} chunk_count={} text_bytes={}",
+                message_id,
+                prepared.chunks.len(),
+                raw_markdown.len()
+            ),
+            Err(err) => log::warn!(
+                "[telegram-draft] event=preview_edit_error message_id={} error={:?}",
+                message_id,
+                err
+            ),
+        }
+        result
+    }
+
+    /// Finalize a draft by editing the preview when possible; if the preview
+    /// was deleted or edit fails, resend the complete final content normally.
+    pub async fn finalize_draft_markdown_with_reply(
+        &self,
+        chat_id: i64,
+        preview_message_id: Option<i64>,
+        raw_markdown: &str,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<(), SenderError> {
+        let prepared = prepare_markdown(raw_markdown);
+        let chunk_count = prepared.chunks.len();
+        let attachment_count = prepared.attachments.len();
+        let Some(preview_message_id) = preview_message_id else {
+            log::info!(
+                "[telegram-draft] event=final_send_without_preview chunk_count={} attachment_count={} text_bytes={}",
+                chunk_count,
+                attachment_count,
+                raw_markdown.len()
+            );
+            let first_chunk_id = self
+                .send_prepared_chunks(chat_id, &prepared, reply_to_message_id)
+                .await?;
+            self.send_attachments(chat_id, &prepared.attachments, first_chunk_id)
+                .await;
+            log::info!(
+                "[telegram-draft] event=final_sent_without_preview first_message_id={:?} chunk_count={} attachment_count={}",
+                first_chunk_id,
+                chunk_count,
+                attachment_count
+            );
+            return Ok(());
+        };
+        let Some(first_chunk) = prepared.chunks.first() else {
+            log::info!(
+                "[telegram-draft] event=final_empty preview_message_id={}",
+                preview_message_id
+            );
+            return Ok(());
+        };
+        let plain_fallback = first_plain_chunk(&prepared.clean_markdown);
+        if let Err(err) = self
+            .edit_html_chunk(chat_id, preview_message_id, first_chunk, &plain_fallback)
+            .await
+        {
+            match err {
+                SenderError::Unauthorized(_) | SenderError::Forbidden(_) => return Err(err),
+                SenderError::Transport(desc) => {
+                    log::warn!(
+                        "[telegram-draft] event=final_edit_fallback preview_message_id={} chunk_count={} attachment_count={} reason={}",
+                        preview_message_id,
+                        chunk_count,
+                        attachment_count,
+                        desc
+                    );
+                    let first_chunk_id = self
+                        .send_prepared_chunks(chat_id, &prepared, reply_to_message_id)
+                        .await?;
+                    self.send_attachments(chat_id, &prepared.attachments, first_chunk_id)
+                        .await;
+                    log::info!(
+                        "[telegram-draft] event=final_fallback_sent preview_message_id={} first_message_id={:?} chunk_count={} attachment_count={}",
+                        preview_message_id,
+                        first_chunk_id,
+                        chunk_count,
+                        attachment_count
+                    );
+                    return Ok(());
+                }
+            }
+        }
+        log::info!(
+            "[telegram-draft] event=final_edit_ok preview_message_id={} chunk_count={} extra_chunk_count={} attachment_count={} text_bytes={}",
+            preview_message_id,
+            chunk_count,
+            chunk_count.saturating_sub(1),
+            attachment_count,
+            raw_markdown.len()
+        );
+
+        let mut first_chunk_id = Some(preview_message_id);
+        for (idx, chunk) in prepared.chunks.iter().enumerate().skip(1) {
+            let sent_id = self
+                .send_html_chunk_with_reply(chat_id, chunk, None)
+                .await?;
+            log::info!(
+                "[telegram-draft] event=final_extra_chunk_sent preview_message_id={} chunk_index={} total_chunks={} message_id={}",
+                preview_message_id,
+                idx,
+                chunk_count,
+                sent_id
+            );
+            first_chunk_id.get_or_insert(sent_id);
+        }
+        self.send_attachments(chat_id, &prepared.attachments, first_chunk_id)
+            .await;
+        log::info!(
+            "[telegram-draft] event=final_complete mode=edit preview_message_id={} chunk_count={} attachment_count={}",
+            preview_message_id,
+            chunk_count,
+            attachment_count
+        );
+        Ok(())
+    }
+
+    async fn send_prepared_chunks(
+        &self,
+        chat_id: i64,
+        prepared: &PreparedMarkdown,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<Option<i64>, SenderError> {
         let mut first_chunk_id: Option<i64> = None;
         let mut is_first = true;
-        for chunk in chunks {
+        let total_chunks = prepared.chunks.len();
+        for (idx, chunk) in prepared.chunks.iter().enumerate() {
             let reply = if is_first { reply_to_message_id } else { None };
-            match self
-                .send_html_chunk_with_reply(chat_id, &chunk, reply)
-                .await
-            {
+            match self.send_html_chunk_with_reply(chat_id, chunk, reply).await {
                 Ok(sent_id) => {
+                    log::info!(
+                        "[telegram-sender] event=chunk_sent chunk_index={} total_chunks={} message_id={}",
+                        idx,
+                        total_chunks,
+                        sent_id
+                    );
                     if is_first {
                         first_chunk_id = Some(sent_id);
                     }
                 }
                 Err(SenderError::Transport(desc)) if desc.starts_with("parse error:") => {
-                    // 整段回 plain text fallback；不再尝试后续 chunks。
-                    let plain = strip_markdown(&clean_markdown);
-                    return self
+                    log::warn!(
+                        "[telegram-sender] event=send_parse_fallback chunk_index={} total_chunks={} reason={}",
+                        idx,
+                        total_chunks,
+                        desc
+                    );
+                    let plain = strip_markdown(&prepared.clean_markdown);
+                    let msg = self
                         .api
                         .send_message_with_reply(chat_id, &plain, None, reply)
                         .await
-                        .map(|_| ())
-                        .map_err(map_err);
+                        .map_err(map_err)?;
+                    log::info!(
+                        "[telegram-sender] event=plain_fallback_sent message_id={} total_chunks={}",
+                        msg.message_id,
+                        total_chunks
+                    );
+                    return Ok(Some(msg.message_id));
                 }
                 Err(e) => return Err(e),
             }
             is_first = false;
         }
+        Ok(first_chunk_id)
+    }
 
+    async fn send_attachments(
+        &self,
+        chat_id: i64,
+        attachments: &[AttachmentRef],
+        first_chunk_id: Option<i64>,
+    ) {
+        if attachments.is_empty() {
+            return;
+        }
+        log::info!(
+            "[telegram-sender] event=attachments_start count={} reply_to_message_id={:?}",
+            attachments.len(),
+            first_chunk_id
+        );
         // 文本 chunks 已发完，串行发附件。reply 到首条文本，形成视觉聚合。
-        for a in &attachments {
+        for (idx, a) in attachments.iter().enumerate() {
             match self
                 .api
                 .send_document(chat_id, &a.absolute_path, None, first_chunk_id)
                 .await
             {
-                Ok(_) => {}
+                Ok(_) => {
+                    log::info!(
+                        "[telegram-sender] event=attachment_sent attachment_index={} total_attachments={}",
+                        idx,
+                        attachments.len()
+                    );
+                }
                 Err(TelegramApiError::FileTooBig { size, limit }) => {
+                    log::warn!(
+                        "[telegram-sender] event=attachment_too_big attachment_index={} size={} limit={}",
+                        idx,
+                        size,
+                        limit
+                    );
                     let hint = format!(
                         "📎 {} 太大未上传（{:.1}MB > {:.0}MB 上限）",
                         a.absolute_path
@@ -128,7 +372,6 @@ impl TelegramSender {
                 }
             }
         }
-        Ok(())
     }
 
     /// 单 chunk send + 429 重试 + connect 阶段失败重试。返回 sent message_id（首条用作附件 reply target）。
@@ -145,6 +388,10 @@ impl TelegramSender {
         {
             Ok(msg) => Ok(msg.message_id),
             Err(TelegramApiError::TooManyRequests { retry_after }) => {
+                log::warn!(
+                    "[telegram-sender] event=send_retry_after retry_after_ms={}",
+                    retry_after.as_millis()
+                );
                 tokio::time::sleep(retry_after).await;
                 self.api
                     .send_message_with_reply(chat_id, html, Some("HTML"), reply_to_message_id)
@@ -162,17 +409,76 @@ impl TelegramSender {
                     .map_err(map_err)
             }
             Err(TelegramApiError::BadRequest(desc)) if is_parse_error(&desc) => {
+                log::warn!("[telegram-sender] event=send_parse_error reason={desc}");
                 Err(SenderError::Transport(format!("parse error: {desc}")))
             }
             Err(TelegramApiError::BadRequest(desc))
                 if desc.to_lowercase().contains("replied message not found") =>
             {
                 // 用户删了原消息 → 不带 reply 再发一次
-                log::warn!("[telegram-sender] replied message not found, retry without reply");
+                log::warn!("[telegram-sender] event=send_reply_missing_retry");
                 self.api
                     .send_message_with_reply(chat_id, html, Some("HTML"), None)
                     .await
                     .map(|m| m.message_id)
+                    .map_err(map_err)
+            }
+            Err(TelegramApiError::BadRequest(desc)) => {
+                Err(SenderError::Transport(format!("bad request: {desc}")))
+            }
+            Err(e) => Err(map_err(e)),
+        }
+    }
+
+    async fn edit_html_chunk(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        html: &str,
+        plain_fallback: &str,
+    ) -> Result<(), SenderError> {
+        match self
+            .api
+            .edit_message_text(chat_id, message_id, html, Some("HTML"))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(TelegramApiError::TooManyRequests { retry_after }) => {
+                log::warn!(
+                    "[telegram-draft] event=edit_retry_after message_id={} retry_after_ms={}",
+                    message_id,
+                    retry_after.as_millis()
+                );
+                tokio::time::sleep(retry_after).await;
+                self.api
+                    .edit_message_text(chat_id, message_id, html, Some("HTML"))
+                    .await
+                    .map_err(map_err)
+            }
+            Err(TelegramApiError::TransportConnect(d)) => {
+                log::warn!("[telegram-sender] edit connect failed: {d}, retrying once");
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                self.api
+                    .edit_message_text(chat_id, message_id, html, Some("HTML"))
+                    .await
+                    .map_err(map_err)
+            }
+            Err(TelegramApiError::BadRequest(desc)) if is_message_not_modified(&desc) => {
+                log::info!(
+                    "[telegram-draft] event=edit_not_modified message_id={}",
+                    message_id
+                );
+                Ok(())
+            }
+            Err(TelegramApiError::BadRequest(desc)) if is_parse_error(&desc) => {
+                log::warn!(
+                    "[telegram-draft] event=edit_parse_fallback message_id={} reason={}",
+                    message_id,
+                    desc
+                );
+                self.api
+                    .edit_message_text(chat_id, message_id, plain_fallback, None)
+                    .await
                     .map_err(map_err)
             }
             Err(TelegramApiError::BadRequest(desc)) => {
@@ -220,6 +526,41 @@ fn is_parse_error(desc: &str) -> bool {
         || lower.contains("entity")
         || lower.contains("html")
         || lower.contains("tag")
+}
+
+fn is_message_not_modified(desc: &str) -> bool {
+    let lower = desc.to_ascii_lowercase();
+    lower.contains("message is not modified") || lower.contains("message_not_modified")
+}
+
+fn prepare_markdown(raw_markdown: &str) -> PreparedMarkdown {
+    // 提取附件并把 markdown 中的占位符替换成「📎 label」。
+    let attachments = extract_local_paths(raw_markdown);
+    let mut clean_markdown = raw_markdown.to_string();
+    for a in &attachments {
+        let placeholder = format!("📎 {}", a.display_label);
+        clean_markdown = clean_markdown.replace(&a.original_segment, &placeholder);
+    }
+
+    let html = markdown_to_telegram_html(&clean_markdown);
+    let chunks = split_telegram_html(&html, MAX_MESSAGE_BYTES)
+        .into_iter()
+        .filter(|chunk| !chunk.trim().is_empty())
+        .collect();
+    PreparedMarkdown {
+        clean_markdown,
+        chunks,
+        attachments,
+    }
+}
+
+fn first_plain_chunk(markdown: &str) -> String {
+    let plain = strip_markdown(markdown);
+    let chunks = split_telegram_html(&plain, MAX_MESSAGE_BYTES);
+    chunks
+        .into_iter()
+        .find(|chunk| !chunk.trim().is_empty())
+        .unwrap_or_default()
 }
 
 /// HTML escape 三件套：先转义 `&`，再转 `<` `>`，避免后续 markdown→HTML 转换

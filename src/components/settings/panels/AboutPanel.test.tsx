@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tauriMock = vi.hoisted(() => ({
@@ -24,6 +24,7 @@ const baseProps = {
   version: '0.9.30-26041603',
   copyright: '仁励家网络科技(杭州)有限公司 版权所有',
   logoUrl: '/brand-avatar-gold.svg',
+  tenantName: '仁励家网络科技(杭州)有限公司',
   onCheckUpdate: vi.fn(),
   onUploadLogs: vi.fn(),
   onResetData: vi.fn(),
@@ -49,6 +50,7 @@ describe('AboutPanel', () => {
     render(<AboutPanel {...baseProps} />)
 
     expect(screen.getByText('AI小家')).toBeInTheDocument()
+    expect(screen.getByText('仁励家网络科技(杭州)有限公司')).toBeInTheDocument()
     expect(screen.getByText('版本 0.9.30-26041603')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '检查更新' })).toBeInTheDocument()
     expect(screen.queryByText('帮助与反馈')).not.toBeInTheDocument()
@@ -68,7 +70,8 @@ describe('AboutPanel', () => {
     expect(metadataSection).toHaveClass('items-center')
     expect(metadataSection).toHaveClass('justify-between')
 
-    const metadataRow = metadataSection?.querySelector('div')
+    const metadataRow = container.querySelector('[data-aijia-about-metadata]')
+    expect(metadataRow?.tagName).toBe('DIV')
     expect(metadataRow).toHaveClass('items-center')
     expect(metadataRow).not.toHaveClass('items-start')
   })
@@ -127,6 +130,33 @@ describe('AboutPanel', () => {
     expect(screen.queryByRole('button', { name: /在线客服/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /产品建议/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '用户协议' })).toBeInTheDocument()
+  })
+
+  it('opens the dev control panel after seven clicks on app metadata', () => {
+    const { container } = render(<AboutPanel {...baseProps} />)
+
+    const appMetadata = container.querySelector('[data-aijia-about-metadata]')
+    expect(appMetadata?.tagName).toBe('DIV')
+    for (let i = 0; i < 7; i += 1) {
+      fireEvent.click(appMetadata as Element)
+    }
+
+    const dialog = screen.getByRole('dialog', { name: '控制面板' })
+    expect(dialog).toHaveClass('w-[560px]', 'max-w-[calc(100vw-32px)]')
+    expect(screen.getByText('隐藏功能和高级操作入口，不会出现在常规设置中。')).toBeInTheDocument()
+
+    const displayGroup = screen.getByRole('region', { name: '显示' })
+    const switchControl = within(displayGroup).getByRole('radiogroup', {
+      name: '显示工具失败图标',
+    })
+    expect(within(switchControl).getByRole('radio', { name: '关' })).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(within(switchControl).getByRole('radio', { name: '开' }))
+
+    expect(within(switchControl).getByRole('radio', { name: '开' })).toHaveAttribute('aria-checked', 'true')
+    expect(JSON.parse(localStorage.getItem('aijia-dev-settings') ?? '{}')).toMatchObject({
+      showToolErrorIcon: true,
+    })
   })
 
   it('does not render reset while reset is unavailable', () => {

@@ -613,6 +613,7 @@ mod tests {
         tokio::spawn(async move {
             let cm = ChannelMessage {
                 msg_id: "M1".into(),
+                native_message_id: None,
                 conversation_type: crate::connector::im::types::ConversationType::Private,
                 conversation_key: "k".into(),
                 sender_id: "s".into(),

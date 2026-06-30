@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Switch } from "@/components/common/Switch";
+import { SegmentedControl } from "@/components/common/SegmentedControl";
 import { getMessages, getTasks, openGeneratedFile } from "@/lib/tauri";
 import type { ChannelPlatform, ChannelPlatformState } from "@/lib/tauri";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -42,6 +42,11 @@ interface ChannelPageProps {
 }
 
 type PlatformKey = ChannelPlatform;
+
+const TOGGLE_OPTIONS: Array<{ value: "off" | "on"; label: string }> = [
+  { value: "off", label: "关" },
+  { value: "on", label: "开" },
+];
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const PLATFORM_LOGO_SRC: Record<PlatformKey, string> = {
@@ -208,7 +213,7 @@ function PlatformCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-h-[72px] items-center justify-between rounded-md border border-border/65 bg-card px-4 py-3 shadow-[var(--shadow-channel-item)] transition-[border-color,background-color,box-shadow] hover:border-border/80 hover:bg-card/95 hover:shadow-[var(--shadow-channel-item-hover)]">
+    <div className="flex min-h-[72px] items-center justify-between rounded-md border border-[rgba(var(--border-rgb),0.65)] bg-card px-4 py-3 shadow-[var(--shadow-channel-item)] transition-[border-color,background-color,box-shadow] hover:border-[rgba(var(--border-rgb),0.80)] hover:bg-[rgba(var(--card-rgb),0.95)] hover:shadow-[var(--shadow-channel-item-hover)]">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformIcon platform={platform} />
         <div className="min-w-0">
@@ -237,7 +242,6 @@ function PlatformCard({
         {platform.state.configured && onSendGreeting && (
           <Button
             type="button"
-            size="sm"
             variant="secondary"
             disabled={sendingGreeting}
             aria-label={t("channel.actions.sendDingtalkGreetingAria")}
@@ -277,19 +281,20 @@ function PlatformCard({
           />
         )}
         {platform.state.configured ? (
-          <Switch
-            checked={platform.state.enabled}
-            aria-label={
+          <SegmentedControl<"off" | "on">
+            className="w-20 shrink-0"
+            value={platform.state.enabled ? "on" : "off"}
+            ariaLabel={
               platform.state.enabled
                 ? t("channel.actions.enabledAria", { name: platform.name })
                 : t("channel.actions.disabledAria", { name: platform.name })
             }
-            onCheckedChange={onToggle}
+            onValueChange={(value) => onToggle(value === "on")}
+            options={TOGGLE_OPTIONS}
           />
         ) : platform.state.capability === "available" ? (
           <Button
             type="button"
-            size="sm"
             onClick={onRegister}
             aria-label={t("channel.actions.configureWith", {
               name: platform.name,
@@ -298,7 +303,7 @@ function PlatformCard({
             {t("channel.actions.configure")}
           </Button>
         ) : (
-          <Button type="button" size="sm" disabled>
+          <Button type="button" disabled>
             {t("channel.actions.configure")}
           </Button>
         )}
@@ -617,7 +622,6 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
           canWakeDingtalk ? (
             <Button
               type="button"
-              size="sm"
               variant="secondary"
               icon={<BellRing />}
               loading={sendingDingtalkGreeting}

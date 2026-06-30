@@ -20,6 +20,7 @@ import {
   buildCreateSkillFromConversationPrompt,
 } from '@/features/chat/conversationCreatePrompts'
 import { useChat } from '@/hooks/useChat'
+import { useAuthorizedWorkspace } from '@/hooks/useAuthorizedWorkspace'
 import { useConversationExport } from '@/hooks/useConversationExport'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
@@ -27,6 +28,7 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import {
   getConversationSource,
+  isLocalDirectoryAvailable,
   type ConversationSourceDto,
   openGeneratedFile,
 } from '@/lib/tauri'
@@ -61,6 +63,11 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const conv = conversations.find((c) => c.id === conversationId)
   const title = conv?.title ?? ''
   const conversationExport = useConversationExport(conversationId)
+  const { workspace: authorizedWorkspace } = useAuthorizedWorkspace(conversationId)
+  const currentWorkspacePath = authorizedWorkspace && authorizedWorkspace.displayName === conv?.workspaceName
+    ? authorizedWorkspace.rootPath
+    : null
+  const [workspaceAvailable, setWorkspaceAvailable] = useState<boolean | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
 
   const [employeeId, setEmployeeId] = useState<string | null>(null)
@@ -80,6 +87,24 @@ export function ChatPage({ conversationId }: ChatPageProps) {
     })
     return () => { cancelled = true }
   }, [conversationId])
+
+  useEffect(() => {
+    let cancelled = false
+    setWorkspaceAvailable(null)
+    if (!currentWorkspacePath) return
+
+    isLocalDirectoryAvailable(currentWorkspacePath)
+      .then((available) => {
+        if (!cancelled) setWorkspaceAvailable(available)
+      })
+      .catch(() => {
+        if (!cancelled) setWorkspaceAvailable(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentWorkspacePath])
 
   const employee = useEmployeeById(employeeId)
   const employeeDisplay = employee
@@ -257,6 +282,8 @@ export function ChatPage({ conversationId }: ChatPageProps) {
             <ChatTopBar
               title={headerTitle}
               workspace={conv?.workspaceName}
+              workspacePath={currentWorkspacePath}
+              workspaceAvailable={currentWorkspacePath ? workspaceAvailable : null}
               kind={headerKind}
               sourceLabel={sourceLabel}
               updatedAt={conv?.updatedAt}

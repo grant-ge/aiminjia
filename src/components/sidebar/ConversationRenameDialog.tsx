@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -41,15 +42,17 @@ export function ConversationRenameDialog({
         <DialogHeader>
           <DialogTitle>重命名聊天</DialogTitle>
         </DialogHeader>
-        <Input
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') handleConfirm()
-          }}
-          autoFocus
-        />
-        <DialogFooter>
+        <DialogBody data-testid="conversation-rename-dialog-body">
+          <Input
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleConfirm()
+            }}
+            autoFocus
+          />
+        </DialogBody>
+        <DialogFooter data-testid="conversation-rename-dialog-footer">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             取消
           </Button>

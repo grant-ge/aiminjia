@@ -337,7 +337,7 @@ export function HomeTaskComposerCard() {
                         removeRecentWorkspace(ws.rootPath)
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
-                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
+                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-[rgba(var(--muted-foreground-rgb),0.10)] hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
                     >
                       <X className="h-3.5 w-3.5" />
                     </Button>

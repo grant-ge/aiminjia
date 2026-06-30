@@ -59,7 +59,7 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <span className="truncate">{title}</span>
           {session.deletedAt === null && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[rgba(var(--primary-rgb),0.10)] px-1.5 py-0.5 text-[10px] font-medium text-primary">
               <span className="h-1.5 w-1.5 rounded-md bg-primary" />
               {t('team.session.live')}
             </span>

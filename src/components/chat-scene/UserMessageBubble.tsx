@@ -6,9 +6,8 @@ import { Blocks, BrainCircuit, Check, Copy } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
-import { DispatchBanner } from './DispatchBanner'
-import { parseDispatchHeader } from './parseDispatchHeader'
 import type { FileAttachment, ReasoningMode, SkillCommandBreadcrumb } from '@/types/message'
+import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
 
 // Team event XML patterns — rendered by PeerMessageBanner instead
@@ -54,15 +53,6 @@ export function UserMessageBubble({
   // If this is a team event XML message, skip rendering (PeerMessageBanner handles it)
   if (TEAM_EVENT_RE.test((text ?? '').trim())) return null
 
-  // If this user message is actually a dispatch prompt synthesized by
-  // `build_dispatch_prompt` (employee派活 path), render the centered banner
-  // instead of the right-aligned bubble. Parser returns null for normal user
-  // messages, so old conversations + non-dispatch turns are unaffected.
-  const dispatchHeader = parseDispatchHeader(text)
-  if (dispatchHeader) {
-    return <DispatchBanner header={dispatchHeader} />
-  }
-
   const command = skillCommand?.command ?? commandText?.split(/\s+/)[0]
   const tokenLabel = skillCommand?.label ?? skillCommand?.id ?? command?.replace(/^\//, '')
   const showDeepReasoning = reasoningMode === 'deep'
@@ -90,33 +80,27 @@ export function UserMessageBubble({
           }
         >
           {tokenLabel ? (
-            <span
+            <Tag
               data-testid="user-skill-token"
               // bubble 外层是 bg-sidebar，内嵌 token 用前景色低透明底维持层次。
-              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-foreground/10 px-2 py-1 text-xs font-semibold leading-none text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              size="sm"
+              className="mr-2 translate-y-[1px] bg-[rgba(var(--foreground-rgb),0.10)] px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
               title={command}
+              icon={<Blocks aria-hidden="true" style={{ transform: 'translateY(1px)' }} />}
             >
-              <Blocks
-                aria-hidden="true"
-                className="shrink-0"
-                style={{ width: '0.75rem', height: '0.75rem', transform: 'translateY(1px)' }}
-              />
               <span>{tokenLabel}</span>
-            </span>
+            </Tag>
           ) : null}
           {showDeepReasoning ? (
-            <span
+            <Tag
               data-testid="user-reasoning-token"
-              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-foreground/10 px-2 py-1 text-xs font-semibold leading-none text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              size="sm"
+              className="mr-2 translate-y-[1px] bg-[rgba(var(--foreground-rgb),0.10)] px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
               title={t('composer.reasoningModeDeepLong')}
+              icon={<BrainCircuit aria-hidden="true" style={{ transform: 'translateY(1px)' }} />}
             >
-              <BrainCircuit
-                aria-hidden="true"
-                className="shrink-0"
-                style={{ width: '0.75rem', height: '0.75rem', transform: 'translateY(1px)' }}
-              />
               <span>{t('composer.reasoningModeDeep')}</span>
-            </span>
+            </Tag>
           ) : null}
           {text ? (
             <UserBubbleMarkdown text={text} files={files} conversationId={conversationId} />
@@ -126,7 +110,7 @@ export function UserMessageBubble({
           <Button unstyled
             type="button"
             onClick={() => setExpanded((next) => !next)}
-            className="mt-1 text-xs font-semibold text-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
+            className="mt-1 text-xs font-semibold text-[rgba(var(--foreground-rgb),0.70)] underline-offset-2 hover:text-foreground hover:underline"
           >
             {expanded ? t('userMessage.collapse') : t('userMessage.expandAll')}
           </Button>
@@ -139,15 +123,14 @@ export function UserMessageBubble({
             link
             onClick={handleCopy}
             className="gap-1 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            icon={copied === 'ok'
+              ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              : <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+            }
             aria-label={t('userMessage.copy', '复制用户消息')}
             title={t('userMessage.copy', '复制用户消息')}
             data-testid="user-message-copy-button"
           >
-            {copied === 'ok' ? (
-              <Check className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
             <span>
               {copied === 'ok'
                 ? t('common.copied')

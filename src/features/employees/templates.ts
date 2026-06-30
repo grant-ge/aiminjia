@@ -1,12 +1,12 @@
-// 内置员工模板"身份元数据"——只保留 EmployeeCard / HireWizard / localizeEmployeeDisplay
+// 内置员工模板"身份元数据"——只保留员工目录 / localizeEmployeeDisplay
 // 需要的最小字段（templateId / name / role / description / resourceConfigKind / avatar / badge）。
 //
-// 历史背景（2026-06）：之前 BUILTIN_TEMPLATES 兼任 HireWizard 的"离线兜底员工列表"，
+// 历史背景（2026-06）：之前 BUILTIN_TEMPLATES 兼任员工创建入口的"离线兜底员工列表"，
 // 每条带 systemPromptExtra / toolWhitelist / cron 等完整运行时数据。但 AIjia 是云端唯一
 // 架构，没网 → 网关挂 → 员工跑不了，"离线兜底"是伪命题（CLAUDE.md 决策 11）。
 //
 // 因此：
-// - HireWizard 不再 fallback 到 BUILTIN_TEMPLATES——cache 空就显示 loading / 重试 UI
+// - 员工目录不再 fallback 到 BUILTIN_TEMPLATES——cache 空就显示 loading / 重试 UI
 // - 后端 templates_bootstrap.json 完全删除，catalog 只来自服务端缓存
 // - BUILTIN_TEMPLATES 余下用途：① findTemplate(id) → resourceConfigKind 路由
 //   ② localizeEmployeeDisplay 查 base zh-CN 值用于已招员工的 i18n 翻译
@@ -44,7 +44,7 @@ export interface EmployeeTemplate {
   defaultSkillId: string | null
   /** When set, dispatch flow opens a file picker before calling employee_trigger. */
   requiresAttachment: RequiresAttachmentSpec | null
-  /** Drives which HireWizard resource config subcomponent is shown in step 3. */
+  /** Drives which resource config subcomponent is shown before creating the employee. */
   resourceConfigKind: ResourceConfigKind
   /** True when an employee with this templateId requires `dingtalk_status().connected === true` before dispatch. */
   requiresDingtalk: boolean
@@ -57,8 +57,8 @@ export interface EmployeeTemplate {
   workplaceCategoryName?: string | null
   /**
    * JSON Schema for instance config (PR6, 2026-05-10). When present and
-   * non-empty, HireWizard step 3 renders a SchemaForm against this schema
-   * instead of the legacy hardcoded `resourceConfigKind`-driven form.
+   * non-empty, the employee detail flow renders a SchemaForm against this
+   * schema instead of the legacy hardcoded `resourceConfigKind`-driven form.
    * BUILTIN_TEMPLATES leave this empty — they keep their hand-tuned forms.
    * Custom (`org:` / `private:`) templates published via OPS portal can
    * supply a schema and skip the hardcoded form path entirely.

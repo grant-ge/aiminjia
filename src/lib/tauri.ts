@@ -1359,6 +1359,10 @@ export function isLocalFileAvailable(path: string): Promise<boolean> {
   return invoke<boolean>("is_local_file_available", { path });
 }
 
+export function isLocalDirectoryAvailable(path: string): Promise<boolean> {
+  return invoke<boolean>("is_local_directory_available", { path });
+}
+
 export function saveGeneratedFileAs(
   fileId: string,
   conversationId: string,
@@ -1500,6 +1504,23 @@ export function getSettings(): Promise<Settings> {
  */
 export function updateSettings(settings: Settings): Promise<void> {
   return invoke<void>("update_settings", { settings });
+}
+
+/**
+ * Enable or disable the OS power assertion used to keep IM channel workers online.
+ */
+export function setImChannelKeepAwake(enabled: boolean): Promise<void> {
+  return invoke<void>("set_im_channel_keep_awake", { enabled });
+}
+
+/**
+ * Copy a chosen local profile avatar image into the active user profile dir.
+ *
+ * @param filePath - Absolute path selected by the user.
+ * @returns The copied absolute path under the current user directory.
+ */
+export function saveProfileAvatarImage(filePath: string): Promise<string> {
+  return invoke<string>("save_profile_avatar_image", { filePath });
 }
 
 /**
@@ -1847,7 +1868,7 @@ export function getPluginInfo(): Promise<PluginInfo> {
 /** Cloud auth info returned from login/get_cloud_auth. */
 export interface CloudAuthInfo {
   loggedIn: boolean;
-  user: { id: number; name: string; username: string } | null;
+  user: { id: number; name: string; username: string; role?: string } | null;
   tenant: {
     id: number;
     name: string;
@@ -3252,7 +3273,7 @@ export function employeeActiveRun(
 }
 
 /**
- * Returns the catalog of templates the new-hire wizard should display.
+ * Returns the catalog of templates the employee directory should display.
  *
  * Never hits the network. Reads `~/.renlijia/employee-templates-cache/`,
  * which is populated by `employeeTemplateRefresh()` or

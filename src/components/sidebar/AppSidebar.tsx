@@ -14,7 +14,6 @@ import {
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 
 import { useChat } from "@/hooks/useChat";
-import { useBrandingStore } from "@/stores/brandingStore";
 import { useChatStore } from "@/stores/chatStore";
 import {
   useUiStore,
@@ -29,25 +28,18 @@ import { useSidebarStatusStore } from "@/stores/sidebarStatusStore";
 import { hasExpertTeam } from "@/features/expert-teams/expertTeamRegistry";
 import { selectPendingActionForSession } from "@/components/chat-scene/pendingActionSelectors";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { SegmentedControl } from "@/components/common/SegmentedControl";
 
 import { ConversationRow } from "./ConversationRow";
 import { ConversationRenameDialog } from "./ConversationRenameDialog";
 import { ConversationTree } from "./ConversationTree";
 import { groupConversationsByProject } from "./conversationProjects";
-import { DevControlPanel } from "./DevControlPanel";
 import {
   SidebarRowStatusIndicator,
   type SidebarRowStatus,
 } from "./SidebarRowStatusIndicator";
-import { SidebarFooterSettings } from "./SidebarFooterSettings";
+import { SidebarAccountFooter } from "./SidebarAccountFooter";
 import { SidebarNav, type SidebarNavKey } from "./SidebarNav";
-import { TenantHeader } from "./TenantHeader";
 import type { ChannelConversation } from "@/lib/tauri";
 
 function channelConversationLabel(
@@ -89,7 +81,7 @@ function ChannelConversationRow({
 }: ChannelConversationRowProps) {
   const rowClassName = active
     ? `flex h-8 w-full items-center justify-between rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground`
-    : `flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
+    : `flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-[rgba(var(--sidebar-foreground-rgb),0.70)] hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground`;
 
   return (
     <ContextMenuPrimitive.Root>
@@ -132,10 +124,6 @@ function ChannelConversationRow({
 
 export function AppSidebar() {
   const { t } = useTranslation();
-  const productName = useBrandingStore((s) => s.productName);
-  const logoUrl = useBrandingStore((s) => s.logoUrl);
-  const isWindows =
-    typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
   const route = useUiStore((s) => s.route);
   const setRoute = useUiStore((s) => s.setRoute);
   const openSettings = useUiStore((s) => s.openSettings);
@@ -164,8 +152,6 @@ export function AppSidebar() {
   const cachedStatuses = useSidebarStatusStore((s) => s.statuses);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [devPanelOpen, setDevPanelOpen] = useState(false);
-  const [, setTenantHeaderClickCount] = useState(0);
 
   const switchTab = (next: SidebarBodyTab) => {
     setSidebarTab(next);
@@ -367,19 +353,6 @@ export function AppSidebar() {
                 ? "home"
                 : null;
 
-  const tenantDisplay = productName;
-
-  const handleTenantHeaderClick = () => {
-    setTenantHeaderClickCount((count) => {
-      const next = count + 1;
-      if (next >= 7) {
-        setDevPanelOpen(true);
-        return 0;
-      }
-      return next;
-    });
-  };
-
   function channelStatusLabel(state: typeof dingtalkState): string {
     if (!state?.configured) return t("channel.status.unconfigured");
     if (!state.enabled) return t("channel.status.disconnected");
@@ -440,14 +413,6 @@ export function AppSidebar() {
       <aside
         className="flex h-full shrink-0 flex-col overflow-hidden bg-sidebar pt-2 text-sidebar-foreground"
       >
-        {isWindows ? null : (
-          <TenantHeader
-            name={tenantDisplay}
-            logoUrl={logoUrl}
-            onClick={handleTenantHeaderClick}
-          />
-        )}
-
         <SidebarNav
           activeKey={activeKey}
           onSelect={(key) => setRoute({ kind: key } as Route)}
@@ -503,44 +468,25 @@ export function AppSidebar() {
                 labelKey: "sidebar.channel",
               },
             ];
-            const activeIndex = TABS.findIndex((tab) => tab.key === sidebarTab);
             return (
               <div className="px-2">
-                <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
-                  {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
-                  <div
-                    className="absolute rounded-md bg-card shadow-sm"
-                    style={{
-                      top: "2px",
-                      bottom: "2px",
-                      left: "4px",
-                      width: "calc(25% - 2px)",
-                      transform: `translateX(${activeIndex * 100}%)`,
-                      transition: "transform 200ms ease-in-out",
-                    }}
-                  />
-                  {TABS.map(({ key, Icon, labelKey }) => (
-                    <TooltipProvider key={key} delayDuration={400}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button unstyled
-                            type="button"
-                            aria-label={t(labelKey)}
-                            onClick={() => switchTab(key)}
-                            className={`relative z-10 flex items-center justify-center rounded-md transition-colors duration-200 ${
-                              sidebarTab === key ? "text-foreground" : ""
-                            }`}
-                          >
-                            <Icon className="h-3.5 w-3.5 shrink-0" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          {t(labelKey)}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ))}
-                </div>
+                <SegmentedControl<SidebarBodyTab>
+                  ariaLabel={t("sidebar.project")}
+                  value={sidebarTab}
+                  onValueChange={switchTab}
+                  testId="sidebar-body-tabs"
+                  className="w-full border border-sidebar-border bg-[rgba(var(--sidebar-accent-rgb),0.70)]"
+                  options={TABS.map(({ key, Icon, labelKey }) => {
+                    const label = t(labelKey);
+                    return {
+                      value: key,
+                      label: "",
+                      ariaLabel: label,
+                      tooltip: label,
+                      icon: <Icon className="h-3.5 w-3.5 shrink-0" />,
+                    };
+                  })}
+                />
               </div>
             );
           })()}
@@ -586,7 +532,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(dingtalkState)}
                       </Button>
@@ -614,7 +560,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(feishuState)}
                       </Button>
@@ -642,7 +588,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wecomState)}
                       </Button>
@@ -670,7 +616,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wechatState)}
                       </Button>
@@ -698,7 +644,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(telegramState)}
                       </Button>
@@ -726,7 +672,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(whatsappState)}
                       </Button>
@@ -740,7 +686,9 @@ export function AppSidebar() {
           )}
         </div>
 
-        <SidebarFooterSettings onClick={() => openSettings("account")} />
+        <SidebarAccountFooter
+          onOpenSettings={openSettings}
+        />
       </aside>
 
       <ConversationRenameDialog
@@ -751,7 +699,6 @@ export function AppSidebar() {
         }}
         onConfirm={handleRenameConfirm}
       />
-      <DevControlPanel open={devPanelOpen} onOpenChange={setDevPanelOpen} />
     </>
   );
 }

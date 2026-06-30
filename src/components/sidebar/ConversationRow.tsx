@@ -89,7 +89,7 @@ export function ConversationRow({
   const paddingCls = indent ? "pl-[32px] pr-2" : "pl-2 pr-2";
   const wrapperCls = active
     ? `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
-    : `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
+    : `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} text-[rgba(var(--sidebar-foreground-rgb),0.70)] transition-colors hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground`;
   const showTrailing = showActions || showStatus;
 
   return (
@@ -140,7 +140,7 @@ export function ConversationRow({
                               e.stopPropagation();
                               onTogglePin?.();
                             }}
-                            className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
                           >
                             {pinned ? (
                               <PinOff className="h-3.5 w-3.5" />
@@ -162,7 +162,7 @@ export function ConversationRow({
                             aria-label={t("sidebar.archiveChat")}
                             onClick={handleArchiveClick}
                             className={cn(
-                              "flex h-5 items-center justify-center rounded-md transition-colors",
+                              "flex h-5 items-center justify-center rounded transition-colors",
                               armed
                                 ? "w-auto bg-destructive px-1.5 text-[10px] font-semibold leading-none text-destructive-foreground"
                                 : "w-5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",

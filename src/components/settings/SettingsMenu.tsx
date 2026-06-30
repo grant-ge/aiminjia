@@ -22,9 +22,9 @@ export interface SettingsMenuItem {
 // eslint-disable-next-line react-refresh/only-export-components
 export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', labelKey: 'settings.tabs.general' },
+  { key: 'system', labelKey: 'settings.tabs.system' },
   { key: 'account-billing', labelKey: 'settings.billing.title' },
   { key: 'usage', labelKey: 'settings.tabs.usage', disabled: true },
-  { key: 'permissions', labelKey: 'settings.tabs.permissions' },
   { key: 'mcp', labelKey: 'settings.tabs.mcp', disabled: true },
   { key: 'sso', labelKey: 'settings.tabs.sso', disabled: true },
   { key: 'shortcuts', labelKey: 'settings.tabs.shortcuts', disabled: true },
@@ -64,7 +64,7 @@ export function SettingsMenu({ activeKey, onSelect, hiddenKeys = [] }: SettingsM
                 'flex items-center rounded-md px-3 py-2.5 text-left text-sm',
                 active
                   ? 'bg-card font-semibold text-foreground'
-                  : 'font-medium text-muted-foreground transition-colors hover:bg-card/60',
+                  : 'font-medium text-muted-foreground transition-colors hover:bg-[rgba(var(--card-rgb),0.60)]',
               )}
             >
               <span className="min-w-0 flex-1 truncate">{label}</span>

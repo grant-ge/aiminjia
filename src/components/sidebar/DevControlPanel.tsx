@@ -1,11 +1,16 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Switch } from '@/components/common/Switch'
+import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { useDevSettingsStore } from '@/stores/devSettingsStore'
 
 interface DevControlPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
+
+const TOGGLE_OPTIONS: Array<{ value: 'off' | 'on'; label: string }> = [
+  { value: 'off', label: '关' },
+  { value: 'on', label: '开' },
+]
 
 export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
   const showToolErrorIcon = useDevSettingsStore((s) => s.showToolErrorIcon)
@@ -29,7 +34,7 @@ export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
               <h3 id="dev-control-display-title" className="text-xs font-medium text-muted-foreground">
                 显示
               </h3>
-              <div className="divide-y divide-border/70 border-y border-border/70">
+              <div className="divide-y divide-[rgba(var(--border-rgb),0.70)] border-y border-[rgba(var(--border-rgb),0.70)]">
                 <div className="flex items-center justify-between gap-4 py-4">
                   <div className="min-w-0 pr-4">
                     <div className="text-sm font-medium text-foreground">显示工具失败图标</div>
@@ -37,10 +42,12 @@ export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
                       关闭后，工具摘要和展开行都不显示失败诊断；开启后用于排查问题。
                     </p>
                   </div>
-                  <Switch
-                    aria-label="显示工具失败图标"
-                    checked={showToolErrorIcon}
-                    onCheckedChange={setShowToolErrorIcon}
+                  <SegmentedControl<'off' | 'on'>
+                    ariaLabel="显示工具失败图标"
+                    className="w-20 shrink-0"
+                    value={showToolErrorIcon ? 'on' : 'off'}
+                    onValueChange={(value) => setShowToolErrorIcon(value === 'on')}
+                    options={TOGGLE_OPTIONS}
                   />
                 </div>
                 <div className="flex items-center justify-between gap-4 py-4">
@@ -50,10 +57,12 @@ export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
                       开启后，技能详情页会显示完整 SKILL.md 原文和调试参数；默认隐藏给普通使用视图。
                     </p>
                   </div>
-                  <Switch
-                    aria-label="显示技能原始内容"
-                    checked={showRawSkillContent}
-                    onCheckedChange={setShowRawSkillContent}
+                  <SegmentedControl<'off' | 'on'>
+                    ariaLabel="显示技能原始内容"
+                    className="w-20 shrink-0"
+                    value={showRawSkillContent ? 'on' : 'off'}
+                    onValueChange={(value) => setShowRawSkillContent(value === 'on')}
+                    options={TOGGLE_OPTIONS}
                   />
                 </div>
               </div>

@@ -8,7 +8,7 @@ describe('uiStore.settingsModal', () => {
   })
 
   it('opens only implemented settings keys', () => {
-    const keys = ['account', 'archived', 'about'] as const
+    const keys = ['account', 'system', 'archived', 'about'] as const
     for (const k of keys) {
       useUiStore.getState().openSettings(k)
       expect(useUiStore.getState().settingsModal).toBe(k)
@@ -27,6 +27,12 @@ describe('uiStore.settingsModal', () => {
     useUiStore.getState().openSettings('usage')
 
     expect(useUiStore.getState().settingsModal).toBe('account-billing')
+  })
+
+  it('routes legacy permissions settings entry to system settings', () => {
+    useUiStore.getState().openSettings('permissions')
+
+    expect(useUiStore.getState().settingsModal).toBe('system')
   })
 })
 

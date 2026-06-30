@@ -105,7 +105,7 @@ describe('TeamChatEvents – send_message variant 分流', () => {
     expect(bubble).toHaveClass('bg-card')
     expect(bubble).toHaveClass('border-border')
     expect(bubble?.className).not.toMatch(/\bbg-(blue|emerald|rose|amber|violet|cyan)-500\/8\b/)
-    expect(bubble?.className).not.toContain('bg-primary/10')
+    expect(bubble?.className).not.toContain('bg-[rgba(var(--primary-rgb),0.10)]')
   })
 
   it('renders system events as compact activity rows without horizontal divider lines', () => {

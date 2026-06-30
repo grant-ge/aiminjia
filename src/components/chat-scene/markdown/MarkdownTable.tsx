@@ -47,12 +47,11 @@ export function MarkdownTable({ children }: MarkdownTableProps) {
           onClick={handleCopy}
           title={t('dataTable.copyCsv', 'Copy as CSV (hold Shift for TSV)')}
           data-testid="markdown-table-copy-button"
+          icon={copied === 'ok'
+            ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            : <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          }
         >
-          {copied === 'ok' ? (
-            <Check className="h-3.5 w-3.5" aria-hidden="true" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-          )}
           <span>
             {copied === 'ok'
               ? t('common.copied', 'Copied')

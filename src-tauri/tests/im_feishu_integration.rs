@@ -112,6 +112,7 @@ impl IMConnector for MockFeishuConnector {
             if !sent {
                 let msg = ChannelMessage {
                     msg_id: "om_test_feishu".into(),
+                    native_message_id: None,
                     conversation_type: ConversationType::Private,
                     conversation_key: "oc_test_chat".into(),
                     sender_id: "ou_test_user".into(),

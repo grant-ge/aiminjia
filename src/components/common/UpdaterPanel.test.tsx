@@ -127,4 +127,20 @@ describe('UpdaterPanel', () => {
     expect(screen.getByTestId('updater-install-progress')).toHaveAttribute('data-aijia-updater-install-percent', '75')
     expect(screen.getByText('updater.installStage.installing')).toBeInTheDocument()
   })
+
+  it.each(['downloading', 'ready'] as const)('keeps %s updater content inset from the dialog edge', (phase) => {
+    act(() => useUpdaterStore.setState({
+      phase,
+      version: '0.5.36-1',
+      notes: '- 修复弹窗内容贴边',
+      progress: { downloaded: 10, total: 10 },
+      panelOpen: true,
+      _update: { install: vi.fn() } as never,
+      _cachedBytes: phase === 'ready' ? new Uint8Array([1]) : null,
+    }))
+
+    render(<UpdaterPanel />)
+
+    expect(screen.getByTestId('updater-panel-body')).toHaveClass('px-6')
+  })
 })

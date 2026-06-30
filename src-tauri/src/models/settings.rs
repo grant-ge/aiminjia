@@ -11,6 +11,10 @@ fn default_chat_width_mode() -> String {
     "full".to_string()
 }
 
+fn default_profile_avatar_mode() -> String {
+    "initial".to_string()
+}
+
 fn default_permission_mode() -> String {
     "default".to_string()
 }
@@ -89,6 +93,15 @@ pub struct AppSettings {
     /// Chat content width mode: centered | full.
     #[serde(default = "default_chat_width_mode")]
     pub chat_width_mode: String,
+    /// Profile avatar source: initial | emoji | image.
+    #[serde(default = "default_profile_avatar_mode")]
+    pub profile_avatar_mode: String,
+    /// Emoji used when profile_avatar_mode == emoji.
+    #[serde(default)]
+    pub profile_avatar_emoji: String,
+    /// Copied local image path used when profile_avatar_mode == image.
+    #[serde(default)]
+    pub profile_avatar_image_path: String,
     /// Default tool permission mode for new turns: default | fullAccess.
     #[serde(default = "default_permission_mode")]
     pub default_permission_mode: String,
@@ -115,6 +128,9 @@ pub struct AppSettings {
     /// over model-name-based context window resolution.
     #[serde(default)]
     pub context_window: Option<usize>,
+    /// Keep the machine awake so IM channel workers can continue handling remote messages.
+    #[serde(default)]
+    pub im_channel_keep_awake_enabled: bool,
 }
 
 fn default_font_scale() -> String {
@@ -147,6 +163,9 @@ impl Default for AppSettings {
             font_scale: default_font_scale(),
             accent_color: String::new(),
             chat_width_mode: default_chat_width_mode(),
+            profile_avatar_mode: default_profile_avatar_mode(),
+            profile_avatar_emoji: String::new(),
+            profile_avatar_image_path: String::new(),
             default_permission_mode: default_permission_mode(),
             managed_runtime_enabled: default_managed_runtime_enabled(),
             ui_home_selected_workspace: String::new(),
@@ -154,6 +173,7 @@ impl Default for AppSettings {
             ui_sidebar_collapsed_projects: String::new(),
             ui_sidebar_conversation_statuses: String::new(),
             context_window: None,
+            im_channel_keep_awake_enabled: false,
         }
     }
 }
@@ -218,6 +238,12 @@ impl AppSettings {
             font_scale: get_str("fontScale", &defaults.font_scale),
             accent_color: get_str("accentColor", &defaults.accent_color),
             chat_width_mode: get_str("chatWidthMode", &defaults.chat_width_mode),
+            profile_avatar_mode: get_str("profileAvatarMode", &defaults.profile_avatar_mode),
+            profile_avatar_emoji: get_str("profileAvatarEmoji", &defaults.profile_avatar_emoji),
+            profile_avatar_image_path: get_str(
+                "profileAvatarImagePath",
+                &defaults.profile_avatar_image_path,
+            ),
             default_permission_mode: normalize_default_permission_mode(&get_str(
                 "defaultPermissionMode",
                 &defaults.default_permission_mode,
@@ -243,6 +269,10 @@ impl AppSettings {
                 &defaults.ui_sidebar_conversation_statuses,
             ),
             context_window: get_usize_option("contextWindow"),
+            im_channel_keep_awake_enabled: get_bool(
+                "imChannelKeepAwakeEnabled",
+                defaults.im_channel_keep_awake_enabled,
+            ),
         }
     }
 }
@@ -277,6 +307,14 @@ mod tests {
     }
 
     #[test]
+    fn defaults_profile_avatar_to_initial() {
+        let s = AppSettings::default();
+        assert_eq!(s.profile_avatar_mode, "initial");
+        assert_eq!(s.profile_avatar_emoji, "");
+        assert_eq!(s.profile_avatar_image_path, "");
+    }
+
+    #[test]
     fn defaults_font_scale_to_medium() {
         assert_eq!(AppSettings::default().font_scale, "medium");
     }
@@ -299,6 +337,21 @@ mod tests {
         let settings = AppSettings::from_string_map(&map);
 
         assert!(!settings.managed_runtime_enabled);
+    }
+
+    #[test]
+    fn defaults_im_channel_keep_awake_to_disabled() {
+        assert!(!AppSettings::default().im_channel_keep_awake_enabled);
+    }
+
+    #[test]
+    fn reads_im_channel_keep_awake_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("imChannelKeepAwakeEnabled".to_string(), "true".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert!(settings.im_channel_keep_awake_enabled);
     }
 
     #[test]
@@ -345,6 +398,26 @@ mod tests {
     }
 
     #[test]
+    fn reads_profile_avatar_fields_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("profileAvatarMode".to_string(), "emoji".to_string());
+        map.insert("profileAvatarEmoji".to_string(), "🐱".to_string());
+        map.insert(
+            "profileAvatarImagePath".to_string(),
+            "/Users/me/.renlijia/users/t_1__u_2/profile/avatars/avatar.png".to_string(),
+        );
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.profile_avatar_mode, "emoji");
+        assert_eq!(settings.profile_avatar_emoji, "🐱");
+        assert_eq!(
+            settings.profile_avatar_image_path,
+            "/Users/me/.renlijia/users/t_1__u_2/profile/avatars/avatar.png"
+        );
+    }
+
+    #[test]
     fn home_workspace_fields_default_to_empty_string() {
         let s = AppSettings::default();
         assert_eq!(s.ui_home_selected_workspace, "");
@@ -362,6 +435,9 @@ mod tests {
             ui_sidebar_collapsed_projects: r#"{"default":true}"#.to_string(),
             ui_sidebar_conversation_statuses:
                 r#"{"conv-a":{"kind":"permission-review","updatedAt":1}}"#.to_string(),
+            profile_avatar_mode: "image".to_string(),
+            profile_avatar_emoji: "🎪".to_string(),
+            profile_avatar_image_path: "/Users/me/avatar.png".to_string(),
             ..AppSettings::default()
         };
         let json = serde_json::to_string(&s).unwrap();
@@ -381,6 +457,12 @@ mod tests {
         assert_eq!(
             parsed.ui_sidebar_conversation_statuses,
             s.ui_sidebar_conversation_statuses
+        );
+        assert_eq!(parsed.profile_avatar_mode, s.profile_avatar_mode);
+        assert_eq!(parsed.profile_avatar_emoji, s.profile_avatar_emoji);
+        assert_eq!(
+            parsed.profile_avatar_image_path,
+            s.profile_avatar_image_path
         );
     }
 

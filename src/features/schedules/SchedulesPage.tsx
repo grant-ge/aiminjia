@@ -223,8 +223,13 @@ export function SchedulesPage() {
                   : t('schedules.cancelled')}
             </Button>
             {showCancelled ? null : (
-              <Button size="md" onClick={handleCreateBlank} aria-label={t('schedules.newTaskAria')} data-aijia-agenda-new>
-                <Plus className="h-4 w-4" />
+              <Button
+                size="md"
+                icon={<Plus className="h-4 w-4" />}
+                onClick={handleCreateBlank}
+                aria-label={t('schedules.newTaskAria')}
+                data-aijia-agenda-new
+              >
                 {t('schedules.newButton')}
               </Button>
             )}
@@ -252,7 +257,7 @@ export function SchedulesPage() {
       </div>
 
       {displayedError ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-[0.8125rem] text-destructive">
+        <div className="rounded-md border border-[rgba(var(--destructive-rgb),0.30)] bg-[rgba(var(--destructive-rgb),0.05)] px-4 py-3 text-[0.8125rem] text-destructive">
           {displayedError}
         </div>
       ) : null}
@@ -304,7 +309,7 @@ export function SchedulesPage() {
         </ScheduleListCard>
 
         <aside className="flex flex-col gap-2">
-          <div className="rounded-md border border-border/70 bg-card p-3 shadow-[var(--shadow-schedule-panel)]">
+          <div className="rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card p-3 shadow-[var(--shadow-schedule-panel)]">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-foreground">
@@ -326,12 +331,12 @@ export function SchedulesPage() {
             </div>
           </div>
 
-          <div className="rounded-md border border-border/70 bg-card p-3 shadow-[var(--shadow-schedule-panel)]">
+          <div className="rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card p-3 shadow-[var(--shadow-schedule-panel)]">
             <div className="text-sm font-semibold text-foreground">
               {t('schedules.console.nextUp', '下一次执行')}
             </div>
             {nextItem ? (
-              <div className="mt-2 rounded-md bg-muted/35 px-3 py-2">
+              <div className="mt-2 rounded-md bg-[rgba(var(--muted-rgb),0.35)] px-3 py-2">
                 <div className="truncate text-sm font-semibold text-foreground">
                   {t('schedules.console.nextUpTask', '即将触发：{{title}}', { title: nextItem.title })}
                 </div>
@@ -340,7 +345,7 @@ export function SchedulesPage() {
                 </div>
               </div>
             ) : (
-              <div className="mt-2 rounded-md border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground">
+              <div className="mt-2 rounded-md border border-dashed border-[rgba(var(--border-rgb),0.70)] px-3 py-4 text-center text-xs text-muted-foreground">
                 {t('schedules.console.noNext', '暂无即将触发的任务')}
               </div>
             )}
@@ -396,7 +401,7 @@ function ScheduleStat({
   value: number
 }) {
   return (
-    <div className="rounded-md border border-sidebar-border bg-card/70 px-3 py-2">
+    <div className="rounded-md border border-sidebar-border bg-[rgba(var(--card-rgb),0.70)] px-3 py-2">
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
       </div>

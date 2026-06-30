@@ -162,10 +162,10 @@ function TimelineItem({ group, isLast }: { group: Group; isLast: boolean }) {
         : t('team.detail.timeline.turn')
   const dotClass =
     group.kind === 'system-reminder'
-      ? 'border-muted-foreground/25 bg-muted'
+      ? 'border-[rgba(var(--muted-foreground-rgb),0.25)] bg-muted'
       : group.kind === 'incoming'
-        ? 'border-primary/30 bg-primary/15'
-        : 'border-foreground/20 bg-foreground/10'
+        ? 'border-[rgba(var(--primary-rgb),0.30)] bg-[rgba(var(--primary-rgb),0.15)]'
+        : 'border-[rgba(var(--foreground-rgb),0.20)] bg-[rgba(var(--foreground-rgb),0.10)]'
   return (
     <div
       data-testid="teammate-detail-timeline-item"
@@ -206,18 +206,18 @@ function SystemReminderBlock({ text }: { text: string }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded-md border border-border bg-muted/40">
+    <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.40)]">
       <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted/60"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-[rgba(var(--muted-rgb),0.60)]"
       >
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <span>{t('team.detail.systemReminder')}</span>
         <span className="ml-auto opacity-60">system</span>
       </Button>
       {open && (
-        <pre className="whitespace-pre-wrap break-words border-t border-border px-3 py-2 text-[11px] leading-relaxed text-foreground/85">
+        <pre className="whitespace-pre-wrap break-words border-t border-border px-3 py-2 text-[11px] leading-relaxed text-[rgba(var(--foreground-rgb),0.85)]">
           {text}
         </pre>
       )}
@@ -275,7 +275,7 @@ function ToolChip({ call }: { call: ToolCallView }) {
       <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-[rgba(var(--muted-rgb),0.60)]"
       >
         {open ? (
           <ChevronDown className="h-3.5 w-3.5 shrink-0" />
@@ -298,14 +298,14 @@ function ToolChip({ call }: { call: ToolCallView }) {
         <div className="space-y-2 border-t border-border px-2.5 py-2">
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">args</div>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-[rgba(var(--muted-rgb),0.40)] px-2 py-1.5 font-mono text-[11px] leading-relaxed text-[rgba(var(--foreground-rgb),0.85)]">
               {prettyJson(call.args)}
             </pre>
           </div>
           {call.result && (
             <div>
               <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">result</div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-[rgba(var(--muted-rgb),0.40)] px-2 py-1.5 font-mono text-[11px] leading-relaxed text-[rgba(var(--foreground-rgb),0.85)]">
                 {stringify(call.result.content)}
               </pre>
             </div>
@@ -394,12 +394,12 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
       data-teammate-message-card
       className={`${widthClass} overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-card)]`}
     >
-      <div className="flex items-center gap-2 border-b border-border bg-muted/35 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+      <div className="flex items-center gap-2 border-b border-border bg-[rgba(var(--muted-rgb),0.35)] px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneAccent}`} />
         <span className="text-foreground">{header}</span>
         {parsed.warning && (
           <span
-            className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
+            className="rounded-md bg-[rgba(var(--color-semantic-orange-rgb),0.15)] px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
             title={parsed.warning}
           >
             {t('team.detail.parseHint')}
@@ -416,7 +416,7 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
       <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 border-t border-border bg-muted/25 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-muted/45"
+        className="flex w-full items-center gap-1.5 border-t border-border bg-[rgba(var(--muted-rgb),0.25)] px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-[rgba(var(--muted-rgb),0.45)]"
       >
         {open ? (
           <ChevronDown className="h-3.5 w-3.5" />
@@ -431,7 +431,7 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
         )}
       </Button>
       {open && (
-        <pre className="overflow-x-auto whitespace-pre-wrap break-all border-t border-border bg-muted/25 px-3 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/85">
+        <pre className="overflow-x-auto whitespace-pre-wrap break-all border-t border-border bg-[rgba(var(--muted-rgb),0.25)] px-3 py-1.5 font-mono text-[10px] leading-relaxed text-[rgba(var(--foreground-rgb),0.85)]">
           {prettyJson(raw)}
         </pre>
       )}

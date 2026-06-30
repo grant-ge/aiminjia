@@ -62,7 +62,10 @@ describe('Dialog', () => {
     expect(screen.getByText('重命名聊天').closest('div')).toHaveClass('px-6', 'pt-6')
     expect(screen.getByText('表单内容')).toHaveClass('px-6', 'pt-4', 'pb-0', 'last:pb-6')
     expect(screen.getByText('操作按钮')).toHaveClass('px-6', 'pb-6')
-    expect(screen.getByLabelText('Close')).toHaveClass('absolute', 'right-4', 'top-4')
+    const closeButton = screen.getByLabelText('Close')
+    expect(closeButton).toHaveClass('absolute', 'right-2', 'top-2')
+    expect(closeButton.className).not.toContain('focus:ring')
+    expect(closeButton).toHaveClass('focus-visible:ring-2', 'focus-visible:ring-ring')
   })
 
   it('provides a scroll-only body viewport for fixed header and footer dialogs', () => {

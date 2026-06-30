@@ -6,9 +6,11 @@ import { MessageList } from './MessageList'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { getTeamOverview, isGeneratedFileAvailable, isLocalFileAvailable, openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import type { GeneratedFile, Message } from '@/types/message'
 import { useTeamStore } from '@/stores/teamStore'
+import { DEFAULT_SETTINGS } from '@/types/settings'
 
 vi.mock('@/lib/tauri', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri')
@@ -499,6 +501,22 @@ function renderWithFile(file: GeneratedFile, activeConversationId: string | null
   render(<MessageList />)
 }
 
+function renderWithUserMessage() {
+  resetStores('conv-1')
+  useChatStore.setState({
+    messages: [
+      {
+        id: 'u-avatar',
+        conversationId: 'conv-1',
+        role: 'user',
+        createdAt: '2026-04-28T00:00:00Z',
+        content: { text: '头像应该跟设置走' },
+      },
+    ],
+  })
+  render(<MessageList />)
+}
+
 async function openActionsMenu() {
   fireEvent.pointerDown(await screen.findByRole('button', { name: '更多操作：Summary' }))
 }
@@ -510,7 +528,24 @@ beforeEach(() => {
   openGeneratedFileMock.mockResolvedValue(undefined)
   revealFileInFolderMock.mockResolvedValue(undefined)
   getTeamOverviewMock.mockResolvedValue({ conversationId: 'conv-1', teams: [] })
+  useSettingsStore.setState({ ...DEFAULT_SETTINGS, isLoaded: false })
   resetStores()
+})
+
+describe('MessageList profile avatar', () => {
+  it('uses the configured emoji avatar for in-app user messages', () => {
+    useSettingsStore.setState({
+      profileAvatarMode: 'emoji',
+      profileAvatarEmoji: '🐱',
+      profileAvatarImagePath: '',
+    })
+
+    renderWithUserMessage()
+
+    const avatar = screen.getByTestId('chat-avatar')
+    expect(avatar).toHaveAttribute('data-variant', 'emoji')
+    expect(avatar).toHaveTextContent('🐱')
+  })
 })
 
 describe('MessageList generated file actions', () => {

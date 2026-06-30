@@ -76,7 +76,7 @@ export function KnowledgeSourcesField({ value, onChange, onRetry }: Props) {
       <label className="text-xs font-medium text-muted-foreground">
         {t('employee.config.knowledge.label')}
       </label>
-      <p className="text-xs text-muted-foreground/70">
+      <p className="text-xs text-[rgba(var(--muted-foreground-rgb),0.70)]">
         {t('employee.config.knowledge.hint')}
       </p>
       <div className="flex flex-col gap-1">

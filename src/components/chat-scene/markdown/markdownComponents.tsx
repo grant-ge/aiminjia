@@ -1,8 +1,10 @@
 import type { Components } from 'react-markdown'
+import { Children, isValidElement } from 'react'
 import { AijiaCardCodeBlock } from '@/components/chat-scene/result-cards/AijiaCardCodeBlock'
 import { MarkdownTable } from './MarkdownTable'
 import { FileLink, FileImage } from './FileLink'
 import type { GeneratedFile } from '@/types/message'
+import { ARTIFACT_ALT } from './artifactMarkdown'
 
 interface MarkdownComponentOptions {
   conversationId?: string
@@ -16,6 +18,12 @@ export function createMarkdownComponents({
   generatedFiles,
 }: MarkdownComponentOptions = {}): Components {
   return {
+    p({ children }) {
+      const hasArtifactImage = Children.toArray(children).some(
+        (child) => isValidElement(child) && child.props.alt === ARTIFACT_ALT,
+      )
+      return hasArtifactImage ? <div>{children}</div> : <p>{children}</p>
+    },
     pre({ children }) {
       return <>{children}</>
     },

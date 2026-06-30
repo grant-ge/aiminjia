@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogBody,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -80,98 +81,100 @@ export function UpdaterPanel() {
           )}
         </DialogHeader>
 
-        {/* Phase: available — release notes */}
-        {phase === 'available' && (
-          <div className="space-y-3">
-            {bullets.length > 0 ? (
-              <>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {t('updater.releaseNotesHeader')}
-                </p>
-                <ul className="space-y-1.5 pl-5 list-disc text-sm text-foreground/80">
-                  {bullets.map((line, i) => <li key={i}>{line}</li>)}
-                </ul>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">{t('updater.updateAvailableDesc')}</p>
-            )}
-          </div>
-        )}
-
-        {/* Phase: downloading — progress bar */}
-        {phase === 'downloading' && (
-          <div className="space-y-3 py-2">
-            <div className="h-2 w-full overflow-hidden rounded-md bg-muted">
-              <div
-                data-aijia-updater-progress
-                data-aijia-updater-progress-percent={pct}
-                className="h-full rounded-md bg-primary transition-all duration-300"
-                style={{ width: `${pct}%` }}
-              />
+        <DialogBody data-testid="updater-panel-body">
+          {/* Phase: available — release notes */}
+          {phase === 'available' && (
+            <div className="space-y-3">
+              {bullets.length > 0 ? (
+                <>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('updater.releaseNotesHeader')}
+                  </p>
+                  <ul className="space-y-1.5 pl-5 list-disc text-sm text-[rgba(var(--foreground-rgb),0.80)]">
+                    {bullets.map((line, i) => <li key={i}>{line}</li>)}
+                  </ul>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('updater.updateAvailableDesc')}</p>
+              )}
             </div>
-            <p className="text-center text-sm text-muted-foreground">
-              {t('updater.downloadProgress', {
-                downloaded: formatBytes(progress?.downloaded ?? 0),
-                total: formatBytes(progress?.total ?? 0),
-              })}
-            </p>
-          </div>
-        )}
+          )}
 
-        {/* Phase: ready — download complete, show release notes for context */}
-        {phase === 'ready' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 rounded-md bg-[var(--color-semantic-green)]/8 px-4 py-3">
-              <CheckCircle2
-                className="h-5 w-5 shrink-0 text-[var(--color-semantic-green)]"
-                strokeWidth={2.25}
-              />
-              <p className="text-sm font-medium text-foreground">
-                {t('updater.downloadComplete', { size: formatBytes(progress?.total ?? 0) })}
+          {/* Phase: downloading — progress bar */}
+          {phase === 'downloading' && (
+            <div className="space-y-3 py-2">
+              <div className="h-2 w-full overflow-hidden rounded-md bg-muted">
+                <div
+                  data-aijia-updater-progress
+                  data-aijia-updater-progress-percent={pct}
+                  className="h-full rounded-md bg-primary transition-all duration-300"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="text-center text-sm text-muted-foreground">
+                {t('updater.downloadProgress', {
+                  downloaded: formatBytes(progress?.downloaded ?? 0),
+                  total: formatBytes(progress?.total ?? 0),
+                })}
               </p>
             </div>
-            {bullets.length > 0 && (
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {t('updater.releaseNotesHeader')}
+          )}
+
+          {/* Phase: ready — download complete, show release notes for context */}
+          {phase === 'ready' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-md bg-[rgba(var(--color-semantic-green-rgb),0.08)] px-4 py-3">
+                <CheckCircle2
+                  className="h-5 w-5 shrink-0 text-[var(--color-semantic-green)]"
+                  strokeWidth={2.25}
+                />
+                <p className="text-sm font-medium text-foreground">
+                  {t('updater.downloadComplete', { size: formatBytes(progress?.total ?? 0) })}
                 </p>
-                <ul className="space-y-1.5 pl-5 list-disc text-sm text-foreground/80">
-                  {bullets.map((line, i) => <li key={i}>{line}</li>)}
-                </ul>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* Phase: failed — error message */}
-        {phase === 'failed' && (
-          <div className="py-4 text-center">
-            <p
-              data-aijia-updater-error
-              className="text-sm text-destructive"
-            >
-              {t('updater.downloadFailedMessage', { error: error ?? '' })}
-            </p>
-          </div>
-        )}
-
-        {/* Phase: installing — spinner */}
-        {phase === 'installing' && (
-          <div className="space-y-3 py-3">
-            <div className="h-2 w-full overflow-hidden rounded-md bg-muted">
-              <div
-                data-testid="updater-install-progress"
-                data-aijia-updater-install-progress
-                data-aijia-updater-install-percent={installPct}
-                className="h-full rounded-md bg-primary transition-all duration-300"
-                style={{ width: `${installPct}%` }}
-              />
+              {bullets.length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('updater.releaseNotesHeader')}
+                  </p>
+                  <ul className="space-y-1.5 pl-5 list-disc text-sm text-[rgba(var(--foreground-rgb),0.80)]">
+                    {bullets.map((line, i) => <li key={i}>{line}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
-            <p className="text-center text-sm text-muted-foreground">
-              {t(`updater.installStage.${installProgress?.stage ?? 'preparing'}`)}
-            </p>
-          </div>
-        )}
+          )}
+
+          {/* Phase: failed — error message */}
+          {phase === 'failed' && (
+            <div className="py-4 text-center">
+              <p
+                data-aijia-updater-error
+                className="text-sm text-destructive"
+              >
+                {t('updater.downloadFailedMessage', { error: error ?? '' })}
+              </p>
+            </div>
+          )}
+
+          {/* Phase: installing — spinner */}
+          {phase === 'installing' && (
+            <div className="space-y-3 py-3">
+              <div className="h-2 w-full overflow-hidden rounded-md bg-muted">
+                <div
+                  data-testid="updater-install-progress"
+                  data-aijia-updater-install-progress
+                  data-aijia-updater-install-percent={installPct}
+                  className="h-full rounded-md bg-primary transition-all duration-300"
+                  style={{ width: `${installPct}%` }}
+                />
+              </div>
+              <p className="text-center text-sm text-muted-foreground">
+                {t(`updater.installStage.${installProgress?.stage ?? 'preparing'}`)}
+              </p>
+            </div>
+          )}
+        </DialogBody>
 
         <DialogFooter>
           {phase === 'available' && (

@@ -114,13 +114,13 @@ function SingleDateTimePicker(
           data-aijia-date-time-trigger={id ?? label}
           disabled={disabled}
           className={cn(
-            'w-full justify-between text-left font-normal focus-visible:ring-primary/15',
+            'w-full justify-between text-left font-normal focus-visible:ring-[rgba(var(--primary-rgb),0.15)]',
             !display && 'text-muted-foreground',
             className,
           )}
+          suffixIcon={mode === 'time' ? <Clock className="h-4 w-4 text-muted-foreground" /> : <Calendar className="h-4 w-4 text-muted-foreground" />}
         >
           <span className="min-w-0 truncate">{display || placeholder || label}</span>
-          {mode === 'time' ? <Clock className="h-4 w-4 text-muted-foreground" /> : <Calendar className="h-4 w-4 text-muted-foreground" />}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -149,8 +149,13 @@ function SingleDateTimePicker(
               {isZh(locale) ? '今天' : 'Today'}
             </Button>
           )}
-          <Button type="button" size="sm" data-aijia-date-time-action="apply" onClick={apply}>
-            <Check className="h-4 w-4" />
+          <Button
+            type="button"
+            size="sm"
+            icon={<Check className="h-4 w-4" />}
+            data-aijia-date-time-action="apply"
+            onClick={apply}
+          >
             {isZh(locale) ? '确定' : 'Done'}
           </Button>
         </div>
@@ -203,13 +208,13 @@ function RangeDateTimePicker(props: Extract<DateTimePickerProps, { mode: 'range'
           aria-label={label}
           disabled={disabled}
           className={cn(
-            'w-full justify-between text-left font-normal focus-visible:ring-primary/15',
+            'w-full justify-between text-left font-normal focus-visible:ring-[rgba(var(--primary-rgb),0.15)]',
             !display && 'text-muted-foreground',
             className,
           )}
+          suffixIcon={<Calendar className="h-4 w-4 text-muted-foreground" />}
         >
           <span className="min-w-0 truncate">{display || placeholder || label}</span>
-          <Calendar className="h-4 w-4 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -247,8 +252,13 @@ function RangeDateTimePicker(props: Extract<DateTimePickerProps, { mode: 'range'
           >
             {isZh(locale) ? '今天' : 'Today'}
           </Button>
-          <Button type="button" size="sm" data-aijia-date-time-action="apply" onClick={apply}>
-            <Check className="h-4 w-4" />
+          <Button
+            type="button"
+            size="sm"
+            icon={<Check className="h-4 w-4" />}
+            data-aijia-date-time-action="apply"
+            onClick={apply}
+          >
             {isZh(locale) ? '确定' : 'Done'}
           </Button>
         </div>
@@ -389,13 +399,9 @@ function DatePanel({ draft, level, locale, onDraftChange }: Omit<PickerContentPr
 function PickerHeader({ title, onPrev, onNext }: { title: string; onPrev: () => void; onNext: () => void }) {
   return (
     <div className="mb-2 flex items-center justify-between">
-      <Button type="button" variant="ghost" size="icon" onClick={onPrev} aria-label="上一页">
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
+      <Button type="button" variant="ghost" size="icon" onClick={onPrev} aria-label="上一页" icon={<ChevronLeft className="h-4 w-4" />} />
       <div className="text-sm font-medium text-foreground">{title}</div>
-      <Button type="button" variant="ghost" size="icon" onClick={onNext} aria-label="下一页">
-        <ChevronRight className="h-4 w-4" />
-      </Button>
+      <Button type="button" variant="ghost" size="icon" onClick={onNext} aria-label="下一页" icon={<ChevronRight className="h-4 w-4" />} />
     </div>
   )
 }
@@ -483,7 +489,7 @@ function TimeColumn({
         data-aijia-time-list
         data-aijia-time-unit={unit}
         className={cn(
-          'overflow-y-auto rounded-md border border-border p-1 pr-1.5 [scrollbar-color:var(--muted-foreground)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-md [&::-webkit-scrollbar-thumb]:bg-muted-foreground/45 [&::-webkit-scrollbar-track]:bg-transparent',
+          'overflow-y-auto rounded-md border border-border p-1 pr-1.5 [scrollbar-color:var(--muted-foreground)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-md [&::-webkit-scrollbar-thumb]:bg-[rgba(var(--muted-foreground-rgb),0.45)] [&::-webkit-scrollbar-track]:bg-transparent',
           stretch ? 'h-[248px]' : 'h-[204px]',
         )}
       >
@@ -496,7 +502,7 @@ function TimeColumn({
             data-aijia-time-unit={unit}
             data-aijia-time-value={pad(value)}
             className={cn(
-              'mb-1 flex h-7 w-full items-center justify-center rounded-md text-xs text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'mb-1 flex h-7 w-full items-center justify-center rounded text-xs text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               selected === value && 'bg-primary text-primary-foreground hover:bg-primary',
             )}
             onClick={() => onSelect(value)}
@@ -532,7 +538,7 @@ function PickerCell({
       className={cn(
         'rounded-md text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         square ? 'h-8' : 'h-9 px-2',
-        muted && 'text-muted-foreground/55',
+        muted && 'text-[rgba(var(--muted-foreground-rgb),0.55)]',
         selected && 'bg-primary text-primary-foreground hover:bg-primary',
       )}
       onClick={onClick}

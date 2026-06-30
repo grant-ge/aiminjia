@@ -66,8 +66,8 @@ AlertDialogDescription.displayName = AlertDialogPrimitive.Description.displayNam
 type AlertDialogActionVariant = 'default' | 'destructive'
 
 const actionVariantClasses: Record<AlertDialogActionVariant, string> = {
-  default: 'border-primary bg-primary text-primary-foreground',
-  destructive: 'border-destructive bg-destructive text-destructive-foreground',
+  default: 'border-primary bg-primary text-primary-foreground hover:bg-[rgba(var(--primary-rgb),0.90)]',
+  destructive: 'border-destructive bg-destructive text-destructive-foreground hover:bg-[rgba(var(--destructive-rgb),0.90)]',
 }
 
 const AlertDialogAction = React.forwardRef<
@@ -80,7 +80,7 @@ const AlertDialogAction = React.forwardRef<
     ref={ref}
     className={cn(
       'inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border px-[15px] text-sm font-medium',
-      'transition-[opacity,transform] duration-150 ease-out hover:opacity-90 active:scale-[0.98]',
+      'transition-colors duration-150 ease-out',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0',
       'disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-45',
       actionVariantClasses[variant],

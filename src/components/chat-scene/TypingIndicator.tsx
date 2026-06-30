@@ -20,8 +20,9 @@ export function TypingIndicator({ variant, label }: TypingIndicatorProps) {
   return (
     <div className="flex items-center gap-1 text-primary">
       <Asterisk
-        className="h-[18px] w-[18px] shrink-0"
-        strokeWidth={1.75}
+        data-testid="typing-indicator-icon"
+        className="h-4 w-4 shrink-0"
+        strokeWidth={1.25}
         style={{ animation: 'typingIndicatorBreath 1.2s ease-in-out infinite' }}
       />
       <span className="text-sm leading-none">{text}</span>

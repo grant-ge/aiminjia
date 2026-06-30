@@ -86,12 +86,11 @@ function FencedCodeBlock({ className, children }: { className?: string; children
           link
           onClick={handleCopy}
           className="gap-1 font-mono text-[0.7rem] text-[var(--color-text-muted)]"
+          icon={copied === 'ok'
+            ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            : <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          }
         >
-          {copied === 'ok' ? (
-            <Check className="h-3.5 w-3.5" aria-hidden="true" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-          )}
           {copied === 'ok'
             ? t('common.copied', 'Copied')
             : copied === 'fail'

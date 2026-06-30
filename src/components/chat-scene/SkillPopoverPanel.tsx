@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, CornerDownLeft, Search, Settings2 } from 'lucide-react'
 
-import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/skillVisual'
+import { getSkillAvatarNode, getSkillCardAvatarClass } from '@/components/skills/skillVisual'
 import { useUiStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
 
@@ -23,10 +23,10 @@ export interface SkillPopoverItem {
   subtitle: string
   /**
    * SKILL.md frontmatter `icon` slug (kebab-case lucide name). When missing,
-   * falls back to a category-driven default (matches SkillCenter cards).
+   * kept for compatibility; the picker visual follows SkillCenter's id-based avatar.
    */
   icon?: string | null
-  /** Skill category slug (`hr` / `finance` / ...). Drives the icon tile color. */
+  /** Skill category slug (`hr` / `finance` / ...). Kept for item metadata compatibility. */
   category?: string | null
   /** Slash command shown in the composer, e.g. `/toggle-restore-skill`. */
   command?: string | null
@@ -153,8 +153,8 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
           >
             {filtered.map((it, idx) => {
               const isActive = idx === safeActiveIndex
-              const Icon = getSkillIconComponent(it.icon)
-              const iconBg = getSkillCategoryBg(it.category)
+              const avatarNode = getSkillAvatarNode(it.id)
+              const avatarText = Array.from(it.title.trim())[0]?.toUpperCase() ?? '?'
               return (
                 <li key={it.id}>
                   <Button unstyled
@@ -175,9 +175,17 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
                     }
                   >
                     <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${iconBg}`}
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${getSkillCardAvatarClass(it.id)}`}
                     >
-                      <Icon className="h-3.5 w-3.5 text-primary-foreground" />
+                      {avatarNode ?? (
+                        <span
+                          data-testid="skill-popover-fallback-avatar"
+                          className="text-sm font-semibold leading-none text-inherit"
+                          aria-hidden="true"
+                        >
+                          {avatarText}
+                        </span>
+                      )}
                     </span>
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="truncate text-sm font-medium text-foreground">

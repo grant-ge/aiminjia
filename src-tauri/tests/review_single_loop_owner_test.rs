@@ -89,3 +89,25 @@ fn review_send_message_clears_gateway_task_after_runtime_turn_before_title_gener
         "gateway active run must be reserved before run_chat_request and cleared by run_id before post-turn work"
     );
 }
+
+#[test]
+fn review_send_chat_request_inherits_authorized_workspace_for_request_scoped_tools() {
+    let source = include_str!("../src/transport/tauri_commands/chat.rs");
+    let start = source
+        .find("pub async fn send_chat_request")
+        .expect("send_chat_request should exist");
+    let end = source[start..]
+        .find("fn default_permission_mode_from_settings")
+        .map(|offset| start + offset)
+        .expect("send_chat_request should end before default_permission_mode_from_settings");
+    let body = &source[start..end];
+
+    assert!(
+        body.contains("authorized_workspace: chat_runtime_impl::load_authorized_workspace"),
+        "send_chat_request must pass the conversation authorized workspace into request-scoped tools"
+    );
+    assert!(
+        !body.contains("authorized_workspace: None"),
+        "send_chat_request must not drop authorized workspace; pending drain and IM turns use this path"
+    );
+}

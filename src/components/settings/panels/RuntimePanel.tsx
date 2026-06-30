@@ -85,7 +85,7 @@ export function RuntimePanel() {
       </header>
 
       {error && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="rounded-md border border-[rgba(var(--destructive-rgb),0.40)] bg-[rgba(var(--destructive-rgb),0.10)] px-3 py-2 text-xs text-destructive">
           {error}
         </div>
       )}
@@ -107,7 +107,7 @@ export function RuntimePanel() {
       </div>
 
       {data && (
-        <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 rounded-md border border-border bg-muted/30 p-4 text-sm">
+        <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 rounded-md border border-border bg-[rgba(var(--muted-rgb),0.30)] p-4 text-sm">
           <dt className="text-muted-foreground">{t('settings.runtime.source')}</dt>
           <dd className="font-mono text-foreground">{RESOLVER_LABEL[data.activeResolver]}</dd>
 

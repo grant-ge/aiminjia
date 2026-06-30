@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
+import { Spinner } from '@/components/ui/spinner'
+
 export function FullscreenLoader() {
   const { t } = useTranslation()
   return (
@@ -16,17 +18,10 @@ export function FullscreenLoader() {
     >
       <style>{`@keyframes fadeInDelayed { to { opacity: 1; } }`}</style>
       <div className="flex flex-col items-center gap-3">
-        <div
+        <Spinner
           aria-label={t('auth.restoringSession')}
-          className="h-8 w-8 animate-spin rounded-full"
-          style={{
-            borderStyle: 'solid',
-            borderWidth: 2,
-            borderRightColor: 'var(--color-border)',
-            borderBottomColor: 'var(--color-border)',
-            borderLeftColor: 'var(--color-border)',
-            borderTopColor: 'var(--primary)',
-          }}
+          size="lg"
+          style={{ color: 'var(--primary)' }}
         />
         <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{t('auth.restoringSession')}</p>
       </div>

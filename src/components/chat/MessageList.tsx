@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, MessageCircleQuestion } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { AiBubble } from "@/components/chat/AiBubble";
 import { CompactBoundaryBar } from "@/components/chat/CompactBoundaryBar";
@@ -13,8 +14,6 @@ import { savePreviewTargetToDisk } from "@/components/chat/fileDownload";
 import { ChatRow } from "@/components/chat-scene/ChatRow";
 import { GeneratedFileCard } from "@/components/chat-scene/GeneratedFileCard";
 import { PeerMessageBanner } from "@/components/chat-scene/PeerMessageBanner";
-import { parseDispatchHeader } from "@/components/chat-scene/parseDispatchHeader";
-import { SuggestChipGroup } from "@/components/chat-scene/SuggestChipGroup";
 import { ToolStepGroupBlock } from "@/components/chat-scene/ToolStepGroupBlock";
 import { ToolTraceIO } from "@/components/chat-scene/ToolTraceIO";
 import { UserMessageBubble } from "@/components/chat-scene/UserMessageBubble";
@@ -29,6 +28,7 @@ import { useChannelStore } from "@/stores/channelStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useGeneratedFilePreviewStore } from "@/stores/generatedFilePreviewStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useChat } from "@/hooks/useChat";
 import { useTeamOverview } from "@/hooks/useTeamOverview";
 import {
@@ -220,7 +220,7 @@ function ToolReceiptBlock({
   })();
 
   return (
-    <div className="flex max-w-full flex-col gap-1 overflow-hidden rounded-md bg-muted/45 px-3 py-2 text-sm text-muted-foreground">
+    <div className="flex max-w-full flex-col gap-1 overflow-hidden rounded-md bg-[rgba(var(--muted-rgb),0.45)] px-3 py-2 text-sm text-muted-foreground">
       <div className="text-foreground">{title}</div>
       {receipt.summary ? (
         <div className="line-clamp-2 min-w-0 break-words text-foreground">
@@ -299,12 +299,20 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   // Sender identity for the chat row headers (avatar + name).
   // AI side follows the tenant brand (logoUrl + productName), so a custom
   // tenant logo / name automatically propagates into every chat. User side
-  // falls back to the colored-initial ChatAvatar when no profile image is
-  // configured (none of the current users have one).
+  // follows the local profile avatar settings for in-app conversations.
   const assistantName = useBrandingStore((s) => s.productName);
   const assistantLogo = useBrandingStore((s) => s.logoUrl);
   const authUserName = useAuthStore(
     (s) => s.user?.name ?? s.user?.username ?? "我",
+  );
+  const profileAvatarMode = useSettingsStore(
+    (s) => s.profileAvatarMode ?? "initial",
+  );
+  const profileAvatarEmoji = useSettingsStore(
+    (s) => s.profileAvatarEmoji ?? "",
+  );
+  const profileAvatarImagePath = useSettingsStore(
+    (s) => s.profileAvatarImagePath ?? "",
   );
   // In channel chats (WhatsApp/Telegram/dingtalk/...), the "user" role
   // bubbles come from the **external contact**, not the local AIjia operator.
@@ -315,7 +323,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   //     messages don't carry a stable real name (feishu/wecom/wechat only
   //     give user_id). To stay visually consistent across IM tabs, render the
   //     platform display name + platform logo as the "from" side identity.
-  //   - In-app (no channel binding): local auth user + neutral silhouette.
+  //   - In-app (no channel binding): local auth user + profile avatar setting.
   const channelConversation = useChannelStore((s) => {
     if (!activeConversationId) return null;
     return (
@@ -323,11 +331,20 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       null
     );
   });
-  const { userName, userAvatarUrl, userAvatarVariant } = (() => {
+  const { userName, userAvatarUrl, userAvatarEmoji, userAvatarVariant } = (() => {
     if (!channelConversation) {
+      const trimmedImagePath = profileAvatarImagePath.trim();
+      const trimmedEmoji = profileAvatarEmoji.trim();
       return {
         userName: authUserName,
-        userAvatarUrl: null as string | null,
+        userAvatarUrl:
+          profileAvatarMode === "image" && trimmedImagePath.length > 0
+            ? convertFileSrc(trimmedImagePath)
+            : null,
+        userAvatarEmoji:
+          profileAvatarMode === "emoji" && trimmedEmoji.length > 0
+            ? trimmedEmoji
+            : null,
         userAvatarVariant: "neutral" as "initial" | "neutral",
       };
     }
@@ -336,6 +353,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       return {
         userName: trimmed && trimmed.length > 0 ? trimmed : "WhatsApp 私聊",
         userAvatarUrl: null as string | null,
+        userAvatarEmoji: null as string | null,
         userAvatarVariant: "initial" as "initial" | "neutral",
       };
     }
@@ -344,6 +362,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         CHANNEL_PLATFORM_DISPLAY[channelConversation.platform] ??
         channelConversation.platform,
       userAvatarUrl: `/logos/${channelConversation.platform}.png`,
+      userAvatarEmoji: null as string | null,
       userAvatarVariant: "initial" as "initial" | "neutral",
     };
   })();
@@ -523,12 +542,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           );
         }
         const teamSession = teamSessionForTurnIdx[i];
-        // Employee dispatch prompts are represented by the chat top bar now
-        // (employee avatar + identity + default skill), so the synthetic
-        // user-message banner should not take space in the message stream.
-        const isDispatchTurn = !!(
-          t.userMessage && parseDispatchHeader(t.userMessage.text)
-        );
         const aiAnchorIso = t.aiSegments[0]?.message.createdAt ?? null;
         return (
           <div key={i} className="flex flex-col gap-5">
@@ -536,24 +549,23 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}
             {t.userMessage ? (
-              isDispatchTurn ? null : (
-                <ChatRow
-                  role="user"
-                  name={userName}
-                  avatarUrl={userAvatarUrl}
-                  avatarVariant={userAvatarVariant}
-                  timestamp={t.userMessage.createdAt}
-                >
-                  <UserMessageBubble
-                    text={t.userMessage.text}
-                    commandText={t.userMessage.commandText}
-                    skillCommand={t.userMessage.skillCommand}
-                    reasoningMode={t.userMessage.reasoningMode}
-                    files={t.userMessage.files}
-                    conversationId={activeConversationId ?? undefined}
-                  />
-                </ChatRow>
-              )
+              <ChatRow
+                role="user"
+                name={userName}
+                avatarUrl={userAvatarUrl}
+                avatarEmoji={userAvatarEmoji}
+                avatarVariant={userAvatarVariant}
+                timestamp={t.userMessage.createdAt}
+              >
+                <UserMessageBubble
+                  text={t.userMessage.text}
+                  commandText={t.userMessage.commandText}
+                  skillCommand={t.userMessage.skillCommand}
+                  reasoningMode={t.userMessage.reasoningMode}
+                  files={t.userMessage.files}
+                  conversationId={activeConversationId ?? undefined}
+                />
+              </ChatRow>
             ) : null}
             {t.shouldCollapseCompletedProcess && t.completedFinalAnswer ? (
               renderCompletedFinalAnswerTurn(t.blocks, {
@@ -606,7 +618,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
               })
             ) : (
               // 兜底：turn 没有 blocks（罕见——测试 mock 或异常会话）。
-              // 直接渲染 aiSegments / generatedFiles / suggestions / teamSession，
+              // 直接渲染 aiSegments / generatedFiles / teamSession，
               // 不再尝试展示工具卡（没 blocks 时本来就没工具调用数据可显示）。
               <>
                 {teamSession ? (
@@ -618,8 +630,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                   </TeamVisualProvider>
                 ) : null}
                 {t.aiSegments.length > 0 ||
-                t.generatedFiles.length > 0 ||
-                t.suggestions.length > 0 ? (
+                t.generatedFiles.length > 0 ? (
                   <ChatRow
                     role="assistant"
                     name={assistantName}
@@ -650,14 +661,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                         onReveal={() => void handleReveal(f)}
                       />
                     ))}
-                    {t.suggestions.length > 0 ? (
-                      <SuggestChipGroup
-                        items={t.suggestions.map((s) => ({
-                          label: s,
-                          onClick: () => {},
-                        }))}
-                      />
-                    ) : null}
                   </ChatRow>
                 ) : null}
               </>
@@ -893,14 +896,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           <ToolReceiptBlock key={b.id} receipt={b.receipt} step={b.step} />
         );
       }
-      if (b.kind === "suggestions") {
-        return (
-          <SuggestChipGroup
-            key={`sug-${idx}`}
-            items={b.suggestions.map((s) => ({ label: s, onClick: () => {} }))}
-          />
-        );
-      }
+      if (b.kind === "suggestions") return null;
       if (b.kind === "teamMarker") {
         if (!ctx.teamSession) return null;
         return (

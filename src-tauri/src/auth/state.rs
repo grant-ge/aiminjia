@@ -10,6 +10,12 @@ pub struct UserInfo {
     pub id: i64,
     pub name: String,
     pub username: String,
+    #[serde(default = "default_user_role")]
+    pub role: String,
+}
+
+pub fn default_user_role() -> String {
+    "member".to_string()
 }
 
 /// Tenant (organization) information.
@@ -80,4 +86,36 @@ pub struct CloudAuthInfo {
     pub user: Option<UserInfo>,
     pub tenant: Option<TenantInfo>,
     pub models: Vec<CloudModelInfo>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn cloud_auth_deserializes_legacy_user_without_role() {
+        let raw = json!({
+            "accessToken": "access",
+            "accessExpiresAt": "2026-07-01T00:00:00Z",
+            "refreshToken": "refresh",
+            "refreshExpiresAt": "2026-07-02T00:00:00Z",
+            "sessionKey": "session",
+            "sessionKeyExpiresAt": "2026-07-02T00:00:00Z",
+            "user": {
+                "id": 26,
+                "name": "Legacy User",
+                "username": "legacy@example.com"
+            },
+            "tenant": {
+                "id": 15,
+                "name": "Tenant",
+                "balance": "0"
+            }
+        });
+
+        let auth: CloudAuth = serde_json::from_value(raw).expect("legacy auth stays readable");
+
+        assert_eq!(auth.user.role, "member");
+    }
 }

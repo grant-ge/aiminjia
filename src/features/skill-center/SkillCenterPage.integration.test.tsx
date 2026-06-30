@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
@@ -140,8 +140,10 @@ describe('SkillCenterPage', () => {
     })
 
     await waitFor(() => expect(screen.getByText('技能目录不符合规范')).toBeInTheDocument())
+    expect(screen.getByTestId('skill-validation-dialog-body')).toHaveClass('px-6')
+    expect(screen.getByTestId('skill-validation-dialog-footer')).toHaveClass('px-6', 'pb-6')
     expect(screen.getByText(/未找到 SKILL.md/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重新选择目录' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新选择目录' })).toHaveClass('h-8')
   })
 
   it('upload 抛出 parseFailed 时校验对话框透传 detail', async () => {
@@ -442,7 +444,8 @@ describe('SkillCenterPage', () => {
     render(<SkillCenterPage />)
 
     fireEvent.click(screen.getByRole('button', { name: '已安装' }))
-    fireEvent.click(screen.getByRole('switch', { name: '本地日报 技能开关' }))
+    const toggle = screen.getByRole('radiogroup', { name: '本地日报 技能开关' })
+    fireEvent.click(within(toggle).getByRole('radio', { name: '开' }))
 
     await waitFor(() => expect(setSkillEnabled).toHaveBeenCalledWith('local-report', true))
   })

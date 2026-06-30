@@ -392,9 +392,9 @@ describe("PendingActionSurface", () => {
       .closest("label");
     const optionGroup = selectedOption?.parentElement;
 
-    expect(selectedOption).toHaveClass("bg-muted/60");
+    expect(selectedOption).toHaveClass("bg-[rgba(var(--muted-rgb),0.60)]");
     expect(selectedOption).not.toHaveClass("bg-background");
-    expect(optionGroup).not.toHaveClass("bg-muted/30");
+    expect(optionGroup).not.toHaveClass("bg-[rgba(var(--muted-rgb),0.30)]");
   });
 
   it("submits a selected user question answer", async () => {
@@ -469,11 +469,11 @@ describe("PendingActionSurface", () => {
     await user.click(screen.getByRole("radio", { name: /自然放松/ }));
     expect(
       screen.getByRole("radio", { name: /自然放松/ }).closest("label"),
-    ).toHaveClass("bg-muted/60");
+    ).toHaveClass("bg-[rgba(var(--muted-rgb),0.60)]");
     expect(
       screen.getByRole("radio", { name: /自然放松/ }).closest("label")
         ?.parentElement,
-    ).not.toHaveClass("bg-muted/30");
+    ).not.toHaveClass("bg-[rgba(var(--muted-rgb),0.30)]");
     await user.click(screen.getByRole("button", { name: "继续" }));
 
     await waitFor(() =>

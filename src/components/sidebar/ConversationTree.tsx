@@ -101,7 +101,7 @@ export function ConversationTree({
                     [p.id]: !showAll,
                   }))
                 }
-                className="ml-[32px] my-1 flex items-center gap-1 rounded-md text-left text-xs font-medium text-[#636363] transition-colors"
+                className="ml-[32px] my-1 flex items-center gap-1 rounded text-left text-xs font-medium text-[#636363] transition-colors"
               >
                 {showAll ? (
                   <ChevronUp className="h-3.5 w-3.5 shrink-0" />

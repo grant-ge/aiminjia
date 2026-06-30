@@ -25,7 +25,7 @@ export function HomeSuggestionPanel({
             className={
               index === items.length - 1
                 ? 'flex w-full items-start gap-3 py-3 text-left transition-colors hover:text-primary'
-                : 'flex w-full items-start gap-3 border-b border-border/80 py-3 text-left transition-colors hover:text-primary'
+                : 'flex w-full items-start gap-3 border-b border-[rgba(var(--border-rgb),0.80)] py-3 text-left transition-colors hover:text-primary'
             }
           >
             <span className="shrink-0 text-sm font-semibold leading-6 text-foreground">

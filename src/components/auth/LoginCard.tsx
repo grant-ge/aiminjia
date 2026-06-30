@@ -11,7 +11,7 @@ export function LoginCard({ children }: PropsWithChildren) {
       // spec §3.3 — page-level container rounded-md; §5 shadow-lg.
       // Glass-pane uses rgba(var(--card-rgb), 0.75); --card-rgb is kept in sync
       // with --card by deriveBackgroundPalette() in brandingStore.
-      className="relative flex w-[460px] flex-col gap-5 rounded-md border border-border/60 px-10 pb-8 pt-10 shadow-[var(--shadow-lg)]"
+      className="relative flex w-[460px] flex-col gap-5 rounded-md border border-[rgba(var(--border-rgb),0.60)] px-10 pb-8 pt-10 shadow-[var(--shadow-lg)]"
       style={{
         background: 'rgba(var(--card-rgb, 250, 250, 248), 0.75)',
         backdropFilter: 'blur(24px)',

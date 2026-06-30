@@ -65,13 +65,13 @@ export function EmployeeTemplateDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(86vh,calc(100vh-32px))] w-[calc(100vw-32px)] max-w-[680px] gap-0 overflow-hidden rounded-md border-border/70 p-0 shadow-[0_14px_48px_rgba(0,0,0,0.13)]" data-aijia-employee-detail>
+      <DialogContent className="max-h-[min(86vh,calc(100vh-32px))] w-[calc(100vw-32px)] max-w-[680px] gap-0 overflow-hidden rounded-md border-[rgba(var(--border-rgb),0.70)] p-0 shadow-[0_14px_48px_rgba(0,0,0,0.13)]" data-aijia-employee-detail>
         <DialogTitle className="sr-only">{visual.name}</DialogTitle>
         <DialogDescription className="sr-only">
           {template.description}
         </DialogDescription>
         <div className="flex max-h-[min(86vh,calc(100vh-32px))] flex-col overflow-hidden">
-          <div data-aijia-employee-detail-chrome className="border-b border-border/70 bg-card px-5 py-5">
+          <div data-aijia-employee-detail-chrome className="border-b border-[rgba(var(--border-rgb),0.70)] bg-card px-5 py-5">
             <div className="flex items-start gap-4 pr-10">
               <div
                 data-aijia-employee-detail-avatar
@@ -112,7 +112,7 @@ export function EmployeeTemplateDetailDialog({
               <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('employeesPage.detail.overview')}</h3>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {meta.map((item) => (
-                  <div key={item.label} className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2">
+                  <div key={item.label} className="rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-[rgba(var(--muted-rgb),0.20)] px-2.5 py-2">
                     <div className="text-xs leading-4 text-muted-foreground">{item.label}</div>
                     <div className="mt-0.5 truncate text-xs font-medium leading-4 text-foreground">{item.value}</div>
                   </div>
@@ -124,11 +124,11 @@ export function EmployeeTemplateDetailDialog({
               <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('employeesPage.detail.strengths')}</h3>
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {strengths.slice(0, 3).map((strength, index) => (
-                  <div key={strength} className="rounded-md border border-border/70 bg-card px-3 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                  <div key={strength} className="rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card px-3 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
                     <div data-aijia-employee-strength-row className="flex min-h-5 items-center gap-2.5">
                       <span
                         data-aijia-employee-strength-index
-                        className="shrink-0 font-mono text-2xs font-semibold leading-5 text-muted-foreground/70"
+                        className="shrink-0 font-mono text-2xs font-semibold leading-5 text-[rgba(var(--muted-foreground-rgb),0.70)]"
                         aria-hidden="true"
                       >
                         {String(index + 1).padStart(2, '0')}
@@ -146,7 +146,7 @@ export function EmployeeTemplateDetailDialog({
                 {visual.examples.slice(0, 4).map((example) => (
                   <div
                     key={example}
-                    className="rounded-md border border-border/70 bg-card px-3 py-2.5 text-xs leading-5 text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.025)]"
+                    className="rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card px-3 py-2.5 text-xs leading-5 text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.025)]"
                   >
                     {example}
                   </div>
@@ -167,7 +167,7 @@ export function EmployeeTemplateDetailDialog({
               </section>
             )}
           </div>
-          <div className="flex shrink-0 justify-end border-t border-border/70 bg-card px-5 py-3">
+          <div className="flex shrink-0 justify-end border-t border-[rgba(var(--border-rgb),0.70)] bg-card px-5 py-3">
             <Button
               type="button"
               loading={busy}

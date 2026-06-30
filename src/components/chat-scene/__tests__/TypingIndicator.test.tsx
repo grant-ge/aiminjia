@@ -15,4 +15,12 @@ describe('TypingIndicator', () => {
     render(<TypingIndicator variant={variant} />)
     expect(screen.getByText(label)).toBeInTheDocument()
   })
+
+  it('uses a lighter compact icon for chat loading text', () => {
+    render(<TypingIndicator variant="default" />)
+
+    const icon = screen.getByTestId('typing-indicator-icon')
+    expect(icon).toHaveClass('h-4', 'w-4')
+    expect(icon).toHaveAttribute('stroke-width', '1.25')
+  })
 })

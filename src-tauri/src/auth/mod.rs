@@ -930,6 +930,7 @@ pub fn test_cloud_auth() -> state::CloudAuth {
             id: 1,
             username: "test".into(),
             name: "test".into(),
+            role: "member".into(),
         },
         tenant: state::TenantInfo {
             id: 1,

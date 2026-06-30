@@ -1,9 +1,27 @@
 import { type MouseEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
-import { getLocalFilePreview, openLocalFile } from '@/lib/tauri'
-import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
+import { getLocalFilePreview, openGeneratedFile, openLocalFile, revealFileInFolder } from '@/lib/tauri'
+import {
+  getGeneratedFilePrimaryAction,
+  isFileActionEnabled,
+  isPreviewActionEnabledForFile,
+  isPreviewableFileType,
+  type PreviewTarget,
+} from '@/components/chat/generatedFileActions'
+import { savePreviewTargetToDisk } from '@/components/chat/fileDownload'
+import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import type { GeneratedFile } from '@/types/message'
 import { Button } from '@/components/ui/button'
+import {
+  ARTIFACT_ALT,
+  basename,
+  decodeMarkdownUrlValue,
+  findGeneratedFileForArtifactPath,
+  inferArtifactFileType,
+  isAbsoluteLocalPath,
+  isExternalHref,
+  normalizeComparablePath,
+} from './artifactMarkdown'
 
 interface LocalMarkdownTarget {
   path: string
@@ -24,30 +42,6 @@ interface FileImageProps {
   conversationId?: string
   workspaceRoot?: string
   generatedFiles?: GeneratedFile[]
-}
-
-function decodeUrlValue(value: string): string {
-  try {
-    return decodeURI(value)
-  } catch {
-    return value
-  }
-}
-
-function basename(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path
-}
-
-function isExternalHref(href: string): boolean {
-  return /^(https?:|mailto:|ircs?:|xmpp:)/i.test(href)
-}
-
-function isAbsoluteLocalPath(value: string): boolean {
-  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
-}
-
-function normalizeComparablePath(value: string): string {
-  return decodeUrlValue(value).replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/')
 }
 
 function resolveGeneratedFileTarget(
@@ -102,12 +96,12 @@ export function resolveMarkdownLocalTarget(
   if (!raw || isExternalHref(raw)) return null
 
   if (raw.startsWith('file://')) {
-    const stripped = decodeUrlValue(raw.slice('file://'.length))
+    const stripped = decodeMarkdownUrlValue(raw.slice('file://'.length))
     const path = /^\/[A-Za-z]:/.test(stripped) ? stripped.slice(1) : stripped
     return { path, fileName: basename(path) }
   }
 
-  const decoded = decodeUrlValue(raw)
+  const decoded = decodeMarkdownUrlValue(raw)
   if (isAbsoluteLocalPath(decoded)) {
     return { path: decoded, fileName: basename(decoded) }
   }
@@ -196,6 +190,35 @@ export function FileImage({
   workspaceRoot,
   generatedFiles,
 }: FileImageProps) {
+  if (alt === ARTIFACT_ALT) {
+    return (
+      <MarkdownArtifactCard
+        src={src}
+        conversationId={conversationId}
+        workspaceRoot={workspaceRoot}
+        generatedFiles={generatedFiles}
+      />
+    )
+  }
+
+  return (
+    <InlineFileImage
+      src={src}
+      alt={alt}
+      conversationId={conversationId}
+      workspaceRoot={workspaceRoot}
+      generatedFiles={generatedFiles}
+    />
+  )
+}
+
+function InlineFileImage({
+  src,
+  alt = '',
+  conversationId,
+  workspaceRoot,
+  generatedFiles,
+}: FileImageProps) {
   const target = useMemo(
     () => resolveMarkdownLocalTarget(src, workspaceRoot, generatedFiles),
     [src, workspaceRoot, generatedFiles],
@@ -253,5 +276,120 @@ export function FileImage({
     >
       <img src={dataUrl} alt={alt} className="h-40 max-w-[240px] rounded-md object-cover" />
     </Button>
+  )
+}
+
+function formatArtifactSize(bytes: number | undefined): string | null {
+  if (bytes == null || bytes <= 0) return null
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function artifactTypeLabel(fileType: string | undefined, fileName: string): string {
+  const type = fileType?.trim().toLowerCase() || inferArtifactFileType(fileName)
+  if (type === 'image') return '图片'
+  if (type === 'markdown' || type === 'md') return 'Markdown'
+  if (type === 'excel') return 'XLS'
+  if (type === 'word') return 'DOC'
+  if (type === 'ppt') return 'PPT'
+  if (type === 'pdf') return 'PDF'
+  const ext = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() : undefined
+  return ext || '文件'
+}
+
+function artifactSub(file: GeneratedFile | null, fileName: string): string {
+  const size = formatArtifactSize(file?.fileSize)
+  const type = artifactTypeLabel(file?.fileType, fileName)
+  return [size, type].filter(Boolean).join(' · ')
+}
+
+function MarkdownArtifactCard({
+  src,
+  conversationId,
+  workspaceRoot,
+  generatedFiles,
+}: FileImageProps) {
+  const generatedFile = useMemo(
+    () => findGeneratedFileForArtifactPath(src, generatedFiles),
+    [src, generatedFiles],
+  )
+  const target = useMemo(
+    () => resolveMarkdownLocalTarget(src, workspaceRoot, generatedFiles),
+    [src, workspaceRoot, generatedFiles],
+  )
+  const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
+
+  if (!src || (!generatedFile && !target)) return null
+
+  const fileName = generatedFile?.fileName || target?.fileName || basename(src)
+  const filePath = generatedFile?.filePath || target?.path
+  const fileType = generatedFile?.fileType || inferArtifactFileType(fileName)
+  const title = generatedFile?.title || fileName
+  const actions = generatedFile?.actions
+  const canPreview = isPreviewActionEnabledForFile(actions, fileType, fileName)
+  const canOpenExternal = isFileActionEnabled(actions, 'open')
+  const canReveal = isFileActionEnabled(actions, 'reveal')
+  const primaryAction = getGeneratedFilePrimaryAction({ fileType, fileName })
+  const previewTarget: PreviewTarget | null = generatedFile && conversationId
+    ? {
+        fileId: generatedFile.id,
+        conversationId,
+        fileName,
+        fileType,
+      }
+    : target && conversationId
+      ? {
+          fileId: `artifact:${target.path}`,
+          conversationId,
+          fileName,
+          fileType,
+          localPath: target.path,
+        }
+      : null
+
+  const handlePreview = () => {
+    if (!previewTarget) return
+    openPreview(previewTarget)
+  }
+  const handleOpenExternal = () => {
+    if (generatedFile && conversationId) {
+      void openGeneratedFile(generatedFile.id, conversationId)
+      return
+    }
+    if (target) void openLocalFile(target.path)
+  }
+  const handleReveal = () => {
+    if (generatedFile && conversationId) {
+      void revealFileInFolder(generatedFile.id, conversationId)
+      return
+    }
+    if (!target) return
+    const parent = target.path.replace(/[/\\][^/\\]+$/, '') || '/'
+    void openLocalFile(parent)
+  }
+  const handleDownload = () => {
+    if (!previewTarget) return
+    void savePreviewTargetToDisk(previewTarget)
+  }
+
+  return (
+    <div className="my-2">
+      <GeneratedFileCard
+        title={title}
+        sub={artifactSub(generatedFile, fileName)}
+        appName={primaryAction === 'preview' ? '预览' : '打开'}
+        primaryAction={primaryAction}
+        canPreview={canPreview}
+        canOpenExternal={canOpenExternal}
+        canDownload={Boolean(previewTarget)}
+        canReveal={canReveal}
+        filePath={filePath}
+        onPreview={handlePreview}
+        onOpenExternal={handleOpenExternal}
+        onDownload={handleDownload}
+        onReveal={handleReveal}
+      />
+    </div>
   )
 }

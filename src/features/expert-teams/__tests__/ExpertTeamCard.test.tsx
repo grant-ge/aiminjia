@@ -11,7 +11,7 @@ describe('ExpertTeamCard', () => {
     const { container } = render(<ExpertTeamCard team={team} onStart={() => {}} />)
     const card = screen.getByRole('button', { name: new RegExp(team.name) })
 
-    expect(card).toHaveClass('h-[154px]', 'p-3', 'border-border/50', 'shadow-[0_1px_3px_rgba(0,0,0,0.035)]')
+    expect(card).toHaveClass('h-[154px]', 'p-3', 'border-[rgba(var(--border-rgb),0.50)]', 'shadow-[0_1px_3px_rgba(0,0,0,0.035)]')
     expect(screen.getByText(team.name)).toBeInTheDocument()
     expect(screen.getByText(team.tagline)).toBeInTheDocument()
     expect(screen.getByText(`${team.experts.length} 位专家 / 多角色轮询`)).toBeInTheDocument()

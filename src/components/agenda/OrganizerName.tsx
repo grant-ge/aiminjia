@@ -41,7 +41,7 @@ export function OrganizerName({ employeeId }: OrganizerNameProps) {
   const displayed = name ?? (resolved ? '未知员工' : normalizedEmployeeId)
   return (
     <span
-      className={`text-xs ${name ? 'text-muted-foreground' : 'text-muted-foreground/60'}`}
+      className={`text-xs ${name ? 'text-muted-foreground' : 'text-[rgba(var(--muted-foreground-rgb),0.60)]'}`}
       title={`员工 ID：${normalizedEmployeeId}`}
     >
       @{displayed}

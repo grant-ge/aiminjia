@@ -67,10 +67,10 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
         </div>
       </div>
 
-      <section className="w-full border-t border-border/70 pt-4">
+      <section className="w-full border-t border-[rgba(var(--border-rgb),0.70)] pt-4">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('ExpertTeams.members')}</h3>
-          <span className="truncate text-2xs text-muted-foreground/80">{team.tagline}</span>
+          <span className="truncate text-2xs text-[rgba(var(--muted-foreground-rgb),0.80)]">{team.tagline}</span>
         </div>
         {team.experts.length > 0 ? (
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -79,10 +79,10 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
               return (
                 <div
                   key={expert.name}
-                  className="flex min-w-0 items-center gap-2 rounded-md border border-border/70 bg-card px-2.5 py-2"
+                  className="flex min-w-0 items-center gap-2 rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card px-2.5 py-2"
                   title={expert.persona}
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-muted text-xs">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[rgba(var(--border-rgb),0.70)] bg-muted text-xs">
                     <ExpertAvatarView visual={avatarVisual} fallback={expert.emoji} />
                   </span>
                   <span className="min-w-0">
@@ -94,16 +94,16 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
             })}
           </div>
         ) : (
-          <div className="mt-3 rounded-md border border-dashed border-border/80 px-3 py-3 text-sm leading-6 text-muted-foreground">
+          <div className="mt-3 rounded-md border border-dashed border-[rgba(var(--border-rgb),0.80)] px-3 py-3 text-sm leading-6 text-muted-foreground">
             {t('ExpertTeams.directorInvites')}，{t('ExpertTeams.customTopicHint')}
           </div>
         )}
       </section>
 
-      <section className="w-full border-t border-border/70 pt-4">
+      <section className="w-full border-t border-[rgba(var(--border-rgb),0.70)] pt-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('ExpertTeams.pickTopic')}</h3>
-          <span className="truncate text-2xs text-muted-foreground/80">{t('ExpertTeams.customTopicHint')}</span>
+          <span className="truncate text-2xs text-[rgba(var(--muted-foreground-rgb),0.80)]">{t('ExpertTeams.customTopicHint')}</span>
         </div>
         <ul className="grid gap-2 sm:grid-cols-2">
           {team.examples.map((example) => {
@@ -114,7 +114,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
                   type="button"
                   disabled={picking !== null}
                   onClick={() => void handlePick(example)}
-                  className="flex min-h-11 w-full items-center rounded-md border border-border/70 bg-card px-3 py-2 text-left text-sm leading-5 text-foreground transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex min-h-11 w-full items-center rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card px-3 py-2 text-left text-sm leading-5 text-foreground transition-colors hover:border-[rgba(var(--primary-rgb),0.50)] hover:bg-[rgba(var(--accent-rgb),0.30)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isPicking
                     ? t('ExpertTeams.startingTopic', { topic: example })
