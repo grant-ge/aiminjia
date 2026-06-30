@@ -21,7 +21,7 @@ pnpm build:with-pilot
 
 | 文件 | 用途 |
 |---|---|
-| `src-tauri/target/release/bundle/macos/AIjia.app` | macOS .app（205 MB，含 bundled runtime + plugin-pilot） |
+| `src-tauri/target/release/bundle/macos/AIjia.app` | macOS .app（含 plugin-pilot，不含安装包内置 runtime） |
 | `src-tauri/target/release/bundle/macos/AIjia.app.tar.gz` | updater tarball（77 MB，可直接 scp 给 QA） |
 
 末尾会报 `Error A public key has been found, but no private key. Make sure to set TAURI_SIGNING_PRIVATE_KEY environment variable` —— 这是 tauri 给 updater tarball 签名的步骤失败，**不影响 .app 包本身**，QA 用 .app 即可。
@@ -142,4 +142,4 @@ i18n PR `d68eab57` 把 `window.confirm()` 改成 `requestConfirm()` 时，`Emplo
 
 - **签名 / 公证 / OSS 上传**：现在 e2e release 包未签名，QA 装机需要手动绕过 Gatekeeper。如果未来 QA 数量多，可能需要给 e2e 包也签名（但**不公证**，公证是面向公网的）。
 - **Windows / Linux**：当前只验证过 macOS arm64。Windows 上 pilot 走命名管道 `\\.\pipe\tauri-pilot-{identifier}`，应该能跑，但**没测过 release 包路径**。
-- **自动化**：现在 `pnpm build:with-pilot` 是手动跑。如果发版频次高，加个 `scripts/build-e2e-release.sh` 把它跟 prepare-bundled-runtime / 版本号同步 / 产物归档串起来。
+- **自动化**：现在 `pnpm build:with-pilot` 是手动跑。如果发版频次高，加个 `scripts/build-e2e-release.sh` 把版本号同步 / 产物归档串起来。

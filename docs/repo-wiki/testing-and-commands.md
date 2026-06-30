@@ -70,7 +70,7 @@ pnpm test
 pnpm build
 ```
 
-聚焦文件改动时优先跑相关 Vitest 文件。涉及 Tauri dev server 时，`pnpm tauri:dev` 会先执行 `pnpm ensure:runtime`。
+聚焦文件改动时优先跑相关 Vitest 文件。涉及 Tauri dev server 时，`pnpm tauri:dev` 通过 `scripts/tauri-dev.mjs` 启动，不再准备安装包内置 runtime 资源。
 
 ## Rust Checks
 
@@ -109,7 +109,7 @@ AEIT/test-intents 是真实账号 L4 验收，不等同于 CI 单测。
 `test-intents-aijia-cli` 增强补充了测试体系链路：
 
 - `package.json` 定义 `dev:with-pilot`、`build:with-pilot` 和 `ensure:e2e-prereq` 等 E2E/pilot scripts。
-- `scripts/ensure-e2e-prereq.sh` 检查 cargo git-fetch-with-cli、jq 和 ssh-agent，但当前 `package.json` 的 `predev:with-pilot` 实际是 `pnpm ensure:runtime`，不能直接声称它一定自动执行。
+- `scripts/ensure-e2e-prereq.sh` 检查 cargo git-fetch-with-cli 和 ssh-agent；`dev:with-pilot` 通过 `scripts/tauri-dev.mjs --features e2e` 启动。
 - `.agents/skills/usertest-intents/SKILL.md` 是用户级入口，负责解释 AEIT 和路由跑/写意图。
 - `.agents/skills/test-intents-cli-author/SKILL.md` 约束 `aijia <verb>` 子命令必须封装原子 UI 操作，复杂流程由 rules.md 串联。
 - `docs/test-intents/cli-gap.md` 是 CLI 缺口清单；`tauri-pilot aijia` 的实现不在当前仓库，实际可用命令以 sibling `tauri-pilot` 仓库和 PATH 上安装版本为准。

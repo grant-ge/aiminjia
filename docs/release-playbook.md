@@ -2,21 +2,18 @@
 
 **架构：macOS 本地全流程 + Windows GitHub-hosted 构建未签名包 + 本地一键签名上传**。
 
-- **macOS arm64 + x86_64**：在你的 Mac 上 `build-and-sign-macos.sh` 串行 build → codesign → notarize → staple → tauri signer → 上传 OSS。串行的原因是 `setup-dws.sh` 切换 runtime symlink，并发会冲突。
+- **macOS arm64 + x86_64**：在你的 Mac 上 `build-and-sign-macos.sh` 串行 build → codesign → notarize → staple → tauri signer → 上传 OSS。
 - **Windows x64**：tag 触发 `windows-latest` runner 跑 unsigned 构建 → 产物上传到 OSS staging（`aijia/staging/unsigned/v{ver}/`，公开 CDN URL）→ 在你的 Windows 机器上跑 `release-windows.ps1` 一键完成：拉 staging exe → signtool 签名（带 timestamp）→ tauri signer 生成 `.sig` → Node + `ali-oss` 上传 → 清理 staging。
 
-## 内置运行时（自 0.5.24 起）
+## 托管运行时（自 2026-06-30 起）
 
-发版前**必须**先跑 `scripts/prepare-bundled-runtime.{sh,ps1}`，把 Node 20.18 / Python 3.12.7 / uv 0.4.27 打入 `src-tauri/resources/runtime/<platform>/`。Tauri build 把目录复制进安装包（~85MB 增量），用户首启完全离线可用。
+安装包不再内置 Node / Python / uv 随包兜底包，也不再内置 `dws` CLI。AIjia 托管运行时由 RuntimeManager 通过 OSS manifest 下载到本机 cache，并通过设置页的“优先使用 AIjia 托管运行时”开关注入到本地命令、技能内联命令和 MCP 子进程。
 
-- **入口脚本**：mac 走 `scripts/build-and-sign-macos.sh` 内部自动按 arch 调 `prepare-bundled-runtime.sh PLATFORM=darwin-{arm64,x64}`；Windows CI `.github/workflows/build-desktop.yml` 的 build job 自动跑 `prepare-bundled-runtime.ps1`。
-- **上游源**：`scripts/runtime-sources.json` pin 了 Node（nodejs.org）、Python（mac 用 python-build-standalone install_only，win 用官方 embeddable zip）、uv（astral-sh release）的 URL + sha256。升级运行时改 `bundleVersion` + 各组件 version + 9 个 sha256。
-- **缓存**：`.runtime-cache/`（已 gitignore）按文件名缓存下载产物，CI 也 cache 这个目录（`actions/cache@v4` key on `hashFiles('scripts/runtime-sources.json')`）。
-- **解析链**：启动期 `BundledRuntimeResolver`（reads `app.path().resource_dir()/runtime/<platform>/`）→ `InstalledRuntimeResolver`（`~/.renlijia/runtimes/renlijia-primary-runtime/current`，OSS 升级路径）→ on-demand OSS download（兜底）。前两个任一成功即跳过 OSS。详见 `src-tauri/src/runtime/dependencies/{bundled_resolver,chain_resolver,manager}.rs`。
-- **mac 签名**：现有 inside-out `find -type f` + `file ... Mach-O` 自动覆盖 `Contents/Resources/runtime/` 下所有二进制（node/python3/uv/uvx/libpython3.12.dylib + lib-dynload `.so`）。`sign-and-upload-macos.sh` 在签名后**审计** runtime/ 下每个 Mach-O 是否带 `flags=...runtime`（hardened），漏一个则 fail，防止 notarization 拒签。
-- **Windows 签名**：`release-windows.ps1` 只签外层 NSIS 安装包，**不**单独签 `resources\runtime\` 内嵌的 `node.exe / python.exe / uv.exe / uvx.exe`。SmartScreen 只校验外层签名，nested PE 不展示在用户首次启动的警告里——因此当前是有意 trade-off（每个 nested exe 单独走 signtool + timestamp 会增加 ~30s 发版时间）。如果将来用户报告 "Unknown publisher" 提示在 PowerShell 直接执行内嵌 exe 时出现，再补 signtool 遍历。
-- **诊断**：Settings → 运行时 显示 `activeResolver`、内置版本号、`node/python/uv --version` 实时输出 + 一键重检（`runtime_diagnostics` Tauri 命令 → `src/components/settings/panels/RuntimePanel.tsx`）。
-- **Spec/Plan**：`docs/superpowers/plans/2026-05-13-bundle-runtime-into-installer.md`。
+- **入口**：启动时 `RuntimeManager` 后台检查 cache；首次本地命令需要 managed runtime 时由 resolver/manager 确保可用。
+- **下载源**：默认 manifest 为 `RENLIJIA_RUNTIME_MANIFEST_URL` 或代码内置的 Renlijia OSS manifest URL。
+- **缓存**：runtime 安装在用户本机 cache 的 `renlijia-primary-runtime/current` 和 `versions/<version>` 下；删除 cache 只会触发重新下载，不影响用户业务数据。
+- **失败语义**：本机 cache 不存在且 OSS manifest / artifact 下载失败时，runtime 明确失败；不会再从安装包资源复制兜底 runtime。
+- **诊断**：Settings → 运行时 显示 `activeResolver`、已安装版本、`node/python/uv --version` 实时输出 + 一键重检（`runtime_diagnostics` Tauri 命令 → `src/components/settings/panels/RuntimePanel.tsx`）。
 
 ## 三种包
 
@@ -73,7 +70,7 @@ cd ~/lotus && ./scripts/update-changelog.sh desktop X.Y.Z
 
 ## macOS 签名脚本的关键点
 
-1. **inside-out 逐文件 codesign**：`--deep` 在 macOS 11+ 不可靠，会漏签 `Contents/Resources/dws` 等嵌套二进制。脚本对每个 Mach-O 二进制独立签，每个都带 `--timestamp --options runtime`。
+1. **inside-out 逐文件 codesign**：`--deep` 在 macOS 11+ 不可靠。脚本对每个 Mach-O 二进制独立签，每个都带 `--timestamp --options runtime`。
 2. **DMG 必须由脚本构造（自 v0.5.25 起）**：tauri.conf.json `bundle.targets` 已去掉 `dmg`，只保留 `["nsis", "app"]`。理由：tauri 2.x 的 `bundle_dmg.sh` 调用约定与系统装的 Homebrew `create-dmg` 1.2.3 不匹配，每次发版都失败。`sign-and-upload-macos.sh` 的 Step 1b 用 `hdiutil create -volname "AIjia $VERSION" -fs HFS+ -format UDZO` 从签好的 .app + `/Applications` symlink 构造 DMG，再 codesign 一次。三个参数都必须显式：① volname 带版本号避冲突；② **`-fs HFS+`** —— APFS DMG 头部会浪费 ~30MB 元数据（v0.5.24 因为漏了这个参数，DMG 从 92MB 涨到 122MB）；③ `-format UDZO` zlib 压缩。脚本入口前置自动清理 `/Volumes/AIjia*` 残留挂载和 `hdiutil info` 里的 aijia images，防止"Operation not permitted"。
 3. **并行 notarize（自 v0.5.25 起）**：DMG 和 .app 同时提交 Apple notary，每个独立 60min timeout，submission id + rc 写盘后台监控；任一失败保留 tmp dir 调试。串行版（v0.5.24）总耗时被 Apple 端排队叠加；并行版接近单次延迟。**自重试（自 v0.5.25-beta.3 起）**：notarize 函数包了 3 次重试循环，仅当 log 含 `abortedUpload|connectTimeout|HTTPClient|connection.*reset|EOF` 这类瞬时网络错误时才重试，Apple 业务拒绝（`Invalid`/`Rejected`）立即 fail。两次重试间隔 30s。背景：Apple notary 把 zip/dmg 上传到 S3 `notary-submissions-prod` bucket 偶尔会 abort，重试基本就好。
 3. **幂等检测**：每步前先 probe（`codesign -dv` 看 `flags=runtime` + `Authority=Developer ID Application`；`xcrun stapler validate` 看是否已 stapled）。重跑只跑没完成的步骤。

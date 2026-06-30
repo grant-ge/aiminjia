@@ -1219,7 +1219,7 @@ pub fn is_required_builtin_skill(id: &str) -> bool {
 
 Export it from `src-tauri/src/plugin/skill/mod.rs`.
 
-`dingtalk-workspace` is the SKILL.md wrapper id; `dws` is the CLI/display shorthand and `src-tauri/resources/dws` remains the bundled binary. If the published package id differs, update this allowlist to the real `plugin_id` and keep UI display mapping separate.
+`dingtalk-workspace` is the SKILL.md wrapper id; `dws` is the CLI/display shorthand. The installer no longer bundles a `src-tauri/resources/dws` binary. If the published package id differs, update this allowlist to the real `plugin_id` and keep UI display mapping separate.
 
 - [ ] **Step 4: Implement package update selector**
 

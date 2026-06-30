@@ -6,73 +6,112 @@
     {
       "filePath": "src/components/settings/SettingsMenu.tsx",
       "summary": "设置侧栏入口，account-billing 仅在 personal tenant 下显示，usage 等部分入口当前 disabled。",
-      "tags": ["settings", "ui", "billing-gate"],
+      "tags": [
+        "settings",
+        "ui",
+        "billing-gate"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src/components/settings/SettingsModal.tsx",
       "summary": "设置页路由壳，挂载 GeneralPanel、AccountBillingPanel、AboutPanel 等活跃面板，更新检查从 about 入口触发。",
-      "tags": ["settings", "panel-router", "updater-entry"],
+      "tags": [
+        "settings",
+        "panel-router",
+        "updater-entry"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src/components/settings/panels/GeneralPanel.tsx",
       "summary": "账户页当前承载用户/租户展示、退出登录和外观设置，不包含订阅、充值或 customer portal 动作。",
-      "tags": ["account-ui", "settings"],
+      "tags": [
+        "account-ui",
+        "settings"
+      ],
       "complexity": "low"
     },
     {
       "filePath": "src/components/settings/panels/AccountBillingPanel.tsx",
       "summary": "计费页 UI，挂载时刷新，展示余额、本月消耗、本月请求数、流水表格、分页和错误重试。",
-      "tags": ["billing-ui", "settings", "zustand"],
+      "tags": [
+        "billing-ui",
+        "settings",
+        "zustand"
+      ],
       "complexity": "medium"
-    },
-    {
-      "filePath": "src/components/settings/panels/UsagePanel.tsx",
-      "summary": "套餐/配额展示组件当前存在但未接入 SettingsModal 活跃路由，属于 dormant 展示层。",
-      "tags": ["subscription-ui", "dormant"],
-      "complexity": "low"
     },
     {
       "filePath": "src/stores/billingStore.ts",
       "summary": "Billing Zustand 状态与动作中心，并发拉 summary 和 usage records，第 1 页是默认刷新入口。",
-      "tags": ["billing-store", "zustand", "async"],
+      "tags": [
+        "billing-store",
+        "zustand",
+        "async"
+      ],
       "complexity": "low"
     },
     {
       "filePath": "src/lib/tauri.ts",
       "summary": "前端 Tauri transport 边界，定义 billing/network/updater DTO 与 invoke wrapper。",
-      "tags": ["transport", "tauri", "billing", "network"],
+      "tags": [
+        "transport",
+        "tauri",
+        "billing",
+        "network"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/transport/tauri_commands/billing.rs",
       "summary": "Rust billing command 边界，定义返回结构并把 billing summary/usage records 转调 AuthManager。",
-      "tags": ["rust", "tauri-command", "billing"],
+      "tags": [
+        "rust",
+        "tauri-command",
+        "billing"
+      ],
       "complexity": "low"
     },
     {
       "filePath": "src-tauri/src/auth/mod.rs",
       "summary": "AuthManager 负责 session_key 生命周期和刷新单飞，billing/profile 请求先经过这里拿有效 session_key。",
-      "tags": ["auth", "session-key", "billing-boundary"],
+      "tags": [
+        "auth",
+        "session-key",
+        "billing-boundary"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/auth/client.rs",
       "summary": "Lotus HTTP client，对 /v1/profile 和 /v1/billing/* 发请求，并使用 Authorization: Bearer <session_key>。",
-      "tags": ["http-client", "gateway", "billing", "profile"],
+      "tags": [
+        "http-client",
+        "gateway",
+        "billing",
+        "profile"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/runtime/network/probe.rs",
       "summary": "独立网络探测模块，发 HEAD 探测，区分在线、离线和服务降级，并发布网络状态事件。",
-      "tags": ["network", "probe", "event-boundary"],
+      "tags": [
+        "network",
+        "probe",
+        "event-boundary"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src/lib/updaterStore.ts",
       "summary": "Updater 前端状态机，与 billing 同在 settings/about 周边，但走独立 updater_* 命令链路。",
-      "tags": ["updater", "settings-about", "separate-path"],
+      "tags": [
+        "updater",
+        "settings-about",
+        "separate-path"
+      ],
       "complexity": "medium"
     }
   ],
@@ -238,8 +277,7 @@
       "description": "当前 settings 里活跃的账户相关入口是 General account 和 AccountBilling account-billing；UsagePanel 存在但未接入 SettingsModal 活跃路由，未见 checkout、portal、recharge 或 invoice 的本地接线。",
       "evidence": [
         "src/components/settings/SettingsMenu.tsx",
-        "src/components/settings/SettingsModal.tsx",
-        "src/components/settings/panels/UsagePanel.tsx"
+        "src/components/settings/SettingsModal.tsx"
       ]
     },
     {
@@ -300,8 +338,7 @@
         "src/components/settings/SettingsMenu.tsx",
         "src/components/settings/SettingsModal.tsx",
         "src/components/settings/panels/GeneralPanel.tsx",
-        "src/components/settings/panels/AccountBillingPanel.tsx",
-        "src/components/settings/panels/UsagePanel.tsx"
+        "src/components/settings/panels/AccountBillingPanel.tsx"
       ]
     },
     {

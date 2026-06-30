@@ -1,7 +1,5 @@
 mod archive;
 mod artifact_fetcher;
-mod bundled_resolver;
-mod chain_resolver;
 mod checksum;
 mod command_env;
 mod config;
@@ -22,8 +20,6 @@ pub use archive::{validate_archive_entry_path, ArchiveError};
 pub use artifact_fetcher::{
     FetchedRuntimeArtifact, RuntimeArtifactFetchError, RuntimeArtifactFetcher,
 };
-pub use bundled_resolver::BundledRuntimeResolver;
-pub use chain_resolver::ChainResolver;
 pub use checksum::{verify_sha256, ChecksumError};
 pub use command_env::{
     prepend_bundle_bin_to_path, prepend_bundle_bin_to_path_tokio, ManagedRuntimePreference,

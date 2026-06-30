@@ -51,9 +51,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "prompts": "prompts",
-      "resources/dws*": "",
-      "resources/runtime": "runtime"
+      "prompts": "prompts"
     }
   }
 }

@@ -317,14 +317,13 @@ pub fn runtime_health_payload_from_dependencies(
     }
 }
 
-// ─── Bundled runtime diagnostics ─────────────────────────────────────────────
+// ─── Managed runtime diagnostics ─────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeDiagnosticsPayload {
-    /// "cache" | "bundled" | "none"
+    /// "installed" | "none"
     pub active_resolver: String,
-    pub bundled_version: Option<String>,
     pub installed_version: Option<String>,
     pub node: String,
     pub python: String,
@@ -335,15 +334,8 @@ pub struct RuntimeDiagnosticsPayload {
 pub async fn runtime_diagnostics(
     app: tauri::AppHandle,
 ) -> Result<RuntimeDiagnosticsPayload, String> {
-    use crate::runtime::dependencies::{BundledRuntimeResolver, RuntimeResolver};
+    use crate::runtime::dependencies::RuntimeResolver;
     use tauri::Manager;
-
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("resource_dir: {e}"))?;
-    let bundled = BundledRuntimeResolver::new(resource_dir);
-    let bundled_version = bundled.bundled_version();
 
     let mgr_state = app
         .try_state::<ManagedRuntimeManager>()
@@ -355,9 +347,7 @@ pub async fn runtime_diagnostics(
         .map_err(|e| format!("resolve failed: {e}"))?;
 
     let active = if mgr.resolver().workspace_dependencies().is_ok() {
-        "cache"
-    } else if bundled.workspace_dependencies().is_ok() {
-        "bundled"
+        "installed"
     } else {
         "none"
     };
@@ -376,7 +366,6 @@ pub async fn runtime_diagnostics(
 
     Ok(RuntimeDiagnosticsPayload {
         active_resolver: active.to_string(),
-        bundled_version,
         installed_version,
         node: node_v,
         python: py_v,
@@ -422,8 +411,7 @@ mod diagnostics_tests {
     #[test]
     fn diagnostics_payload_serializes_active_resolver_and_versions_in_camelcase() {
         let payload = RuntimeDiagnosticsPayload {
-            active_resolver: "bundled".to_string(),
-            bundled_version: Some("2026.05.13-runtime.1".to_string()),
+            active_resolver: "installed".to_string(),
             installed_version: None,
             node: "v20.18.0".to_string(),
             python: "Python 3.12.7".to_string(),
@@ -431,12 +419,8 @@ mod diagnostics_tests {
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(
-            json.contains("\"activeResolver\":\"bundled\""),
+            json.contains("\"activeResolver\":\"installed\""),
             "missing activeResolver in {json}"
-        );
-        assert!(
-            json.contains("\"bundledVersion\":\"2026.05.13-runtime.1\""),
-            "missing bundledVersion in {json}"
         );
         assert!(
             json.contains("\"installedVersion\":null"),

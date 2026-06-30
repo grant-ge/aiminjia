@@ -128,16 +128,16 @@ pub async fn build_env_info(
         match runtime_info {
             Some(runtime_info) => parts.push(runtime_info.format_enabled_for_env_info()),
             None => parts.push(
-                "AIjia 自带运行环境：已开启，但当前没有检测到可用的 AIjia Runtime。\n\
-                 当前不要假设裸 `node` / `python` / `uv` 已经命中 AIjia 自带环境；如系统环境检测可用，可按用户意图使用系统环境。"
+                "AIjia 托管运行时：已开启，但当前没有检测到可用的 AIjia Runtime。\n\
+                 当前不要假设裸 `node` / `python` / `uv` 已经命中 AIjia 托管运行时；如系统环境检测可用，可按用户意图使用系统环境。"
                     .to_string(),
             ),
         }
     } else {
         parts.push(
-            "AIjia 自带运行环境：已关闭（默认使用系统环境）\n\
+            "AIjia 托管运行时：已关闭（默认使用系统环境）\n\
              规则:\n\
-             1. 本地 Bash / PowerShell / Skill / MCP 子进程不会注入 AIjia 自带 Runtime。\n\
+             1. 本地 Bash / PowerShell / Skill / MCP 子进程不会注入 AIjia 托管运行时。\n\
              2. 裸 `node`、`npm`、`npx`、`python`、`python3`、`uv`、`uvx` 来自系统 PATH；如系统环境检测未发现对应命令，需要说明系统环境不可用。\n\
              3. 工具没有 `runtime_env` 参数，不要在工具调用里传这个字段。"
                 .to_string(),
@@ -175,12 +175,12 @@ impl SystemRuntimeEnvInfo {
 
     pub fn format_for_env_info(&self, managed_runtime_enabled: bool) -> String {
         let explicit_system_rule = if managed_runtime_enabled {
-            "用户明确说“用系统自带 / 我电脑上的 / 不要用你自带”时，请直接使用这里检测到的系统绝对路径；不要在工具里用裸 `where node` / `Get-Command node` / `which node` 的第一条结果当系统路径，因为当前工具环境会优先看到 AIjia 自带 Runtime。确需复核时，只能验证这里列出的系统绝对路径，或过滤掉 AIjia Runtime 路径后再判断。"
+            "用户明确说“用系统自带 / 我电脑上的 / 不要用你自带”时，请直接使用这里检测到的系统绝对路径；不要在工具里用裸 `where node` / `Get-Command node` / `which node` 的第一条结果当系统路径，因为当前工具环境会优先看到 AIjia 托管运行时。确需复核时，只能验证这里列出的系统绝对路径，或过滤掉 AIjia Runtime 路径后再判断。"
         } else {
-            "当前默认就是系统环境；如果这里未发现对应命令，说明系统环境不可用，不要假设 AIjia 自带环境已注入。"
+            "当前默认就是系统环境；如果这里未发现对应命令，说明系统环境不可用，不要假设 AIjia 托管运行时已注入。"
         };
         format!(
-            "系统环境检测（未注入 AIjia 自带 Runtime）:\n\
+            "系统环境检测（未注入 AIjia 托管运行时）:\n\
              {}\n\
              {}\n\
              {}\n\
@@ -260,7 +260,7 @@ impl ManagedRuntimeEnvInfo {
         let node_require_template = r#"node -e "require('<包名>'); console.log('ok')""#;
         let node_cli_template = "命令名 <参数>";
         format!(
-            r#"AIjia 自带运行环境：已开启（默认优先）
+            r#"AIjia 托管运行时：已开启（默认优先）
 Runtime 当前目录: {runtime_root}
 Python: {python}
 Node: {node}
@@ -272,10 +272,10 @@ Node 全局包目录: {node_global_modules}
 Node 命令目录: {node_cli_dir}
 
 规则:
-1. Bash / PowerShell / Skill / MCP 本地子进程默认会把 AIjia 自带 Runtime 放到 PATH 前面；普通任务直接使用裸 `node`、`npm`、`npx`、`{python_command_name}`、`uv`、`uvx` 即可命中上面的 Runtime。
+1. Bash / PowerShell / Skill / MCP 本地子进程默认会把 AIjia 托管运行时放到 PATH 前面；普通任务直接使用裸 `node`、`npm`、`npx`、`{python_command_name}`、`uv`、`uvx` 即可命中上面的 Runtime。
 2. 不要为了使用默认 Runtime 而手写上面这些可执行文件的绝对路径；这些路径主要用于诊断、核对和故障说明。
 3. 工具没有 `runtime_env` 参数，不要在工具调用里传这个字段。
-4. 用户明确要求系统 Node / Python / npm / uv 时，直接使用上方“系统环境检测”里的系统绝对路径验证和执行；不要先运行裸 `node` / `python` / `where node` / `Get-Command node` 来判断系统环境，因为这些会优先命中 AIjia Runtime。系统环境未发现时说明不可用，不要静默切回 AIjia 自带 Runtime。
+4. 用户明确要求系统 Node / Python / npm / uv 时，直接使用上方“系统环境检测”里的系统绝对路径验证和执行；不要先运行裸 `node` / `python` / `where node` / `Get-Command node` 来判断系统环境，因为这些会优先命中 AIjia 托管运行时。系统环境未发现时说明不可用，不要静默切回 AIjia 托管运行时。
 5. 安装第三方 Python 包使用以下模板（替换包名即可）：
 
    {python_install_template}
@@ -591,8 +591,8 @@ mod tests {
 
         let result = build_env_info(&workspace_path, None, Some(&runtime_info), true).await;
 
-        assert!(result.contains("系统环境检测（未注入 AIjia 自带 Runtime）"));
-        assert!(result.contains("AIjia 自带运行环境：已开启（默认优先）"));
+        assert!(result.contains("系统环境检测（未注入 AIjia 托管运行时）"));
+        assert!(result.contains("AIjia 托管运行时：已开启（默认优先）"));
         assert!(result.contains("Runtime 当前目录: /cache/renlijia/current"));
         assert!(result.contains("Python: /cache/renlijia/python/bin/python3"));
         assert!(result.contains("Node: /cache/renlijia/node/bin/node"));
@@ -610,7 +610,7 @@ mod tests {
             result.contains(expected_node_command_dir),
             "must include the platform-correct Node command dir, got:\n{result}"
         );
-        assert!(result.contains("默认会把 AIjia 自带 Runtime 放到 PATH 前面"));
+        assert!(result.contains("默认会把 AIjia 托管运行时放到 PATH 前面"));
         assert!(result.contains("直接使用裸 `node`"));
         assert!(result.contains("工具没有 `runtime_env` 参数"));
         assert!(result.contains("使用上方“系统环境检测”里的系统绝对路径"));
@@ -654,11 +654,11 @@ mod tests {
 
         let result = build_env_info(&workspace_path, None, Some(&runtime_info), false).await;
 
-        assert!(result.contains("AIjia 自带运行环境：已关闭（默认使用系统环境）"));
-        assert!(result.contains("系统环境检测（未注入 AIjia 自带 Runtime）"));
-        assert!(result.contains("不要假设 AIjia 自带环境已注入"));
+        assert!(result.contains("AIjia 托管运行时：已关闭（默认使用系统环境）"));
+        assert!(result.contains("系统环境检测（未注入 AIjia 托管运行时）"));
+        assert!(result.contains("不要假设 AIjia 托管运行时已注入"));
         assert!(result.contains("工具没有 `runtime_env` 参数"));
         assert!(!result.contains("Runtime 当前目录: /cache/renlijia/current"));
-        assert!(!result.contains("默认会把 AIjia 自带 Runtime 放到 PATH 前面"));
+        assert!(!result.contains("默认会把 AIjia 托管运行时放到 PATH 前面"));
     }
 }

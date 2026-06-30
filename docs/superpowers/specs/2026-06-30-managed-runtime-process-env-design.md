@@ -8,10 +8,10 @@
 
 AIjia 不新增工具级 `runtime_env` 参数。用户只有一个全局开关：
 
-- 开启：本地命令默认优先使用 AIjia 自带 Node / Python / uv。
-- 关闭：本地命令默认使用系统环境，不注入 AIjia 自带 Runtime。
+- 开启：本地命令默认优先使用 AIjia 托管运行时里的 Node / Python / uv。
+- 关闭：本地命令默认使用系统环境，不注入 AIjia 托管运行时。
 
-用户临时说“这次用系统自带 Node / Python / dws”时，Agent 不传额外工具参数，而是使用动态上下文里探测到的系统绝对路径，或先运行系统路径探测命令。系统环境不可用时直接说明不可用，不静默回落到 AIjia 自带 Runtime。
+用户临时说“这次用系统自带 Node / Python / dws”时，Agent 不传额外工具参数，而是使用动态上下文里探测到的系统绝对路径，或先运行系统路径探测命令。系统环境不可用时直接说明不可用，不静默回落到 AIjia 托管运行时。
 
 ## WorkBuddy 对照
 
@@ -36,7 +36,7 @@ npm_config_cache=<managed npm cache>
 [当前环境]
 工作目录: <workspace>
 Platform: windows|darwin|linux
-系统环境检测（未注入 AIjia 自带 Runtime）:
+系统环境检测（未注入 AIjia 托管运行时）:
 - node: <system node path> 或 未发现
 - npm: <system npm path> 或 未发现
 - npx: <system npx path> 或 未发现
@@ -48,7 +48,7 @@ Platform: windows|darwin|linux
 开关开启且 managed runtime 可用时，额外展示：
 
 ```text
-AIjia 自带运行环境：已开启（默认优先）
+AIjia 托管运行时：已开启（默认优先）
 Runtime 当前目录: <runtime_root>
 Python: <managed python>
 Node: <managed node>
@@ -60,7 +60,7 @@ Node 全局包目录: <node_modules>
 Node 命令目录: <cli_dir>
 
 规则:
-1. Bash / PowerShell / Skill / MCP 本地子进程默认会把 AIjia 自带 Runtime 放到 PATH 前面。
+1. Bash / PowerShell / Skill / MCP 本地子进程默认会把 AIjia 托管运行时放到 PATH 前面。
 2. 普通任务直接使用裸 node / npm / npx / python / python3 / uv / uvx。
 3. 工具没有 runtime_env 参数，不要传这个字段。
 4. 用户明确要求系统 Node / Python / npm / uv 时，使用上方“系统环境检测”里的系统绝对路径。
@@ -69,9 +69,9 @@ Node 命令目录: <cli_dir>
 开关关闭时展示：
 
 ```text
-AIjia 自带运行环境：已关闭（默认使用系统环境）
+AIjia 托管运行时：已关闭（默认使用系统环境）
 规则:
-1. 本地 Bash / PowerShell / Skill / MCP 子进程不会注入 AIjia 自带 Runtime。
+1. 本地 Bash / PowerShell / Skill / MCP 子进程不会注入 AIjia 托管运行时。
 2. 裸 node / npm / npx / python / python3 / uv / uvx 来自系统 PATH。
 3. 工具没有 runtime_env 参数，不要传这个字段。
 ```
@@ -108,7 +108,7 @@ managedRuntimeEnabled: boolean
 
 默认值：`true`。
 
-设置页 Runtime 面板新增开关“优先使用 AIjia 自带运行环境”。更新设置时：
+设置页 Runtime 面板新增开关“优先使用 AIjia 托管运行时”。更新设置时：
 
 1. 写入本地 settings。
 2. 同步刷新内存态 `ManagedRuntimePreference`。
@@ -131,7 +131,7 @@ managedRuntimeEnabled: boolean
 
 `SkillSubstitutionContext` 携带 `managed_runtime_enabled` 布尔快照。
 
-内联 shell 块执行前复用同一套 `ManagedRuntimeProcessEnv` 注入逻辑。这样技能里描述“缺 dws 就安装”时，默认安装到 AIjia 自带环境；用户明确要求系统 dws 时，Agent 需要用动态上下文里的系统路径或系统探测命令，而不是靠工具参数切换。
+内联 shell 块执行前复用同一套 `ManagedRuntimeProcessEnv` 注入逻辑。这样技能里描述“缺 dws 就安装”时，默认安装到 AIjia 托管命令环境；用户明确要求系统 dws 时，Agent 需要用动态上下文里的系统路径或系统探测命令，而不是靠工具参数切换。
 
 ### MCP stdio
 
@@ -155,7 +155,7 @@ managedRuntimeEnabled: boolean
 
 Runtime task 覆盖：
 
-- 默认裸命令命中 AIjia 自带 Runtime。
+- 默认裸命令命中 AIjia 托管运行时。
 - 关闭开关时默认系统环境。
 - 用户明确要求系统环境时不出现 `toolCalls[].arguments.runtime_env` 字段。
 - 系统 Node / Python 不可用时说明不可用，不回落到 AIjia Runtime。
@@ -164,7 +164,7 @@ Runtime task 覆盖：
 
 Skill task 覆盖：
 
-- dws 缺失时默认补到 AIjia 自带环境。
+- dws 缺失时默认补到 AIjia 托管命令环境。
 - 用户明确指定系统 dws 时使用系统路径 / 系统 PATH 探测，不安装、不回落、不传 `runtime_env`。
 
 ## 风险与边界

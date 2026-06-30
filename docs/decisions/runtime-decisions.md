@@ -8,9 +8,9 @@
 
 > **已被「云端唯一化」取代（2026-05-25）**：本地模型路径下线后，`chat_turn_driver` 固定请求 `1_000_000` 上限，**真实上限由 lotus 网关按 upstream 模型钳制/重写**，不再走本地启发式。`default_max_tokens_for_model` 现仅剩自测引用。
 
-## Shell 工具走 bundled runtime PATH + 错误诊断上报（2026-05-21）
+## Shell 工具走 managed runtime PATH + 错误诊断上报（2026-05-21，2026-06-30 更新）
 
-`BashTool`（Unix）和 `PowerShellTool`（Windows）spawn 子进程前必须调用 `shell_common::inject_bundled_runtime_path(&ctx, &mut cmd)`，把 `<bundled>/node/bin` 前置到子进程 PATH。**为什么**：npm/npx 是 `#!/usr/bin/env node` 的 shebang 脚本，即便用绝对路径调 `$NODE_DIR/bin/npm`，npm 内部的 postinstall(`sh -c "node install.js"`) 也走 PATH，没有这一步，`npm install -g dingtalk-workspace-cli` 之类的命令在用户机器上必现 `env: node: No such file or directory`（2026-05-21 客户截图复现）。`inject_bundled_runtime_path` 在 `ctx.capability.runtime_resolver` 缺失时静默 no-op（legacy/test 路径不受影响）。每个命令收尾都走 `emit_shell_failure_diagnostic(&ctx, tool, command, exit_code, output, semantics.is_error)` —— 把 exit_code 127/126 或 npm install 失败分类成 `runtime_install_failure / command_not_found / permission_denied / command_timeout / command_failure`，level=Error 的两类（runtime_install / command_not_found）会被服务端 lotus diagnostics handler 升级为 `client_diagnostic_alert` 推到钉钉群。所有逻辑集中在 `src-tauri/src/runtime/tools/builtin/shell_common.rs`，bash.rs / powershell.rs 各只引入两个函数 + 调用两次；6 个分类器单测钉死行为（含 npm postinstall 模式、纯 exit 127、exit 0 不上报、stderr signature 抽取等）。
+`BashTool`（Unix）和 `PowerShellTool`（Windows）spawn 子进程前必须按用户设置注入 `ManagedRuntimeProcessEnv`，把 AIjia 托管 runtime cache 中的 Node/Python/uv 目录前置到子进程 PATH。**为什么**：npm/npx 是 `#!/usr/bin/env node` 的 shebang 脚本，即便用绝对路径调 `$NODE_DIR/bin/npm`，npm 内部的 postinstall(`sh -c "node install.js"`) 也走 PATH，没有这一步，相关安装或工具命令会在用户机器上因找不到 node 或版本不一致失败。2026-06-30 起安装包不再内置 Node/Python/uv 兜底包；managed runtime 只来自本机 cache 或 OSS manifest 下载。每个命令收尾都走 `emit_shell_failure_diagnostic(&ctx, tool, command, exit_code, output, semantics.is_error)` —— 把 exit_code 127/126 或 npm install 失败分类成 `runtime_install_failure / command_not_found / permission_denied / command_timeout / command_failure`，level=Error 的两类（runtime_install / command_not_found）会被服务端 lotus diagnostics handler 升级为 `client_diagnostic_alert` 推到钉钉群。所有逻辑集中在 `src-tauri/src/runtime/tools/builtin/shell_common.rs`，bash.rs / powershell.rs 各只引入两个函数 + 调用两次；分类器单测钉死行为（含 npm postinstall 模式、纯 exit 127、exit 0 不上报、stderr signature 抽取等）。
 
 ## 个人版账户与消耗（2026-05-19）
 

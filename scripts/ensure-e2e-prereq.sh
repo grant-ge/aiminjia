@@ -6,15 +6,12 @@
 #      add it if missing. Required for cargo to fetch the codeup-hosted
 #      tauri-plugin-pilot dep via ssh — libgit2 can't handle ed25519 / macOS
 #      keychain-encrypted ssh keys.
-#   2. Verify `jq` is on PATH (used by prepare-bundled-runtime.sh). Try
-#      `brew install` on macOS or `apt-get install` on Debian/Ubuntu. If
-#      neither is available or auto-install fails, prints how to fix.
-#   3. Verify ssh-agent has at least one identity loaded. If not, print
+#   2. Verify ssh-agent has at least one identity loaded. If not, print
 #      `ssh-add` instructions but don't block — the user may rely on
 #      keychain integration instead.
 #
 # Skip everything: `SKIP_E2E_PREREQ=1 pnpm dev:with-pilot`
-# Triggered automatically via the `predev:with-pilot` pnpm lifecycle hook.
+# Run manually when a local e2e setup needs cargo/ssh prerequisites checked.
 
 set -euo pipefail
 
@@ -70,49 +67,7 @@ EOF
   ok "cargo: wrote [net] git-fetch-with-cli = true to $CARGO_CONFIG"
 }
 
-# ─── 2. jq (needed by prepare-bundled-runtime.sh) ────────────────────────────
-
-ensure_jq() {
-  if command -v jq >/dev/null 2>&1; then
-    ok "jq: $(jq --version) already installed"
-    return 0
-  fi
-
-  warn "jq missing — required by scripts/prepare-bundled-runtime.sh"
-
-  local os
-  os="$(uname -s)"
-  if [[ "$os" == "Darwin" ]]; then
-    if command -v brew >/dev/null 2>&1; then
-      say "jq: running 'brew install jq' (may take ~30s)"
-      if brew install jq; then
-        ok "jq: installed via brew"
-        return 0
-      fi
-      fail "jq: 'brew install jq' failed — install manually or set SKIP_BUNDLED_RUNTIME=1"
-      return 1
-    fi
-    fail "jq: Homebrew not found. Install Homebrew (https://brew.sh) then re-run, or set SKIP_BUNDLED_RUNTIME=1 to skip"
-    return 1
-  elif [[ "$os" == "Linux" ]]; then
-    if command -v apt-get >/dev/null 2>&1; then
-      say "jq: running 'sudo apt-get install -y jq'"
-      if sudo apt-get install -y jq; then
-        ok "jq: installed via apt-get"
-        return 0
-      fi
-      fail "jq: apt-get install failed — install manually or set SKIP_BUNDLED_RUNTIME=1"
-      return 1
-    fi
-    fail "jq: apt-get not found (non-Debian Linux?). Install jq manually, or set SKIP_BUNDLED_RUNTIME=1"
-    return 1
-  fi
-
-  fail "jq: unknown OS $os — install jq manually or set SKIP_BUNDLED_RUNTIME=1"
-  return 1
-}
-
-# ─── 3. ssh-agent has at least one identity ──────────────────────────────────
+# ─── 2. ssh-agent has at least one identity ──────────────────────────────────
 
 check_ssh_keys() {
   # macOS keychain integration loads keys lazily, so `ssh-add -l` may return
@@ -139,7 +94,6 @@ main() {
   say "checking prerequisites for 'pnpm dev:with-pilot'..."
   local exit_code=0
   ensure_cargo_git_cli || exit_code=$?
-  ensure_jq            || exit_code=$?
   check_ssh_keys                       # soft, never affects exit code
   if [[ "$exit_code" -ne 0 ]]; then
     fail "one or more prerequisites failed — fix above issues and retry"

@@ -10,5 +10,5 @@ async fn build_env_info_is_async_and_preserves_output_contract() {
     assert!(result.contains("[当前环境]"));
     assert!(result.contains("工作目录: /tmp/test-workspace"));
     assert!(result.contains("Platform:"));
-    assert!(result.contains("系统环境检测（未注入 AIjia 自带 Runtime）"));
+    assert!(result.contains("系统环境检测（未注入 AIjia 托管运行时）"));
 }

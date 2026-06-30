@@ -57,7 +57,7 @@ metadata:
 ### 1.2 参考模板解析
 
 如果模板是 DOCX：
-1. 用 `Bash` 执行 `TEMPLATE_PATH=<模板路径> python3 "$AIJIA_SKILL_DIR/references/parse_template.py"`（python3 来自内置运行时）
+1. 用 `Bash` 执行 `TEMPLATE_PATH=<模板路径> python3 "$AIJIA_SKILL_DIR/references/parse_template.py"`（python3 来自 AIjia 托管运行时）
 2. 拿到 `chapters`（章节大纲数组）和 `style_hint`（字体/颜色）
 
 如果模板是 PDF：

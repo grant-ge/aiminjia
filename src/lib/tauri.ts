@@ -2882,8 +2882,7 @@ export function cleanupOldRuntimeVersions(
 }
 
 export interface RuntimeDiagnostics {
-  activeResolver: "bundled" | "installed" | "none";
-  bundledVersion: string | null;
+  activeResolver: "installed" | "none";
   installedVersion: string | null;
   node: string;
   python: string;

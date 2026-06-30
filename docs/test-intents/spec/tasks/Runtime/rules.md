@@ -23,7 +23,7 @@ Runtime 意图不能只测用户明确说出 `managed runtime`、`npm prefix` �
 | 缺包补齐型 | “缺哪个库你自己补一下，别让我配置环境” | 裸 `python` / `node` / `uv` / `npm` 命中 managed runtime；见 `意图-Runtime-001`、`意图-Runtime-002` |
 | 新对话追问型 | “刚才那个工具再用一次，已经有了就别重新装” | 新对话复用 managed runtime 里的包，不重复安装；见 `意图-Runtime-001`、`意图-Runtime-002` |
 | 系统环境型 | “这次用我电脑系统里装的 Node/Python” / “不要用你自带的” | 不传额外工具参数；使用动态上下文里的系统绝对路径，或先通过系统命令探测路径；见 `意图-Runtime-005`、`意图-Runtime-008` |
-| 自带环境型 | “用你自己的环境跑一下” / “别动我电脑系统环境” | 不走 system 出口，默认裸命令命中 AIjia managed runtime；见 `意图-Runtime-009` |
+| 托管运行时型 | “用你自己的环境跑一下” / “别动我电脑系统环境” | 不走 system 出口，默认裸命令命中 AIjia 托管运行时；见 `意图-Runtime-009` |
 | 默认来源诊断型 | “你现在本地命令到底从哪来的？” | 通过真实命令输出判断默认路径，不复述说明；见 `意图-Runtime-004` |
 | 首次安装型 | “新电脑装好后 Runtime 面板有没有准备好？” | 首次启动后下载、解压、指针与设置页一致；见 `意图-Runtime-003` |
 
@@ -240,10 +240,10 @@ MCP stdio / Skill `!cmd` 属于真实入口，但当前缺少稳定 `tauri-pilot
 
 ---
 
-## 意图-Runtime-004: 默认命令环境，命中内置环境
+## 意图-Runtime-004: 默认命令环境，命中 AIjia 托管运行时
 
 **场景**
-用户让 AI 判断当前本地命令环境来自哪里。AI 要通过真实命令输出完成判断，而不是复述系统说明；在默认工具环境下，裸命令会命中 AIjia managed runtime。
+用户让 AI 判断当前本地命令环境来自哪里。AI 要通过真实命令输出完成判断，而不是复述系统说明；在默认工具环境下，裸命令会命中 AIjia 托管运行时。
 
 **操作步骤**
 1. 应用探活：`tauri-pilot aijia health-check`
@@ -290,7 +290,7 @@ MCP stdio / Skill `!cmd` 属于真实入口，但当前缺少稳定 `tauri-pilot
 
 ---
 
-## 意图-Runtime-005: 指定系统环境，不注入内置环境
+## 意图-Runtime-005: 指定系统环境，不注入 AIjia 托管运行时
 
 **场景**
 用户明确要求使用系统 Node / Python 环境。AI 要把“系统环境”和“AIjia Runtime”区分开：系统环境不可用时要说明不可用，不能悄悄改回 managed runtime。
@@ -327,10 +327,10 @@ MCP stdio / Skill `!cmd` 属于真实入口，但当前缺少稳定 `tauri-pilot
 
 ---
 
-## 意图-Runtime-006: 用户分析 CSV，Python 命中内置环境
+## 意图-Runtime-006: 用户分析 CSV，Python 命中 AIjia 托管运行时
 
 **场景**
-用户贴一段 CSV 数据，让 AI 做一次普通数据分析。用户不提 Runtime、不提 PATH，也不指定 Python 绝对路径；AI 在需要本地计算时使用默认命令环境，裸 Python 命中 AIjia managed runtime。
+用户贴一段 CSV 数据，让 AI 做一次普通数据分析。用户不提 Runtime、不提 PATH，也不指定 Python 绝对路径；AI 在需要本地计算时使用默认命令环境，裸 Python 命中 AIjia 托管运行时。
 
 **操作步骤**
 1. 应用探活：`tauri-pilot aijia health-check`
@@ -384,10 +384,10 @@ MCP stdio / Skill `!cmd` 属于真实入口，但当前缺少稳定 `tauri-pilot
 
 ---
 
-## 意图-Runtime-007: 用户格式化 JS，Node 包装进内置环境
+## 意图-Runtime-007: 用户格式化 JS，Node 包装进 AIjia 托管运行时
 
 **场景**
-用户让 AI 使用常见 Node CLI 工具格式化一段 JavaScript。用户不关心 Runtime 细节，只要求不要污染当前项目；AI 缺包时把 CLI 安装到 AIjia managed runtime 的 npm prefix，并用裸命令执行。
+用户让 AI 使用常见 Node CLI 工具格式化一段 JavaScript。用户不关心 Runtime 细节，只要求不要污染当前项目；AI 缺包时把 CLI 安装到 AIjia 托管运行时的 npm prefix，并用裸命令执行。
 
 **操作步骤**
 1. 应用探活：`tauri-pilot aijia health-check`
@@ -431,10 +431,10 @@ MCP stdio / Skill `!cmd` 属于真实入口，但当前缺少稳定 `tauri-pilot
 
 ---
 
-## 意图-Runtime-008: 用户要求电脑环境，不回落内置环境
+## 意图-Runtime-008: 用户要求电脑环境，不回落 AIjia 托管运行时
 
 **场景**
-用户用自然语言要求“用我电脑上的环境”。AI 使用动态上下文里的系统绝对路径，或先通过系统命令探测真实路径；系统命令不可用时给出不可用结论，不改用 AIjia managed runtime。
+用户用自然语言要求“用我电脑上的环境”。AI 使用动态上下文里的系统绝对路径，或先通过系统命令探测真实路径；系统命令不可用时给出不可用结论，不改用 AIjia 托管运行时。
 
 **操作步骤**
 1. 应用探活：`tauri-pilot aijia health-check`
@@ -466,10 +466,10 @@ MCP stdio / Skill `!cmd` 属于真实入口，但当前缺少稳定 `tauri-pilot
 
 ---
 
-## 意图-Runtime-009: 用户要求自带环境，命中内置环境
+## 意图-Runtime-009: 用户要求“自带环境”，命中 AIjia 托管运行时
 
 **场景**
-用户明确说“用你自带的运行环境”，不是默认模糊场景，也不是系统环境场景。AI 要把“AIjia 自带运行环境”和“电脑系统环境”区分开：在开关开启且 Runtime 可用时，裸 Node / Python 命令命中 AIjia managed runtime。
+用户明确说“用你自带的运行环境”，不是默认模糊场景，也不是系统环境场景。AI 要把用户口语里的“自带运行环境”落到“AIjia 托管运行时”，并和“电脑系统环境”区分开：在开关开启且 Runtime 可用时，裸 Node / Python 命令命中 AIjia 托管运行时。
 
 **操作步骤**
 1. 应用探活：`tauri-pilot aijia health-check`
@@ -480,7 +480,7 @@ MCP stdio / Skill `!cmd` 属于真实入口，但当前缺少稳定 `tauri-pilot
    这次请明确使用你自带的 AIjia 运行环境，不要用我电脑系统 PATH 里的 Node 或 Python。
    请实际运行命令检查 Node 和 Python 的版本与可执行路径。
    Windows 上用 node 和 python；macOS 或 Linux 上用 node 和 python3。
-   最后告诉我它们是否来自 AIjia 自带运行环境，并列出路径。
+   最后告诉我它们是否来自 AIjia 托管运行时，并列出路径。
    不要手写任何 Runtime 绝对路径。
    ```
 5. `tauri-pilot aijia send`

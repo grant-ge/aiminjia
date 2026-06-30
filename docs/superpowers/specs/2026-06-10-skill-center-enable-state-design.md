@@ -57,7 +57,7 @@
 “内置”不是企业/平台远端技能的全量列表，而是一组产品必须自带的基础技能 allowlist。第一版建议包含：
 
 - `skill-creator`：UI 可展示为 `create-skill`，用于引导用户创建新技能。
-- `dingtalk-workspace`：UI 可展示为 `dws` 或“玩转钉钉”，用于把用户口语里的钉钉需求映射到 DWS 能力；注意它不是 `src-tauri/resources/dws` 二进制本身，二进制仍走现有 bundled resource / connector 逻辑。
+- `dingtalk-workspace`：UI 可展示为 `dws` 或“玩转钉钉”，用于把用户口语里的钉钉需求映射到 DWS 能力；注意它不是 `src-tauri/resources/dws` 二进制本身，安装包不再内置 dws 二进制。
 
 实际落地时以远端包或 SKILL.md 的 `name` / `plugin_id` 为准。如果正式发布包 id 不是上面的字符串，需要在 allowlist 中使用真实 id，UI 再做展示名映射。
 

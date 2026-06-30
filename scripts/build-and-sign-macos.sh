@@ -1,8 +1,7 @@
 #!/bin/bash
 # macOS local end-to-end release: build → sign → notarize → staple → upload.
 #
-# Runs arm64 and x86_64 SERIALLY (Playwright/dws runtime symlinks are swapped
-# per arch via TARGET_ARCH=x86_64; parallel builds would clobber each other).
+# Runs arm64 and x86_64 serially to keep release logs and signing steps ordered.
 #
 # Usage:
 #   bash scripts/build-and-sign-macos.sh <version> <beta|release>
@@ -83,11 +82,9 @@ fi
 build_one_arch() {
     local arch="$1"        # aarch64 | x86_64
     local tauri_target=""  # extra --target flag for tauri build
-    local target_arch=""   # TARGET_ARCH env for setup scripts
 
     if [ "$arch" = "x86_64" ]; then
         tauri_target="--target x86_64-apple-darwin"
-        target_arch="x86_64"
     fi
 
     echo ""
@@ -95,51 +92,19 @@ build_one_arch() {
     echo "# Building $arch"
     echo "############################################################"
 
-    echo ""
-    echo "--- Setup dws CLI ($arch) ---"
-    DWS_NONINTERACTIVE=1 TARGET_ARCH="$target_arch" bash "$SCRIPT_DIR/setup-dws.sh"
-
-    echo ""
-    echo "--- Prepare bundled runtime ($arch) ---"
-    # Stash the OTHER platform's runtime out of resources/ so tauri bundle
-    # only ships the runtime that matches this build's CPU. Without this
-    # the .app for arm64 would carry darwin-x64/ too (and vice versa),
-    # nearly doubling installer size. Stash dir is restored by trap.
-    local plat_keep plat_stash
-    if [ "$arch" = "x86_64" ]; then
-        plat_keep="darwin-x64"
-        plat_stash="darwin-arm64"
-    else
-        plat_keep="darwin-arm64"
-        plat_stash="darwin-x64"
-    fi
-    PLATFORM="$plat_keep" bash "$SCRIPT_DIR/prepare-bundled-runtime.sh"
-
-    local stash_src="$PROJECT_DIR/src-tauri/resources/runtime/$plat_stash"
-    local stash_tmp=""
-    if [ -d "$stash_src" ]; then
-        stash_tmp="$(mktemp -d "/tmp/aijia-runtime-stash-XXXX")"
-        echo "  stashing $plat_stash -> $stash_tmp"
-        mv "$stash_src" "$stash_tmp/"
-        # Restore on any exit path so a failed build doesn't lose the stash
-        trap "[ -n '$stash_tmp' ] && [ -d '$stash_tmp/$plat_stash' ] && mv '$stash_tmp/$plat_stash' '$stash_src' && rmdir '$stash_tmp' 2>/dev/null; true" RETURN
-    fi
-
-    # Wipe stale runtime/ inside the previous .app at this target dir. tauri
-    # bundle reuses the target/.../bundle/macos/AIjia.app directory across
-    # builds and only OVERWRITES files — it never DELETES paths that existed
-    # in the previous build but not this one. So a leftover darwin-arm64/
-    # from a prior x64 build (before we added the stash) would survive into
-    # the next bundle, doubling installer size (~78MB extra). See
-    # docs/superpowers/specs/2026-05-19-intel-bundle-bloat.md.
     local target_subdir="release"
     if [ -n "$tauri_target" ]; then
         target_subdir="x86_64-apple-darwin/release"
     fi
-    local stale_app_runtime="$PROJECT_DIR/src-tauri/target/$target_subdir/bundle/macos/AIjia.app/Contents/Resources/runtime"
+    local stale_resources="$PROJECT_DIR/src-tauri/target/$target_subdir/bundle/macos/AIjia.app/Contents/Resources"
+    local stale_app_runtime="$stale_resources/runtime"
     if [ -d "$stale_app_runtime" ]; then
         echo "  pruning stale .app runtime/ at $stale_app_runtime"
         rm -rf "$stale_app_runtime"
+    fi
+    if [ -f "$stale_resources/dws" ]; then
+        echo "  pruning stale .app dws at $stale_resources/dws"
+        rm -f "$stale_resources/dws"
     fi
 
     echo ""
@@ -153,7 +118,7 @@ build_one_arch() {
 }
 
 # Run arm64 first (default tauri target on Apple Silicon), then x86_64.
-# Serial only — DO NOT parallelize (Playwright/dws symlinks).
+# Serial only — keep signing and upload output ordered.
 #
 # Set ARCH=aarch64 or ARCH=x86_64 to only build one arch (useful when the
 # other arch already succeeded and you need to retry the failed half).

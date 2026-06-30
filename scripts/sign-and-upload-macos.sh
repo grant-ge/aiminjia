@@ -184,11 +184,10 @@ fi
 
 # ── helpers: idempotency checks ──────────────────────────────────────────
 # Returns 0 if `.app` is already fully signed with Developer ID + hardened
-# runtime, including nested dws. Saves rework on a re-run.
+# runtime. Saves rework on a re-run.
 is_app_fully_signed() {
     local app="$1"
     local main_exe="$app/Contents/MacOS/aijia"
-    local dws="$app/Contents/Resources/dws"
 
     [ -f "$main_exe" ] || return 1
     local info
@@ -196,11 +195,6 @@ is_app_fully_signed() {
     echo "$info" | grep -q "flags=.*runtime" || return 1
     echo "$info" | grep -q "Authority=Developer ID Application" || return 1
 
-    if [ -f "$dws" ]; then
-        info=$(codesign -dv --verbose=4 "$dws" 2>&1)
-        echo "$info" | grep -q "flags=.*runtime" || return 1
-        echo "$info" | grep -q "Authority=Developer ID Application" || return 1
-    fi
     codesign --verify --deep --strict "$app" >/dev/null 2>&1 || return 1
     return 0
 }
@@ -250,7 +244,7 @@ echo "  Identity: $IDENTITY"
 # Idempotency: if the .app is already fully signed, skip the codesign loop.
 SKIP_APP_SIGN=0
 if [ -n "$APP" ] && is_app_fully_signed "$APP"; then
-    echo "  ✓ .app already fully signed (hardened runtime + timestamp + nested dws)"
+    echo "  ✓ .app already fully signed (hardened runtime + timestamp)"
     echo "    Skipping codesign loop."
     SKIP_APP_SIGN=1
 fi
@@ -287,30 +281,6 @@ if [ -n "$APP" ] && [ "$SKIP_APP_SIGN" = "0" ]; then
     echo "  Verifying signature..."
     codesign --verify --deep --strict --verbose=2 "$APP"
 
-    # Bundled runtime guard: every Mach-O under Resources/runtime/ MUST have
-    # the hardened runtime flag, otherwise Apple notarization rejects the .app.
-    # The inside-out loop above already covers them via the generic file walk,
-    # but if a future tarball ships a Mach-O the walk misses (e.g. nested in an
-    # unusual extension), this loop fails loudly with the exact path.
-    runtime_root="$APP/Contents/Resources/runtime"
-    if [ -d "$runtime_root" ]; then
-        echo "  Auditing bundled runtime signatures under $runtime_root..."
-        unsigned_count=0
-        while IFS= read -r -d '' bin; do
-            if file -b "$bin" | grep -qE "Mach-O|universal binary"; then
-                flags=$(codesign -dv --verbose=4 "$bin" 2>&1 | grep -oE "flags=[^[:space:]]*" || echo "")
-                if ! echo "$flags" | grep -q "runtime"; then
-                    echo "    ✗ NOT hardened: $bin"
-                    unsigned_count=$((unsigned_count + 1))
-                fi
-            fi
-        done < <(find "$runtime_root" -type f -print0)
-        if [ "$unsigned_count" -gt 0 ]; then
-            echo "ERROR: $unsigned_count bundled runtime Mach-O binaries lack hardened runtime — notarization will fail." >&2
-            exit 1
-        fi
-        echo "  ✓ All bundled runtime Mach-O binaries are hardened-runtime signed"
-    fi
 fi
 
 # ── 1b. Rebuild DMG from signed .app ──

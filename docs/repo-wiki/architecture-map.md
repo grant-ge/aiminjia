@@ -8,7 +8,7 @@
 - `CLAUDE.md`: 日常编码、分层、事件协议、工具和发布入口约束。
 - `docs/README.md`: 文档导航和归档策略。
 - `docs/architecture-blueprint.md`: Runtime-first 架构蓝图。
-- `docs/decisions/runtime-decisions.md`: Runtime、网关、成本、bundled runtime 等决策。
+- `docs/decisions/runtime-decisions.md`: Runtime、网关、成本、managed runtime 等决策。
 - `docs/decisions/ui-platform-decisions.md`: UI 和平台兼容决策。
 - `docs/decisions/employee-system-decisions.md`: 数字员工和 skill bundle 决策。
 

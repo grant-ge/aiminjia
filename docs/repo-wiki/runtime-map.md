@@ -144,13 +144,14 @@ MCP 链路：
 
 构建/运行链路：
 
-1. `package.json` pre hook 调 `scripts/ensure-bundled-runtime.mjs`。
-2. `scripts/runtime-sources.json` 固定 Node/Python/uv 源和版本。
-3. `scripts/prepare-bundled-runtime.sh` / `.ps1` 产出 resources/runtime。
-4. `src-tauri/src/runtime/dependencies/chain_resolver.rs` 串联 resolver。
-5. `bundled_resolver.rs`、installed/cache/current pointer 决定可用运行时。
-6. `manager.rs` 负责 ensure/install/reinstall/health/diagnostics。
-7. `src/components/settings/panels/RuntimePanel.tsx` 展示诊断结果。
+1. `src-tauri/src/runtime/dependencies/config.rs` 提供默认 OSS manifest URL 和环境变量覆盖。
+2. `manifest_client.rs` / `artifact_fetcher.rs` 从 manifest 解析并下载 runtime artifact。
+3. `installer.rs` 解压、校验、smoke test，并切换 `renlijia-primary-runtime/current`。
+4. `resolver.rs` 读取本机 cache/current pointer，返回 Node/Python/uv 绝对路径。
+5. `manager.rs` 负责 ensure/install/reinstall/health/diagnostics；安装包内置 Node/Python/uv fallback 已移除。
+6. `command_env.rs` 在用户开关开启时为 Bash/PowerShell/MCP/Skill `!cmd` 注入 managed runtime PATH。
+7. `src/components/settings/panels/RuntimePanel.tsx` 展示托管 runtime 开关和诊断结果。
+8. `src-tauri/tauri.conf.json` 不再打包 `resources/runtime` 或 `resources/dws`；`src-tauri/src/connector/dingtalk.rs` 的直接 DWS bridge 只从系统 PATH 查找 `dws`，而技能内联命令仍可通过 managed runtime env 使用托管命令环境。
 
 ## Storage And Path Auth
 

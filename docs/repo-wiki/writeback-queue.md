@@ -25,7 +25,7 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 | WB-2026-06-04-004 | test-intents / AEIT / `aijia` CLI | P2 | validated | Kant + Descartes / gpt-5.3-codex-spark | `.understand-anything/enhancements/test-intents-aijia-cli.json` | enhancement 已合并，`testing-and-commands.md` 有入口，coverage 已升级 |
 | WB-2026-06-04-005 | Release / signing pipeline | P3 | deferred | 未派发 | `.understand-anything/enhancements/release-signing-pipeline.json` | P1/P2 完成后再补，避免本轮过宽 |
 | WB-2026-06-04-006 | Storage / workspace / path auth / file preview | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/storage-app-data-contract.json` | 基于目标 main 源码补 app data root contract enhancement，更新 runtime/source/coverage/log 并通过校验 |
-| WB-2026-06-04-007 | Managed runtime supply chain | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/managed-runtime-cache-reinstall.json` | 基于目标 main 源码补 runtime cache reinstall / bundled fallback 行为，更新 runtime-map/coverage/log 并通过校验 |
+| WB-2026-06-04-007 | Managed runtime supply chain | P1 | validated | 主线程 / current source | `.understand-anything/enhancements/managed-runtime-supply-chain.json` | cache/manifest/no fallback/env 注入事实已合并，runtime-map/coverage/log 已更新并通过 RepoWiki 校验 |
 | WB-2026-06-15-001 | Shell auto-background / background task IO | P1 | validated | Dirac + Lagrange + Russell / gpt-5.3-codex-spark + gpt-5.4 + gpt-5.4-mini | `.understand-anything/enhancements/runtime-shell-auto-background.json` | enhancement 已合并，runtime-map/coverage/index/log 已更新并通过 RepoWiki 校验 |
 | WB-2026-06-15-002 | Agent foreground auto-background | P1 | validated | 主线程 / current main source | `.understand-anything/enhancements/runtime-agent-foreground-auto-background.json` | main 已实现 foreground Agent promotion，enhancement/runtime-map/coverage 已更新并通过校验 |
 | WB-2026-06-15-003 | LLM gateway / provider / streaming | P1 | validated | 主线程 / origin-main@c4bcc8b7 | `.understand-anything/enhancements/llm-visible-reply-language-anchor.json` | target-branch enhancement 已合并，runtime-map/coverage/index/log 已更新并通过 RepoWiki 校验 |
@@ -76,10 +76,11 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 
 ### WB-2026-06-04-007
 
-- Trigger: user指出可以从 main/tag/commit 里发现重要 wiki 补充点；按 `v0.5.33..main` 排查后发现 runtime cache reinstall / bundled fallback 行为超出现有 managed runtime wiki 颗粒度。
-- Engineering question: 运行时依赖缺失、缓存损坏、用户安装过的 runtime package 被误覆盖、manifest 下载失败或 bundled fallback 触发时，`RuntimeManager` 如何决定保留现有 cache、从 bundled runtime bootstrap、还是执行 reinstall。
-- Current boundary: 当前 wiki 工作树不在 local `main`；补 enhancement 前应在目标 main 上读取源码和测试，确认 `current_cache_result_if_available`、`install_from_bundled_fallback`、`ensure_managed`、`reinstall_managed` 与 runtime Tauri commands 的真实链路。
-- Evidence from tag intake: `git grep main current_cache_result_if_available -- src-tauri/src/runtime/dependencies src-tauri/tests`、`git show main:src-tauri/tests/runtime_dependencies_manager_test.rs`。
+- Trigger: user指出可以从 main/tag/commit 里发现重要 wiki 补充点；按 `v0.5.33..main` 排查后发现 runtime cache reinstall 行为超出现有 managed runtime wiki 颗粒度。
+- Engineering question: 运行时依赖缺失、缓存损坏、用户安装过的 runtime package 被误覆盖、manifest 下载失败时，`RuntimeManager` 如何决定保留现有 cache、下载 OSS artifact、还是执行 reinstall。
+- Current boundary: 安装包随带 Node/Python/uv fallback、`resources/runtime`、`resources/dws`、`BundledRuntimeResolver` 和 `ChainResolver` 已从当前源码/打包入口移除；OSS manifest 下载到本机 cache 的 AIjia 托管运行时保留。
+- Evidence: `src-tauri/src/runtime/dependencies/manager.rs`、`src-tauri/src/runtime/dependencies/command_env.rs`、`src-tauri/src/lib.rs`、`src-tauri/tauri.conf.json`、`src-tauri/tests/runtime_dependencies_manager_test.rs`、`src-tauri/tests/runtime_dependencies_no_legacy_resource_test.rs`、`src-tauri/tests/managed_runtime_process_env_test.rs`。
+- Execution note: 已重写 `managed-runtime-supply-chain.json`，定向清理 `.understand-anything/knowledge-graph.json` 中旧 bundled runtime / setup-dws / resources/dws 文件节点、相关边和旧 guided tour，再重新应用 enhancement。
 
 ### WB-2026-06-15-001
 

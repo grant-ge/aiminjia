@@ -50,8 +50,6 @@ tauri-plugin-pilot = { path = "/Users/a20250311/github/tauri-pilot/crates/tauri-
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/d633/lotus-app
-# 0. 准备 bundled runtime（aijia 自己的构建依赖，~85MB 下载）
-bash scripts/prepare-bundled-runtime.sh
 
 # 1. 改 Cargo.toml 为本地路径（见上）
 
@@ -198,7 +196,7 @@ tauri-plugin-pilot = {
 | Cargo.lock 大量改动 | 中 | 已通过 `cargo update tauri-plugin --precise` 最小化影响 |
 | release 包含 e2e 代码 | **无** | `cfg(debug_assertions)` 已保证 |
 | CI macOS 跑不通 | 低 | tauri-pilot CI 在 macos-latest 持续绿（v0.5.2） |
-| aijia 自己的 `resources/runtime` 缺失 | 中 | 跑 `prepare-bundled-runtime.sh` 即解决 |
+| managed runtime cache 缺失 | 中 | 首次使用时由 RuntimeManager 通过 OSS manifest 下载 |
 
 ---
 
@@ -207,14 +205,13 @@ tauri-plugin-pilot = {
 ✅ release 包零增量代码：`#[cfg(debug_assertions)]` 屏蔽 plugin 注册
 ✅ release 包零代码：tauri-pilot 自身在 `cfg(not(debug_assertions))` 是 no-op
 ✅ 不影响签名 / 公证 / 上传 OSS / Tauri updater
-✅ 不影响 bundled runtime（Node / Python / uv）
+✅ 不影响 managed runtime（Node / Python / uv）
 ✅ 不修改 main 分支（所有改动在 `try/tauri-pilot-poc`）
 
 ---
 
 ## 当前任务清单（按顺序）
 
-- [ ] 跑 `bash scripts/prepare-bundled-runtime.sh` 准备 aijia 内置运行时
 - [ ] `Cargo.toml` 改为本地路径依赖（脱钩 git）
 - [ ] `cargo check` / `pnpm tauri:dev` 验证编译
 - [ ] `tauri-pilot ping` + `screenshot` 验证全链路

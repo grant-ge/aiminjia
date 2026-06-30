@@ -464,30 +464,16 @@ pub fn run() {
             let platform = runtime::dependencies::RuntimePlatform::current()
                 .expect("Failed to identify managed runtime platform");
             let manifest_url = runtime::dependencies::configured_runtime_manifest_url();
-
-            // Bundled runtime: shipped inside the installer at
-            // `<resource_dir>/runtime/<platform>/{node,python,uv}/...`.
-            // Populated at build time by `scripts/prepare-bundled-runtime.{sh,ps1}`.
-            // When available, this avoids the OSS download on first launch entirely.
             let resource_dir = app
                 .path()
                 .resource_dir()
                 .unwrap_or_else(|_| aijia_home.root().to_path_buf());
-            let bundled_resolver =
-                runtime::dependencies::BundledRuntimeResolver::new(resource_dir.clone());
-            let bundled_version = bundled_resolver.bundled_version();
-            log::info!(
-                "[runtime] bundled resolver mounted at {} (version={:?})",
-                resource_dir.display(),
-                bundled_version
-            );
 
             let runtime_manager: runtime::dependencies::ManagedRuntimeManager = Arc::new(
                 runtime::dependencies::RuntimeManager::new(
                     runtime_paths.clone(),
                     env!("CARGO_PKG_VERSION"),
                 )
-                .with_bundled_fallback(bundled_resolver.clone())
                 .with_manifest_source(
                     runtime::dependencies::RuntimeManifestSource::Url(manifest_url),
                     "primary",

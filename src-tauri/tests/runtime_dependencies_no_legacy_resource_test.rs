@@ -8,4 +8,12 @@ fn tauri_config_does_not_package_legacy_python_runtime_resource() {
         !config.contains("python-runtime"),
         "python-runtime is legacy and must not be packaged as an app resource"
     );
+    assert!(
+        !config.contains("resources/runtime"),
+        "installer-bundled Node/Python/uv runtime must not be packaged as an app resource"
+    );
+    assert!(
+        !config.contains("resources/dws"),
+        "installer-bundled dws CLI must not be packaged as an app resource"
+    );
 }

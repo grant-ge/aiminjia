@@ -1,5 +1,11 @@
 # RepoWiki Log
 
+## 2026-06-30
+
+- Rebuilt `managed-runtime-supply-chain.json` from current source after removing installer-bundled Node/Python/uv fallback and bundled `dws` sidecar. Current evidence now points at OSS manifest/cache runtime, `RuntimeManager`, `ManagedRuntimeProcessEnv`, runtime diagnostics, no-legacy-resource tests and settings/dynamic-context wiring.
+- Cleaned stale graph nodes for deleted files: `scripts/ensure-bundled-runtime.mjs`, `scripts/prepare-bundled-runtime.{sh,ps1}`, `scripts/runtime-sources.json`, `scripts/setup-dws.{sh,ps1}`, `src-tauri/src/runtime/dependencies/{bundled_resolver,chain_resolver}.rs`, `src-tauri/tests/bundled_runtime_resolver_test.rs` and `src-tauri/resources/dws`.
+- Re-applied Understand-Anything enhancements and updated `runtime-map.md`, `coverage-manifest.md` and `writeback-queue.md`; `WB-2026-06-04-007` is now validated against current source. Residual `BundledRuntimeResolver` / `bundledVersion` mentions in the active graph are explicit negative statements, not current architecture nodes.
+
 ## 2026-06-15
 
 - Confirmed `origin/main` / local `main` at `1744d119` contains the RepoWiki merge (`e043aa57`) and the original Understand-Anything RepoWiki branch (`f60bbfe9`).
@@ -32,7 +38,7 @@
 - Added `test-intents-aijia-cli.json` for AEIT/test-intents, `aijia` CLI entrypoints, repo-local intent skills and rules/report navigation. Graph snapshot after merge: 9320 nodes, 10121 edges, 25 layers, 90 guided tour steps, 329 LLM-enhanced nodes, 93 architecture review nodes and 19 enhancement files.
 - Added `billing-subscription-account-network.json`, `tauri-command-event-contracts.json` and `user-scope-auth-storage-boundary.json` for billing/account/network, cross-layer IPC/event contracts and user-scope auth/storage boundaries. Graph snapshot after merge: 9337 nodes, 10232 edges, 25 layers, 100 guided tour steps, 367 LLM-enhanced nodes, 110 architecture review nodes and 22 enhancement files.
 - Added `context-budget-truncation-matrix.json` for long-dialogue forgetting, hardcoded context budgets, effectiveness labels and local compact-boundary troubleshooting. Updated UserWiki troubleshooting mirrors and corrected QueryEngine budget wording from unconfirmed to ordinary chat main chain not wired. Graph snapshot after merge: 9343 nodes, 10274 edges, 25 layers, 105 guided tour steps, 382 LLM-enhanced nodes, 116 architecture review nodes and 23 enhancement files.
-- Added a tag/commit intake rule to `wiki-maintainer` and queued two main-delta writebacks from `v0.5.33..main` / `v0.5.33..origin/main`: app data root contract and runtime cache reinstall / bundled fallback. These remain candidate items until the target main source tree is used for current-source enhancement and validation.
+- Added a tag/commit intake rule to `wiki-maintainer` and queued two main-delta writebacks from `v0.5.33..main` / `v0.5.33..origin/main`: app data root contract and runtime cache reinstall. These remain candidate items until the target main source tree is used for current-source enhancement and validation.
 
 ## 2026-06-03
 

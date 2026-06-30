@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { getSettings, runtimeDiagnostics, type RuntimeDiagnostics, updateSettings } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/common/Switch'
+import { getSettings, runtimeDiagnostics, type RuntimeDiagnostics, updateSettings } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
-
 
 function useResolverLabel(): Record<RuntimeDiagnostics['activeResolver'], string> {
   const { t } = useTranslation()
   return {
-    bundled: t('settings.runtime.bundled'),
-    installed: t('settings.runtime.upgraded'),
+    installed: t('settings.runtime.installed'),
     none: t('settings.runtime.unavailable'),
   }
 }
@@ -113,10 +111,7 @@ export function RuntimePanel() {
           <dt className="text-muted-foreground">{t('settings.runtime.source')}</dt>
           <dd className="font-mono text-foreground">{RESOLVER_LABEL[data.activeResolver]}</dd>
 
-          <dt className="text-muted-foreground">{t('settings.runtime.bundledVersion')}</dt>
-          <dd className="font-mono text-foreground">{data.bundledVersion ?? '—'}</dd>
-
-          <dt className="text-muted-foreground">{t('settings.runtime.upgradedVersion')}</dt>
+          <dt className="text-muted-foreground">{t('settings.runtime.installedVersion')}</dt>
           <dd className="font-mono text-foreground">{data.installedVersion ?? '—'}</dd>
 
           <dt className="text-muted-foreground">Node</dt>

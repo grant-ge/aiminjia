@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-// Tauri dev 启动封装：保留内置 runtime 自检、Cargo 增量编译，并按端口隔离 dev 身份。
+// Tauri dev 启动封装：保留 Cargo 增量编译，并按端口隔离 dev 身份。
 
-import { spawn, spawnSync } from 'node:child_process'
-import { dirname, join, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const projectDir = dirname(scriptDir)
-const ensureRuntimeScript = join(scriptDir, 'ensure-bundled-runtime.mjs')
 const tauriCliScript = resolve(projectDir, 'node_modules/@tauri-apps/cli/tauri.js')
 const DEFAULT_PORT = 5173
 
@@ -49,21 +48,6 @@ function parsePortValue(value) {
   }
 
   return port
-}
-
-const ensureResult = spawnSync(process.execPath, [ensureRuntimeScript], {
-  cwd: projectDir,
-  env: process.env,
-  stdio: 'inherit',
-})
-
-if (ensureResult.error) {
-  console.error(`[tauri-dev] 启动 runtime 自检失败：${ensureResult.error.message}`)
-  process.exit(1)
-}
-
-if ((ensureResult.status ?? 1) !== 0) {
-  process.exit(ensureResult.status ?? 1)
 }
 
 const env = { ...process.env }

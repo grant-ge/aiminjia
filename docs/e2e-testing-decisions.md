@@ -149,7 +149,7 @@ tauri-pilot aijia chat "你好"
 | `src-tauri/Cargo.lock` | 自动升 `tauri-plugin` 子依赖到 2.6.1 |
 | `src-tauri/capabilities/default.json` | +1 行 `"pilot:default"` |
 | `src-tauri/src/lib.rs` | +8 行 `cfg(debug_assertions)` 注册 plugin |
-| `src-tauri/resources/runtime/darwin-arm64/` | 创建空目录（绕过 build script 检查；dev 模式按需从 OSS 下，不影响实际功能） |
+| managed runtime cache | dev 模式按需从 OSS manifest 下载，不依赖安装包内置 runtime 资源 |
 
 ### 验证结果
 

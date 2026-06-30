@@ -6,103 +6,166 @@
     {
       "filePath": "src-tauri/src/runtime/session_runtime.rs",
       "summary": "Chat turn 的会话级入口，创建 TurnState、复用或隔离 QueryEngine，并调用 chat turn driver。",
-      "tags": ["runtime", "session", "conversation", "cost"],
+      "tags": [
+        "runtime",
+        "session",
+        "conversation",
+        "cost"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
       "summary": "Chat turn 主执行状态机，串起 prompt snapshot、动态 context、消息预处理、LLM step、usage 汇总和完成事件。",
-      "tags": ["runtime", "prompt", "context", "compaction", "cost"],
+      "tags": [
+        "runtime",
+        "prompt",
+        "context",
+        "compaction",
+        "cost"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/transport/tauri_commands/chat.rs",
       "summary": "Tauri chat 命令与 RuntimeLlmExecutor 实现，负责历史装载、provider 流式结果落地和 compact boundary 持久化。",
-      "tags": ["transport", "runtime", "history", "provider"],
+      "tags": [
+        "transport",
+        "runtime",
+        "history",
+        "provider"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/prompt/sections.rs",
       "summary": "PromptAssembler 所在文件，定义 system prompt 静态块、会话动态块和易变块的拼装顺序。",
-      "tags": ["prompt", "system-prompt", "cache"],
+      "tags": [
+        "prompt",
+        "system-prompt",
+        "cache"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/llm/prompts.rs",
       "summary": "Prompt 兼容入口，源码注释明确 build_system_prompt_parts 是唯一 system prompt 组装入口并委托新 prompt 体系。",
-      "tags": ["prompt", "compat", "assembly"],
+      "tags": [
+        "prompt",
+        "compat",
+        "assembly"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/context_builder.rs",
       "summary": "Iteration 级动态上下文构建器，拼接 core/project memory、workspace、file、connector 和 skill catalog 等材料。",
-      "tags": ["context", "memory", "prompt-cache"],
+      "tags": [
+        "context",
+        "memory",
+        "prompt-cache"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/preprocess.rs",
       "summary": "LLM 前消息预处理总入口，依次处理 tool-result budget、microcompact、collapse 和 auto compact。",
-      "tags": ["preprocess", "compaction", "history"],
+      "tags": [
+        "preprocess",
+        "compaction",
+        "history"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/compaction.rs",
       "summary": "Compact artifact 结构与规则定义处，生成 compact boundary、isCompactSummary 和 tail round 语义。",
-      "tags": ["compaction", "summary", "boundary"],
+      "tags": [
+        "compaction",
+        "summary",
+        "boundary"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/compact_client.rs",
       "summary": "独立 compact summary 客户端抽象，让总结生成从主 executor trait 中隔离出来。",
-      "tags": ["compaction", "summary-client", "llm"],
+      "tags": [
+        "compaction",
+        "summary-client",
+        "llm"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/history.rs",
       "summary": "运行前历史重建器，应用 compact boundary、过滤 error 消息、回放 tool 链接，并把 summary 注入为 synthetic user context。",
-      "tags": ["history", "conversation", "compaction"],
+      "tags": [
+        "history",
+        "conversation",
+        "compaction"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/runtime/query_engine.rs",
       "summary": "Session 级 usage、permission 和 budget 状态容器，负责 token 聚合、成本估算和预算判断。",
-      "tags": ["query-engine", "usage", "budget", "cost"],
+      "tags": [
+        "query-engine",
+        "usage",
+        "budget",
+        "cost"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/llm/streaming.rs",
       "summary": "Provider 统一流式协议与 TokenUsage 定义，是 usage/cost 从 provider 回到 runtime 的契约。",
-      "tags": ["llm", "streaming", "usage"],
-      "complexity": "medium"
-    },
-    {
-      "filePath": "src-tauri/src/llm/providers/claude.rs",
-      "summary": "Anthropic SSE provider，从事件中提取 input/output/cache usage 并回传统一 StreamEvent::Done。",
-      "tags": ["provider", "claude", "usage"],
+      "tags": [
+        "llm",
+        "streaming",
+        "usage"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
       "summary": "AIjia gateway v2 provider，从 gateway SSE usage 字段提取 input/output/cache usage 并映射到统一 usage 结构。",
-      "tags": ["provider", "gateway", "usage"],
+      "tags": [
+        "provider",
+        "gateway",
+        "usage"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src-tauri/src/runtime/events.rs",
       "summary": "Runtime 事件契约，TurnCompleted 定义总 token、cache token 和 estimated cost 字段。",
-      "tags": ["events", "contract", "cost"],
+      "tags": [
+        "events",
+        "contract",
+        "cost"
+      ],
       "complexity": "low"
     },
     {
       "filePath": "src-tauri/src/transport/tauri_event_adapter.rs",
       "summary": "Rust runtime 事件到前端 turn:completed payload 的桥接层，把 usage/cost 字段转换为前端事件。",
-      "tags": ["transport", "events", "frontend-contract"],
+      "tags": [
+        "transport",
+        "events",
+        "frontend-contract"
+      ],
       "complexity": "medium"
     },
     {
       "filePath": "src/hooks/useStreaming.ts",
       "summary": "前端 turn:completed 的主要消费者，负责 busy state 清理、toast 和 lastTurnSummary 写入。",
-      "tags": ["frontend", "streaming", "cost"],
+      "tags": [
+        "frontend",
+        "streaming",
+        "cost"
+      ],
       "complexity": "medium"
     }
   ],
@@ -192,13 +255,6 @@
       "weight": 0.97
     },
     {
-      "sourceFilePath": "src-tauri/src/llm/providers/claude.rs",
-      "targetFilePath": "src-tauri/src/llm/streaming.rs",
-      "type": "transforms",
-      "reason": "Claude provider 把 Anthropic SSE usage 映射到统一 TokenUsage。",
-      "weight": 0.9
-    },
-    {
       "sourceFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
       "targetFilePath": "src-tauri/src/llm/streaming.rs",
       "type": "transforms",
@@ -242,8 +298,7 @@
       "description": "context_builder 负责 memory、workspace、file、connector、skill catalog 等动态材料，目的是保持 static prompt prefix 稳定，提升 prompt/KV cache 稳定性。",
       "evidence": [
         "src-tauri/src/runtime/chat/context_builder.rs",
-        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
-        "src-tauri/tests/plan_aa_prompt_caching_test.rs"
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs"
       ]
     },
     {
@@ -277,7 +332,6 @@
       "title": "成本核算是 session 级累计并包含 cache token 权重",
       "description": "provider 上报 input/output/cache_creation/cache_read；driver 把 step usage 累加到 QueryEngine；estimated_cost_usd 对 cache write 和 cache read 使用不同权重估算。",
       "evidence": [
-        "src-tauri/src/llm/providers/claude.rs",
         "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
         "src-tauri/src/runtime/chat/chat_turn_driver.rs",
         "src-tauri/src/runtime/query_engine.rs",
@@ -332,7 +386,6 @@
       "description": "从 provider TokenUsage 到 QueryEngine 累计，再经 TurnCompleted 和 Tauri event adapter 到前端 useStreaming。",
       "filePaths": [
         "src-tauri/src/llm/streaming.rs",
-        "src-tauri/src/llm/providers/claude.rs",
         "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
         "src-tauri/src/runtime/events.rs",
         "src-tauri/src/transport/tauri_event_adapter.rs",
@@ -344,12 +397,21 @@
     {
       "title": "QueryEngine 预算阈值普通 chat 主链未接入",
       "description": "QueryEngine::with_max_budget_usd 和 with_cost_per_1k_tokens 当前主要由测试覆盖；已读普通 chat 构造链未发现生产预算阈值注入点，因此不应再标成待确认。",
-      "evidence": ["src-tauri/src/runtime/query_engine.rs", "src-tauri/src/runtime/session_runtime.rs", "src-tauri/tests/plan_o_queryengine_session_state_test.rs"]
+      "evidence": [
+        "src-tauri/src/runtime/query_engine.rs",
+        "src-tauri/src/runtime/session_runtime.rs",
+        "src-tauri/tests/plan_o_queryengine_session_state_test.rs"
+      ]
     },
     {
       "title": "cache token 前端 summary 写入存在断点",
       "description": "TurnCompletedPayload 和 TurnSummary 有 cache token 字段，但 useStreaming 的 setLastTurnSummary 未写入这些字段，相关 integration test 也未覆盖。",
-      "evidence": ["src/lib/tauri.ts", "src/stores/streamingStore.ts", "src/hooks/useStreaming.ts", "src/hooks/useStreaming.integration.test.tsx"]
+      "evidence": [
+        "src/lib/tauri.ts",
+        "src/stores/streamingStore.ts",
+        "src/hooks/useStreaming.ts",
+        "src/hooks/useStreaming.integration.test.tsx"
+      ]
     }
   ]
 }

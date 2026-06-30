@@ -1,42 +1,37 @@
 {
   "module": "managed-runtime-supply-chain-and-diagnostics",
-  "coverage": "代码/脚本/测试来源：runtime dependencies installer/resolver/manager/layout/fetcher/downloader/manifest/bundled resolver/health/provider，runtime Tauri commands，bundled runtime prepare/ensure/build scripts，package runtime scripts 与 runtime_dependencies 相关测试。",
+  "source_basis": "code-tests-only",
+  "coverage": "代码/脚本/测试来源：runtime dependencies config/manifest/fetcher/downloader/installer/resolver/manager/layout/health/command_env，runtime Tauri commands，runtime artifact 发布脚本，package scripts，Tauri bundle resources，managed runtime env / no legacy resource / manager / diagnostics 相关测试。安装包随带 Node/Python/uv fallback 与内置 dws 二进制已经移除；当前运行期保留 OSS manifest 下载到本机 cache 的 AIjia 托管运行时。",
   "key_nodes": [
     {
       "filePath": "package.json",
-      "summary": "runtime 相关 pre scripts 统一在 tauri dev/build 前触发 ensure:runtime，把 bundled runtime 准备前置到开发和构建入口。",
-      "tags": ["runtime", "scripts", "preflight", "package"],
+      "summary": "当前 package scripts 不再有 ensure:runtime、pretauri:build 或 prepare bundled runtime 前置步骤；开发和构建入口直接走 tauri-dev/tauri build，运行期 runtime 由 RuntimeManager 管理。",
+      "tags": ["runtime", "scripts", "package", "no-bundled-fallback"],
       "complexity": "moderate"
     },
     {
-      "filePath": "scripts/ensure-bundled-runtime.mjs",
-      "summary": "按平台检查 resources/runtime/<platform>/bundled-version.json 是否匹配 runtime-sources.json，不匹配时才调 prepare 脚本进入慢路径。",
-      "tags": ["runtime", "bundled", "guard-script", "cache"],
-      "complexity": "moderate"
-    },
-    {
-      "filePath": "scripts/prepare-bundled-runtime.sh",
-      "summary": "macOS/Unix bundled runtime 准备脚本，从 runtime-sources.json 拉取 Node/Python/uv，校验 sha256，解包并写入 bundled-version.json。",
-      "tags": ["runtime", "bundled", "shell", "supply-chain"],
-      "complexity": "high"
-    },
-    {
-      "filePath": "scripts/prepare-bundled-runtime.ps1",
-      "summary": "Windows bundled runtime 准备脚本，承担与 shell 版本对应的平台依赖下载、校验、解包和资源目录落盘。",
-      "tags": ["runtime", "bundled", "powershell", "supply-chain"],
-      "complexity": "high"
-    },
-    {
-      "filePath": "scripts/runtime-sources.json",
-      "summary": "bundled runtime 上游输入清单，钉住 Node/Python/uv 的下载 URL 和 sha256，是构建期供应链的 source of truth。",
-      "tags": ["runtime", "sources", "checksum", "supply-chain"],
+      "filePath": "src-tauri/tauri.conf.json",
+      "summary": "Tauri bundle resources 当前只声明 prompts，不再把 resources/runtime 或 resources/dws 打入安装包，是删除随包兜底 runtime 和内置 dws 的打包边界。",
+      "tags": ["runtime", "tauri", "bundle", "resources"],
       "complexity": "moderate"
     },
     {
       "filePath": "scripts/runtime/build-runtime-artifact.sh",
-      "summary": "把已准备的 runtime 目录重新打包成平台产物，并生成包含 URL、sha256、size 和 archiveFormat 的 manifest fragment。",
-      "tags": ["runtime", "artifact", "manifest", "packaging"],
+      "summary": "发布侧脚本把已经准备好的 runtime 目录打包成平台 artifact 与 manifest fragment；应用侧只消费 manifest 指向的 artifact，不在用户机器上拼装生产 runtime。",
+      "tags": ["runtime", "artifact", "manifest", "release"],
       "complexity": "moderate"
+    },
+    {
+      "filePath": "scripts/runtime/README.md",
+      "summary": "记录托管 runtime artifact 发布流程：准备 node/python/uv 目录、生成 tar.gz 和 manifest fragment、应用侧下载校验解压并切 current。",
+      "tags": ["runtime", "artifact", "docs", "supply-chain"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/dependencies/config.rs",
+      "summary": "提供默认 Renlijia OSS runtime manifest URL，并允许 RENLIJIA_RUNTIME_MANIFEST_URL 覆盖，是保留 OSS 托管运行时的配置入口。",
+      "tags": ["runtime", "manifest", "oss", "config"],
+      "complexity": "simple"
     },
     {
       "filePath": "src-tauri/src/runtime/dependencies/manifest.rs",
@@ -48,92 +43,120 @@
       "filePath": "src-tauri/src/runtime/dependencies/artifact_fetcher.rs",
       "summary": "解析 manifest artifact，限制 URL 信任边界，并把 file/https artifact 转换成 installer 可消费的 archive 路径和校验信息。",
       "tags": ["runtime", "artifact-fetcher", "download", "trust-boundary"],
-      "complexity": "high"
+      "complexity": "complex"
     },
     {
       "filePath": "src-tauri/src/runtime/dependencies/downloader.rs",
       "summary": "managed runtime 下载器，支持 part/meta 文件、重试、取消和进度回调，是 manifest https 下载流的执行层。",
       "tags": ["runtime", "downloader", "retry", "progress"],
-      "complexity": "high"
+      "complexity": "complex"
     },
     {
       "filePath": "src-tauri/src/runtime/dependencies/installer.rs",
       "summary": "负责把 artifact 或 dev stub 落到 bundle_root/versions/<bundleVersion>，校验 payload、可选 smoke test，并原子切换 current 指针。",
       "tags": ["runtime", "installer", "current-pointer", "smoke-test"],
-      "complexity": "high"
+      "complexity": "complex"
     },
     {
       "filePath": "src-tauri/src/runtime/dependencies/resolver.rs",
       "summary": "InstalledRuntimeResolver 从 bundle_root/current 读版本指针，按 RuntimeLayout 解析 WorkspaceDependencies，并验证 executable、目录和 install.json。",
-      "tags": ["runtime", "resolver", "workspace-dependencies"],
-      "complexity": "high"
-    },
-    {
-      "filePath": "src-tauri/src/runtime/dependencies/bundled_resolver.rs",
-      "summary": "BundledRuntimeResolver 从 app resource_dir/runtime/<platform> 解析 bundled runtime，不依赖 current 指针，直接面向资源目录。",
-      "tags": ["runtime", "bundled", "resolver"],
-      "complexity": "moderate"
-    },
-    {
-      "filePath": "src-tauri/src/runtime/dependencies/layout.rs",
-      "summary": "RuntimeLayout 定义 runtime payload 必须具备的 executable、目录和相对路径，是 installer 与 resolver 共享的磁盘契约。",
-      "tags": ["runtime", "layout", "contract"],
-      "complexity": "high"
+      "tags": ["runtime", "resolver", "workspace-dependencies", "cache"],
+      "complexity": "complex"
     },
     {
       "filePath": "src-tauri/src/runtime/dependencies/manager.rs",
-      "summary": "RuntimeManager 统一编排 installer、installed resolver、manifest source、primary resolver chain、health checker 和单活下载操作状态。",
-      "tags": ["runtime", "manager", "orchestrator", "diagnostics"],
-      "complexity": "high"
+      "summary": "RuntimeManager 统一编排本机 cache 探测、manifest install/reinstall、health 和单活下载状态；cache 可用时跳过 manifest，cache 缺失时只从 manifest 安装，不再回落安装包随带 runtime。",
+      "tags": ["runtime", "manager", "orchestrator", "diagnostics", "no-bundled-fallback"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/dependencies/command_env.rs",
+      "summary": "ManagedRuntimeProcessEnv 从 WorkspaceDependencies 生成子进程 env patch：PATH、NODE_PATH、npm_config_prefix 和 npm_config_cache；ManagedRuntimePreference 承载设置页开关的内存态。",
+      "tags": ["runtime", "env", "path", "settings"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/chat/context_builder.rs",
+      "summary": "动态上下文固定展示系统环境探测；开关开启且 runtime 可用时说明 AIjia 托管运行时默认优先，开关关闭时说明默认系统环境。",
+      "tags": ["runtime", "dynamic-context", "agent-guidance"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/catalog.rs",
+      "summary": "Bash/PowerShell 工具说明明确没有 runtime_env 参数，是否优先注入 AIjia 托管运行时由设置页开关决定，系统环境请求走动态上下文里的系统绝对路径。",
+      "tags": ["runtime", "tool-schema", "bash", "powershell"],
+      "complexity": "moderate"
     },
     {
       "filePath": "src-tauri/src/transport/tauri_commands/runtime.rs",
-      "summary": "runtime_ensure、runtime_reinstall、runtime_get_health、runtime_cleanup、runtime_cancel 和 runtime_diagnostics 的 Tauri command 入口，向前端暴露诊断和操作面。",
+      "summary": "runtime_ensure、runtime_reinstall、runtime_get_health、runtime_cleanup、runtime_cancel 和 runtime_diagnostics 的 Tauri command 入口；诊断来源现在只有 installed/none，不再暴露 bundledVersion。",
       "tags": ["runtime", "tauri-command", "diagnostics"],
-      "complexity": "high"
+      "complexity": "complex"
     },
     {
-      "filePath": "src-tauri/tests/runtime_dependencies_installer_test.rs",
-      "summary": "锁定 installer 的 current 指针、payload 校验、失败不切换 current、archive 安全和 smoke test 等关键行为。",
-      "tags": ["test", "runtime", "installer", "contract"],
-      "complexity": "high"
+      "filePath": "src-tauri/src/lib.rs",
+      "summary": "应用 setup 创建 RuntimeManager，并通过 RuntimeManifestSource::Url(configured_runtime_manifest_url()) 接入 OSS manifest；不再创建 BundledRuntimeResolver 或 resolver chain。",
+      "tags": ["runtime", "setup", "manifest", "oss"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/connector/dingtalk.rs",
+      "summary": "DingtalkBridge 当前只从系统 PATH 通过 which/where.exe 查找 dws；安装包内置 dws 资源和 resource_dir fallback 已移除。",
+      "tags": ["dws", "dingtalk", "connector", "no-bundled-sidecar"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/settings/panels/RuntimePanel.tsx",
+      "summary": "设置页 Runtime 面板展示 AIjia 托管运行时开关、installed/none 来源和已安装版本；不再展示 bundled version。",
+      "tags": ["frontend", "runtime", "settings", "diagnostics"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/tests/managed_runtime_process_env_test.rs",
+      "summary": "测试锁定 ManagedRuntimeProcessEnv 的 PATH 前缀去重、NODE_PATH、npm_config_prefix/cache，以及开关默认开启且可切换。",
+      "tags": ["test", "runtime", "env", "settings"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/tests/runtime_dependencies_manager_test.rs",
+      "summary": "测试锁定 RuntimeManager 的 cache 优先、manifest 安装、checksum 失败不切 current、manifest 缺失且 cache 不可用时直接失败，不再从安装包资源兜底。",
+      "tags": ["test", "runtime", "manager", "no-bundled-fallback"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/tests/runtime_dependencies_no_legacy_resource_test.rs",
+      "summary": "测试锁定 Tauri config 不再打包 legacy python-runtime、resources/runtime 和 resources/dws。",
+      "tags": ["test", "runtime", "tauri", "resources"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": "src-tauri/tests/context_builder_runtime_env_test.rs",
+      "summary": "测试锁定动态上下文对默认托管运行时和系统环境出口的说明，确保不再要求工具传 runtime_env。",
+      "tags": ["test", "runtime", "dynamic-context", "agent-guidance"],
+      "complexity": "moderate"
     }
   ],
   "semantic_edges": [
     {
-      "sourceFilePath": "package.json",
-      "targetFilePath": "scripts/ensure-bundled-runtime.mjs",
-      "type": "triggers",
-      "weight": 0.9,
-      "reason": "开发/构建前置脚本触发 ensure:runtime，先确认 bundled runtime 资源目录存在且版本匹配。"
-    },
-    {
-      "sourceFilePath": "scripts/ensure-bundled-runtime.mjs",
-      "targetFilePath": "scripts/prepare-bundled-runtime.sh",
-      "type": "triggers",
-      "weight": 0.8,
-      "reason": "资源版本缺失或不匹配时，macOS/Unix 平台进入 shell prepare 慢路径。"
-    },
-    {
-      "sourceFilePath": "scripts/ensure-bundled-runtime.mjs",
-      "targetFilePath": "scripts/prepare-bundled-runtime.ps1",
-      "type": "triggers",
-      "weight": 0.8,
-      "reason": "资源版本缺失或不匹配时，Windows 平台进入 PowerShell prepare 慢路径。"
-    },
-    {
-      "sourceFilePath": "scripts/prepare-bundled-runtime.sh",
-      "targetFilePath": "scripts/runtime-sources.json",
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/runtime/dependencies/config.rs",
       "type": "reads_from",
-      "weight": 0.92,
-      "reason": "prepare 脚本从 runtime-sources.json 读取 Node/Python/uv URL 与 sha256。"
+      "weight": 0.85,
+      "reason": "应用 setup 读取 configured_runtime_manifest_url，作为 RuntimeManifestSource::Url 的输入。"
     },
     {
-      "sourceFilePath": "scripts/runtime/build-runtime-artifact.sh",
-      "targetFilePath": "src-tauri/src/runtime/dependencies/manifest.rs",
-      "type": "defines_schema",
-      "weight": 0.72,
-      "reason": "build 脚本产出的 manifest fragment 形态对应 runtime manifest 的 artifact 元数据。"
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/runtime/dependencies/manager.rs",
+      "type": "configures",
+      "weight": 0.9,
+      "reason": "应用 setup 创建 RuntimeManager 并注入 manifest source，不再配置 bundled resolver chain。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/dependencies/config.rs",
+      "targetFilePath": "src-tauri/src/runtime/dependencies/artifact_fetcher.rs",
+      "type": "configures",
+      "weight": 0.78,
+      "reason": "默认或环境变量覆盖的 OSS manifest URL 最终由 artifact_fetcher 读取和下载。"
     },
     {
       "sourceFilePath": "src-tauri/src/runtime/dependencies/manifest.rs",
@@ -157,13 +180,6 @@
       "reason": "fetcher 提供 archive path、sha256 和 bundleVersion，安装动作由 installer 完成。"
     },
     {
-      "sourceFilePath": "src-tauri/src/runtime/dependencies/layout.rs",
-      "targetFilePath": "src-tauri/src/runtime/dependencies/installer.rs",
-      "type": "validates",
-      "weight": 0.9,
-      "reason": "installer 用 RuntimeLayout 判定 payload 必须具备的 executable 和目录。"
-    },
-    {
       "sourceFilePath": "src-tauri/src/runtime/dependencies/installer.rs",
       "targetFilePath": "src-tauri/src/runtime/dependencies/resolver.rs",
       "type": "defines_schema",
@@ -171,78 +187,179 @@
       "reason": "installer 写出的 versions/<ver>、install.json 和 current 指针是 installed resolver 的解析契约。"
     },
     {
-      "sourceFilePath": "src-tauri/src/runtime/dependencies/layout.rs",
-      "targetFilePath": "src-tauri/src/runtime/dependencies/resolver.rs",
-      "type": "configures",
-      "weight": 0.86,
-      "reason": "resolver 使用同一套 RuntimeLayout 把 install dir 解析成 WorkspaceDependencies。"
-    },
-    {
-      "sourceFilePath": "src-tauri/src/runtime/dependencies/bundled_resolver.rs",
+      "sourceFilePath": "src-tauri/src/runtime/dependencies/resolver.rs",
       "targetFilePath": "src-tauri/src/runtime/dependencies/manager.rs",
       "type": "depends_on",
-      "weight": 0.76,
-      "reason": "RuntimeManager 可把 bundled resolver 放入 primary resolver chain，形成 bundled 优先或 installed fallback。"
+      "weight": 0.86,
+      "reason": "RuntimeManager 先通过 installed resolver 判断本机 cache 是否可用，可用时跳过 manifest 下载。"
     },
     {
       "sourceFilePath": "src-tauri/src/runtime/dependencies/manager.rs",
       "targetFilePath": "src-tauri/src/runtime/dependencies/installer.rs",
       "type": "calls",
       "weight": 0.9,
-      "reason": "manager 根据 manifest/source 状态编排 dev stub、本地 reinstall 或 artifact verified install。"
+      "reason": "cache 缺失或 reinstall 时，manager 用 manifest/fetcher 结果调用 installer 写入版本目录并切 current。"
     },
     {
-      "sourceFilePath": "src-tauri/src/transport/tauri_commands/runtime.rs",
-      "targetFilePath": "src-tauri/src/runtime/dependencies/manager.rs",
-      "type": "calls",
-      "weight": 0.92,
-      "reason": "Tauri command 层把 ensure、reinstall、cancel、health、diagnostics 暴露给前端，并委托 RuntimeManager。"
+      "sourceFilePath": "src-tauri/src/runtime/dependencies/manager.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/runtime.rs",
+      "type": "routes",
+      "weight": 0.88,
+      "reason": "runtime Tauri commands 暴露 ensure、reinstall、health、diagnostics，并委托 RuntimeManager。"
     },
     {
-      "sourceFilePath": "src-tauri/tests/runtime_dependencies_installer_test.rs",
-      "targetFilePath": "src-tauri/src/runtime/dependencies/installer.rs",
-      "type": "validates",
+      "sourceFilePath": "src-tauri/src/runtime/dependencies/command_env.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/catalog.rs",
+      "type": "configures",
+      "weight": 0.75,
+      "reason": "工具 schema 不暴露 runtime_env；是否注入 managed runtime 由偏好开关和 command_env 构造层处理。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/dependencies/command_env.rs",
+      "targetFilePath": "src-tauri/src/runtime/chat/context_builder.rs",
+      "type": "documents",
+      "weight": 0.74,
+      "reason": "动态上下文向 Agent 解释 command_env 的默认托管运行时注入和系统环境出口。"
+    },
+    {
+      "sourceFilePath": "src-tauri/tauri.conf.json",
+      "targetFilePath": "src-tauri/tests/runtime_dependencies_no_legacy_resource_test.rs",
+      "type": "tested_by",
       "weight": 0.9,
-      "reason": "测试固定 current 指针语义、校验边界和失败不切换 current 的行为。"
+      "reason": "测试读取 Tauri config，固定 resources/runtime 和 resources/dws 不再进入安装包。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/dependencies/manager.rs",
+      "targetFilePath": "src-tauri/tests/runtime_dependencies_manager_test.rs",
+      "type": "tested_by",
+      "weight": 0.92,
+      "reason": "manager 测试覆盖 cache 优先、manifest 安装、checksum 失败和无 cache/manifest 时不回落随包资源。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/dependencies/command_env.rs",
+      "targetFilePath": "src-tauri/tests/managed_runtime_process_env_test.rs",
+      "type": "tested_by",
+      "weight": 0.9,
+      "reason": "测试锁定 env patch 的 PATH/NODE_PATH/npm 配置和开关行为。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/chat/context_builder.rs",
+      "targetFilePath": "src-tauri/tests/context_builder_runtime_env_test.rs",
+      "type": "tested_by",
+      "weight": 0.82,
+      "reason": "测试锁定 Agent 动态上下文对托管运行时和系统出口的说明。"
+    },
+    {
+      "sourceFilePath": "scripts/runtime/build-runtime-artifact.sh",
+      "targetFilePath": "src-tauri/src/runtime/dependencies/manifest.rs",
+      "type": "defines_schema",
+      "weight": 0.72,
+      "reason": "发布脚本产出的 manifest fragment 形态对应 runtime manifest 的 artifact 元数据。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/dingtalk.rs",
+      "targetFilePath": "src-tauri/tauri.conf.json",
+      "type": "related",
+      "weight": 0.7,
+      "reason": "DingtalkBridge 已不再读取 resource_dir/dws，Tauri config 也不再打包 resources/dws。"
     }
   ],
   "architecture_findings": [
     {
-      "title": "runtime 供应链分成构建期 bundled 与运行期 managed 两条链路",
-      "description": "构建期由 runtime-sources 与 prepare scripts 生成 resources/runtime；运行期由 manifest/fetcher/downloader/installer 落到 bundle_root/versions，两条链路最终共享 RuntimeLayout 与 WorkspaceDependencies 契约。",
-      "evidence": ["scripts/runtime-sources.json", "scripts/prepare-bundled-runtime.sh", "src-tauri/src/runtime/dependencies/manifest.rs", "src-tauri/src/runtime/dependencies/installer.rs", "src-tauri/src/runtime/dependencies/layout.rs"]
+      "title": "安装包随带 runtime fallback 已从当前架构移除",
+      "description": "当前源码不再存在 BundledRuntimeResolver/ChainResolver，也没有 package preflight 或 Tauri resources/runtime 打包入口；本机 cache 缺失时 RuntimeManager 只通过 manifest 安装，manifest 不可用则显式失败。",
+      "evidence": [
+        "src-tauri/src/runtime/dependencies/manager.rs",
+        "src-tauri/src/runtime/dependencies/mod.rs",
+        "src-tauri/tauri.conf.json",
+        "package.json",
+        "src-tauri/tests/runtime_dependencies_no_legacy_resource_test.rs",
+        "src-tauri/tests/runtime_dependencies_manager_test.rs"
+      ]
     },
     {
-      "title": "真正的安装切换点是 current 指针而不是目录替换",
-      "description": "installer 先 staging 验证 payload 与 smoke test，再替换 version dir，最后写 current；测试反复锁定失败不能切 current。",
-      "evidence": ["src-tauri/src/runtime/dependencies/installer.rs", "src-tauri/tests/runtime_dependencies_installer_test.rs"]
+      "title": "OSS 托管运行时仍是当前运行期供应链",
+      "description": "应用 setup 仍通过 configured_runtime_manifest_url 生成 RuntimeManifestSource::Url，artifact_fetcher/downloader/installer/resolver 形成下载、校验、安装、current 指针解析闭环。",
+      "evidence": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/runtime/dependencies/config.rs",
+        "src-tauri/src/runtime/dependencies/artifact_fetcher.rs",
+        "src-tauri/src/runtime/dependencies/downloader.rs",
+        "src-tauri/src/runtime/dependencies/installer.rs",
+        "src-tauri/src/runtime/dependencies/resolver.rs"
+      ]
     },
     {
-      "title": "RuntimeManager 同时承担依赖解析和首次自举职责",
-      "description": "resolver 失败且配置 manifest source 时，manager 的 workspace_dependencies 可触发 lazy ensure，让缺 cache 冷启动能自举，但也把解析与安装耦合在同一入口。",
-      "evidence": ["src-tauri/src/runtime/dependencies/manager.rs", "src-tauri/src/runtime/dependencies/resolver.rs"]
+      "title": "子进程 runtime 注入由统一 env patch 和设置开关控制",
+      "description": "ManagedRuntimeProcessEnv 只从 WorkspaceDependencies 构造 PATH/NODE_PATH/npm env patch；工具 schema 不新增 runtime_env 参数，Agent 通过动态上下文区分默认托管运行时和系统环境出口。",
+      "evidence": [
+        "src-tauri/src/runtime/dependencies/command_env.rs",
+        "src-tauri/src/runtime/tools/catalog.rs",
+        "src-tauri/src/runtime/chat/context_builder.rs",
+        "src-tauri/tests/managed_runtime_process_env_test.rs",
+        "src-tauri/tests/context_builder_runtime_env_test.rs"
+      ]
+    },
+    {
+      "title": "安装包内置 dws 二进制已移除，但钉钉业务能力未删除",
+      "description": "当前删除的是 resources/dws 和 setup-dws 打包链路；DingtalkBridge 仍存在，但只从系统 PATH 查找 dws。技能层的 dws/dingtalk-workspace 业务说明仍是另一条产品能力链路，不能和安装包 sidecar 混同。",
+      "evidence": [
+        "src-tauri/src/connector/dingtalk.rs",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/tests/runtime_dependencies_no_legacy_resource_test.rs",
+        "src-tauri/src/plugin/skill/required_builtin.rs"
+      ]
     }
   ],
   "tour_steps": [
     {
-      "title": "先看构建期 bundled runtime 供应链",
-      "description": "从 package scripts 到 ensure-bundled-runtime，再到 prepare scripts 和 runtime-sources，确认资源目录如何生成。",
-      "filePaths": ["package.json", "scripts/ensure-bundled-runtime.mjs", "scripts/runtime-sources.json", "scripts/prepare-bundled-runtime.sh", "scripts/prepare-bundled-runtime.ps1"]
+      "title": "先看应用如何保留 OSS 托管运行时",
+      "description": "从 setup 的 manifest URL 注入开始，看 config、artifact_fetcher、downloader、installer、resolver、manager 如何组成运行期安装和解析链。",
+      "filePaths": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/runtime/dependencies/config.rs",
+        "src-tauri/src/runtime/dependencies/artifact_fetcher.rs",
+        "src-tauri/src/runtime/dependencies/downloader.rs",
+        "src-tauri/src/runtime/dependencies/installer.rs",
+        "src-tauri/src/runtime/dependencies/resolver.rs",
+        "src-tauri/src/runtime/dependencies/manager.rs"
+      ]
     },
     {
-      "title": "再看运行期 managed 安装与解析闭环",
-      "description": "看 manifest、artifact_fetcher、downloader、installer、layout、resolver、manager 如何组成运行期安装和解析链。",
-      "filePaths": ["src-tauri/src/runtime/dependencies/manifest.rs", "src-tauri/src/runtime/dependencies/artifact_fetcher.rs", "src-tauri/src/runtime/dependencies/downloader.rs", "src-tauri/src/runtime/dependencies/installer.rs", "src-tauri/src/runtime/dependencies/resolver.rs", "src-tauri/src/runtime/dependencies/manager.rs"]
+      "title": "再看为什么安装包不再携带兜底资源",
+      "description": "检查 package scripts、Tauri bundle resources 和 no legacy resource 测试，确认 resources/runtime 与 resources/dws 不会进入安装包。",
+      "filePaths": [
+        "package.json",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/tests/runtime_dependencies_no_legacy_resource_test.rs",
+        "scripts/build-and-sign-macos.sh",
+        "scripts/sign-and-upload-macos.sh"
+      ]
     },
     {
-      "title": "最后看诊断命令和行为锁定",
-      "description": "看 runtime Tauri commands 如何暴露 ensure/reinstall/health/diagnostics，再对照 runtime_dependencies 测试确认边界行为。",
-      "filePaths": ["src-tauri/src/transport/tauri_commands/runtime.rs", "src-tauri/tests/runtime_dependencies_installer_test.rs", "src-tauri/tests/runtime_commands_test.rs", "src-tauri/tests/bundled_runtime_resolver_test.rs"]
+      "title": "然后看命令环境如何注入托管 runtime",
+      "description": "看 ManagedRuntimeProcessEnv、动态上下文和工具说明如何把默认托管运行时和系统环境出口传达给 Agent。",
+      "filePaths": [
+        "src-tauri/src/runtime/dependencies/command_env.rs",
+        "src-tauri/src/runtime/chat/context_builder.rs",
+        "src-tauri/src/runtime/tools/catalog.rs",
+        "src-tauri/tests/managed_runtime_process_env_test.rs",
+        "src-tauri/tests/context_builder_runtime_env_test.rs"
+      ]
+    },
+    {
+      "title": "最后看 dws 的新边界",
+      "description": "检查 DingtalkBridge 只查系统 PATH，确认删除的是安装包 sidecar，不是钉钉 skill/业务能力。",
+      "filePaths": [
+        "src-tauri/src/connector/dingtalk.rs",
+        "src-tauri/src/plugin/skill/required_builtin.rs",
+        "src-tauri/tests/runtime_dependencies_no_legacy_resource_test.rs"
+      ]
     }
   ],
   "risks_or_gaps": [
-    "package scripts 的 bundled prepare 主要覆盖 darwin 和 win32，Rust 侧有 linux-x64 结构但构建期 prepare 对 Linux 仍是跳过态。",
-    "runtime_diagnostics 暴露结果态，但没有完整返回 manifest URL、artifact sha、provider 和下载来源等供应链 provenance。",
-    "当前诊断对 bundled 与 installed 同时可用或仅一方可用的矩阵覆盖仍可继续增强。"
+    "安装包不再随带 Node/Python/uv 兜底包后，首次 cache 缺失且 OSS manifest/artifact 不可用会明确失败，这是预期边界，需要产品层清楚提示。",
+    "DingtalkBridge 直接连接器现在只使用系统 PATH 的 dws；技能内联命令路径仍可通过托管 runtime env 注入获得 dws，但两条链路不要混同。",
+    "apply-understand-enhancements.mjs 是追加/覆盖式合并，不主动删除旧图谱节点；删除旧 bundled 架构后需要额外扫描 graph 是否还残留当前事实引用。"
   ]
 }

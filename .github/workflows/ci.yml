@@ -35,22 +35,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      # `tauri_build::build()` (run from src-tauri/build.rs at compile time)
-      # asserts that all `bundle.resources` paths in tauri.conf.json exist on
-      # disk — this includes `resources/runtime` (Node/Python/uv bundled
-      # runtime). Without this step, `cargo check` fails with
-      # `resource path 'resources/runtime' doesn't exist`. Mirror what
-      # build-desktop.yml does so PR check matches release build.
-      - name: Cache bundled runtime sources
-        uses: actions/cache@v4
-        with:
-          path: .runtime-cache
-          key: runtime-sources-v1-${{ hashFiles('scripts/runtime-sources.json') }}
-          restore-keys: runtime-sources-v1-
-
-      - name: Prepare bundled runtime (Node/Python/uv)
-        run: bash scripts/prepare-bundled-runtime.sh
-
       - name: Rust compile check
         working-directory: src-tauri
         run: cargo check

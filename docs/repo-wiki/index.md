@@ -6,12 +6,12 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 
 当前 Understand-Anything 图谱覆盖：
 
-- 9361 个节点
-- 10353 条边
+- 9336 个节点
+- 10333 条边
 - 25 个 architecture layers
 - 119 个 guided tour steps
-- 415 个 LLM-enhanced 节点
-- 132 个代码/维护架构评审概念节点
+- 420 个 LLM-enhanced 节点
+- 133 个代码/维护架构评审概念节点
 - 26 份当前源码/测试/skill 来源 enhancement JSON
 
 注：其中 `.understand-anything/enhancements/llm-visible-reply-language-anchor.json` 带 `source_ref=origin/main@c4bcc8b7`，覆盖 AIjia v2 provider 语言锚定实现和中文回复回归 intents。
@@ -23,7 +23,7 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 | 文档与工程约束 | AGENTS、CLAUDE、architecture blueprint、decisions、release 和 test-intents 的权威入口 | 105 |
 | 项目配置 | package、TypeScript、Vite、ESLint、workspace 等工程配置 | 25 |
 | CI/CD 工作流 | 质量检查、Windows unsigned staging 构建和 finalize 闸门 | 3 |
-| 脚本与发布工具 | release、bundled runtime、CI 上传、签名和辅助脚本 | 34 |
+| 脚本与发布工具 | release、managed runtime、CI 上传、签名和辅助脚本 | 28 |
 | React 前端应用入口 | main/App 和全局 side-effect hook | 14 |
 | 前端组件层 | 聊天、设置、shell、skill、team 等 UI 组件 | 279 |
 | 前端业务功能模块 | 聊天、数字员工、技能中心、设置等业务页面 | 84 |
@@ -33,9 +33,9 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 | 前端国际化 | i18n 初始化与语言资源 | 3 |
 | 前端样式与主题 | 全局样式、主题 token、字体缩放和 skin 工具 | 6 |
 | 前端测试 | 前端测试 setup 和样式/token 回归 | 3 |
-| Tauri Host 配置与入口 | Tauri 配置、capabilities、commands、prompts、resources | 136 |
+| Tauri Host 配置与入口 | Tauri 配置、capabilities、commands、prompts、resources | 135 |
 | Tauri IPC 与事件适配 | command/event adapter 到 runtime 的边界层 | 21 |
-| Rust Runtime / 会话编排 | Session/Query/Chat Turn、模型调用、工具回合和事件发出 | 106 |
+| Rust Runtime / 会话编排 | Session/Query/Chat Turn、模型调用、工具回合和事件发出 | 104 |
 | Rust Runtime / 工具系统 | RuntimeTool、catalog、permission、dispatcher 和 legacy adapter | 38 |
 | Rust Runtime / Agent 与任务 | sub-agent、数字员工、任务、inbox、template snapshot | 36 |
 | Rust Runtime / 状态存储 | session/message/tool/file/permission/workspace/employee stores | 14 |
@@ -43,8 +43,8 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 | LLM 网关与模型适配 | gateway、router、providers、streaming 和 legacy executor | 31 |
 | 本地存储与文件系统能力 | workspace-first、file_store、path_auth 和本地路径安全 | 37 |
 | 遗留插件桥接 | 旧插件系统与 RuntimeTool 的过渡桥 | 18 |
-| Rust 集成测试 | runtime、transport、tools、storage 和 review_ 架构护栏 | 302 |
-| 代码架构评审 | 当前源码、目标分支源码、测试和 repo-local skill 来源的增强材料生成的 architecture review 概念节点 | 132 |
+| Rust 集成测试 | runtime、transport、tools、storage 和 review_ 架构护栏 | 301 |
+| 代码架构评审 | 当前源码、目标分支源码、测试和 repo-local skill 来源的增强材料生成的 architecture review 概念节点 | 133 |
 
 ## Guided Tour
 
@@ -55,12 +55,12 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 5. Tauri Transport 进入 Runtime：chat command、runtime host、`SessionRuntime`、`TauriEventAdapter` 和 command/event contract。
 6. Turn Loop 与工具执行：`RuntimeChatTurnDriver`、`ToolRoundDriver`、`QueryEngine`、`ToolDispatcher`。
 7. MCP 动态工具链：`McpServerManager`、`McpConnection`、`McpRuntimeTool`、`ToolRegistry`。
-8. Bundled Runtime 供应链：`ensure-bundled-runtime`、`runtime-sources`、prepare scripts、resolver、manager。
+8. Managed Runtime 供应链：OSS manifest、cache installer、resolver、manager、RuntimePanel。
 9. 发布闸门：`release.py`、Windows CI unsigned staging、本地签名、`finalize-release.yml`。
 10. 测试与兼容护栏：CI、`review_*.rs`、`send_message_runtime_path_test`、test-intents / AEIT / `aijia` CLI。
 11. LLM 网关与流式协议：gateway、router、provider、streaming、event bus、event adapter。
 12. Workspace 与文件安全边界：CurrentUserStorage、UserScope、WorkspaceManager、FileManager、file_store、authorized workspace store 和 path_auth。
-13. Managed Runtime 供应链：ensure/prepare、resolver chain、bundled resolver、manager、RuntimePanel。
+13. Managed Runtime 供应链：OSS manifest、cache installer、resolver、manager、RuntimePanel。
 14. 技能、Pending 与员工派活：SkillCenter、skillStore、pendingStore、employee runner/store/template。
 15. 代码增强 tour：以代码/测试为事实源的 guided tour steps 覆盖 app shell/settings/updater/billing/network、auth/user-scope/storage boundary、Tauri command/event contract、前端 chat、employee/settings/file preview、skill/pending、LLM gateway、AIjia v2 visible reply language anchor 与中文回复回归 intents、prompt/context/compaction/cost、managed runtime、MCP、runtime permission、storage/path_auth、employee dispatch、agenda scheduler、task tools、Agent foreground auto-background、shell auto-background、team mode、IM core、skill registry 和 test-intents/AEIT。
 16. UserWiki skill tour：以 repo-local skill/script 为事实源的 guided tour steps 覆盖 userwiki 问答入口、wiki-maintainer 维护入口、校验脚本和 LLM Wiki 知识中间层原则。

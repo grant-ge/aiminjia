@@ -136,17 +136,6 @@ for arch in aarch64 x64; do
                 echo "$cs_main" | head -3 | sed 's/^/      /'
                 FAIL=$((FAIL+1))
             fi
-            # Nested dws signed?
-            if [ -f "$inner_app/Contents/Resources/dws" ]; then
-                cs_dws=$(codesign -dv --verbose=4 "$inner_app/Contents/Resources/dws" 2>&1)
-                if echo "$cs_dws" | grep -q "Authority=Developer ID Application"; then
-                    ok "nested dws signed"
-                else
-                    err "nested dws NOT signed by Developer ID"
-                    echo "$cs_dws" | head -3 | sed 's/^/      /'
-                    FAIL=$((FAIL+1))
-                fi
-            fi
             # Spctl gatekeeper assessment (simulates user double-click)
             if spctl --assess --type execute --verbose=2 "$inner_app" >/dev/null 2>&1; then
                 ok "spctl gatekeeper would accept"

@@ -1,7 +1,7 @@
 //! DingtalkBridge — dws CLI sidecar for DingTalk workspace operations.
 //!
-//! Manages the bundled `dws` binary lifecycle: path resolution, command
-//! execution, JSON output parsing, and authentication status tracking.
+//! Manages `dws` command execution, JSON output parsing, and authentication
+//! status tracking.
 //! Covers 5 product domains: AI Table, Contacts, Chat, Calendar, Todo.
 
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use log::warn;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use crate::storage::process_ext::NoWindowExt;
@@ -72,29 +72,9 @@ impl DingtalkBridge {
 
     // ── Binary Resolution ───────────────────────────────────────
 
-    /// Find the dws binary. Priority: bundled > dev > system PATH.
+    /// Find the dws binary from the system PATH.
     fn find_dws(&self) -> Result<PathBuf> {
-        let bin_name = if cfg!(target_os = "windows") {
-            "dws.exe"
-        } else {
-            "dws"
-        };
-
-        // 1. Bundled (production): resource_dir/dws
-        if let Ok(resource_dir) = self.app_handle.path().resource_dir() {
-            let bundled = resource_dir.join(bin_name);
-            if bundled.exists() {
-                return Ok(bundled);
-            }
-        }
-
-        // 2. Dev mode: relative to src-tauri
-        let dev = PathBuf::from(format!("resources/{}", bin_name));
-        if dev.exists() {
-            return Ok(std::fs::canonicalize(&dev).unwrap_or(dev));
-        }
-
-        // 3. System PATH fallback
+        #[cfg(not(target_os = "windows"))]
         if let Ok(output) = std::process::Command::new("which")
             .arg("dws")
             .no_window()
@@ -108,7 +88,6 @@ impl DingtalkBridge {
             }
         }
 
-        // Windows: check where.exe
         #[cfg(target_os = "windows")]
         if let Ok(output) = std::process::Command::new("where.exe")
             .arg("dws")
@@ -129,8 +108,7 @@ impl DingtalkBridge {
         }
 
         Err(anyhow!(
-            "dws CLI not found. Run scripts/setup-dws.sh to install, \
-             or install globally: npm install -g dingtalk-workspace-cli"
+            "system dws CLI not found. Install dingtalk-workspace-cli or add dws to PATH."
         ))
     }
 
@@ -154,7 +132,6 @@ impl DingtalkBridge {
         // Windows: suppress CMD window
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 
@@ -225,7 +202,6 @@ impl DingtalkBridge {
 
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000);
         }
 
@@ -312,7 +288,6 @@ impl DingtalkBridge {
 
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000);
         }
 

@@ -96,11 +96,8 @@ pnpm dev:with-pilot
 
 `dev:with-pilot` 会自动：
 
-1. **预检（`predev:with-pilot` hook 跑 `scripts/ensure-e2e-prereq.sh`）**：
-   - 检测 `jq` 是否在 PATH（bundled runtime 校验脚本需要），没装自动 `brew install`
-   - 软检测 ssh-agent identity（不阻塞，pilot 走的是本地 path dep 不需要 ssh）
-2. `ensure:runtime`：校验 / 下载内置运行时（Node + Python + uv）
-3. `cd src-tauri/.e2e && tauri dev --features e2e`：进入 wrapper crate 目录，触发 build.rs 复制 `capabilities/pilot.json`、cargo 从本地 sibling path 编译 tauri-plugin-pilot、plugin 编进来 + lib.rs 注册
+1. `scripts/tauri-dev.mjs --features e2e`：按隔离端口启动 Tauri dev，并编进 tauri-plugin-pilot。
+2. `scripts/ensure-e2e-prereq.sh`：仍可单独运行，用于检查 cargo git-fetch-with-cli 和 ssh-agent identity。
 
 跳过预检：`SKIP_E2E_PREREQ=1 pnpm dev:with-pilot`（不推荐，自己确保环境齐）。
 

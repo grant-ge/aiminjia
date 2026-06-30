@@ -5,91 +5,136 @@
     {
       "filePath": "src-tauri/src/llm/router.rs",
       "summary": "LLM 逻辑路由入口，从最后一条用户消息做任务类型推断并选择 model_type、use_tools 和 model_hint；当前物理 provider 决策仍会在 gateway 再加工。",
-      "tags": ["llm", "router", "task-type", "model-selection"],
+      "tags": [
+        "llm",
+        "router",
+        "task-type",
+        "model-selection"
+      ],
       "complexity": "moderate"
     },
     {
       "filePath": "src-tauri/src/llm/gateway.rs",
       "summary": "LLM gateway 组装 messages、tools、system、context、trace、run、conversation 和 thinking，并执行 cloud mode rewrite、session_key 注入、provider dispatch 和 retry。",
-      "tags": ["llm", "gateway", "provider-routing", "streaming"],
+      "tags": [
+        "llm",
+        "gateway",
+        "provider-routing",
+        "streaming"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/llm/streaming.rs",
       "summary": "定义 provider 与 runtime 之间的统一 StreamEvent 合约，包括内容增量、thinking、tool call、done、error 和 keepalive。",
-      "tags": ["llm", "stream-event", "contract"],
+      "tags": [
+        "llm",
+        "stream-event",
+        "contract"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/llm/providers/mod.rs",
       "summary": "provider 模块入口和分发边界，组织 Lotus、Claude、AIjia v2、OpenAI/custom 等 provider 实现。",
-      "tags": ["llm", "provider", "module-boundary"],
+      "tags": [
+        "llm",
+        "provider",
+        "module-boundary"
+      ],
       "complexity": "moderate"
-    },
-    {
-      "filePath": "src-tauri/src/llm/providers/lotus.rs",
-      "summary": "LotusProvider 是 ClaudeProvider 的薄壳，复用 Anthropic 协议解析，同时保留 Lotus 自身的 send 重试分类。",
-      "tags": ["llm", "provider", "lotus", "anthropic-compat"],
-      "complexity": "moderate"
-    },
-    {
-      "filePath": "src-tauri/src/llm/providers/claude.rs",
-      "summary": "Anthropic SSE 解析器，把 message/content/tool/thinking/ping 等事件逐行转换为统一 StreamEvent，并用 Keepalive 表达有流量但无可见文本的帧。",
-      "tags": ["llm", "provider", "sse", "keepalive"],
-      "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
       "summary": "AIjia gateway v2 provider，把 LlmRequest 转成 canonical responses schema，并把 gateway SSE 帧映射回 StreamEvent。",
-      "tags": ["llm", "provider", "aijia-v2", "canonical"],
+      "tags": [
+        "llm",
+        "provider",
+        "aijia-v2",
+        "canonical"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/transport/tauri_commands/chat.rs",
       "summary": "run_llm_step 消费 StreamEvent，承担 chunk timeout、stream retry、fallback、retry-reset 事件和用户态错误映射。",
-      "tags": ["transport", "llm", "streaming", "fallback"],
+      "tags": [
+        "transport",
+        "llm",
+        "streaming",
+        "fallback"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/transport/tauri_event_adapter.rs",
       "summary": "把 RuntimeEvent 映射为 streaming:delta、done、error、retry-reset 等前端兼容事件，是 runtime 事件到 Tauri event 的适配层。",
-      "tags": ["transport", "event-adapter", "legacy-compat"],
+      "tags": [
+        "transport",
+        "event-adapter",
+        "legacy-compat"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/chat_turn_driver.rs",
       "summary": "持有 chat turn 生命周期，保证异常时也能走 MessagePersisted、StreamDone 和 AgentIdle 等终态事件。",
-      "tags": ["runtime", "chat-turn", "lifecycle"],
+      "tags": [
+        "runtime",
+        "chat-turn",
+        "lifecycle"
+      ],
       "complexity": "high"
     },
     {
       "filePath": "src-tauri/src/runtime/chat/post_process.rs",
       "summary": "chat turn 后处理，最终文本为空时按 cancel 或非 cancel 写入占位/空回复提示，并做输出清洗。",
-      "tags": ["runtime", "post-process", "empty-response"],
+      "tags": [
+        "runtime",
+        "post-process",
+        "empty-response"
+      ],
       "complexity": "moderate"
     },
     {
       "filePath": "src-tauri/src/runtime/agent/empty_response_recovery.rs",
       "summary": "子 agent 零输出恢复状态机，对 max_tokens 且零输出做内部重试，对其他零输出直接 surface。",
-      "tags": ["runtime", "agent", "empty-response", "recovery"],
+      "tags": [
+        "runtime",
+        "agent",
+        "empty-response",
+        "recovery"
+      ],
       "complexity": "moderate"
     },
     {
       "filePath": "src-tauri/tests/empty_response_recovery_test.rs",
       "summary": "覆盖子 agent empty response recovery 的重试与 surface 语义，固定 stop_reason 相关行为。",
-      "tags": ["test", "agent", "empty-response"],
+      "tags": [
+        "test",
+        "agent",
+        "empty-response"
+      ],
       "complexity": "moderate"
     },
     {
       "filePath": "src-tauri/tests/review_stream_error_terminal_events.rs",
       "summary": "覆盖 stream error 终态事件，确认错误链路会产生可观察的 terminal events。",
-      "tags": ["test", "streaming", "terminal-events"],
+      "tags": [
+        "test",
+        "streaming",
+        "terminal-events"
+      ],
       "complexity": "moderate"
     },
     {
       "filePath": "src-tauri/tests/review_tauri_event_adapter_test.rs",
       "summary": "覆盖 RuntimeEvent 到 Tauri legacy event 的映射边界，固定前端兼容事件语义。",
-      "tags": ["test", "event-adapter", "legacy-compat"],
+      "tags": [
+        "test",
+        "event-adapter",
+        "legacy-compat"
+      ],
       "complexity": "moderate"
     }
   ],
@@ -103,31 +148,10 @@
     },
     {
       "sourceFilePath": "src-tauri/src/llm/gateway.rs",
-      "targetFilePath": "src-tauri/src/llm/providers/lotus.rs",
-      "type": "calls",
-      "weight": 0.82,
-      "reason": "provider=lotus 时 gateway dispatch 到 LotusProvider。"
-    },
-    {
-      "sourceFilePath": "src-tauri/src/llm/gateway.rs",
       "targetFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
       "type": "calls",
       "weight": 0.86,
       "reason": "cloud gateway v2 路径下 gateway dispatch 到 AIjia gateway v2 provider。"
-    },
-    {
-      "sourceFilePath": "src-tauri/src/llm/providers/lotus.rs",
-      "targetFilePath": "src-tauri/src/llm/providers/claude.rs",
-      "type": "depends_on",
-      "weight": 0.88,
-      "reason": "LotusProvider 复用 ClaudeProvider 的 Anthropic 协议 body builder 和 SSE 状态机。"
-    },
-    {
-      "sourceFilePath": "src-tauri/src/llm/providers/claude.rs",
-      "targetFilePath": "src-tauri/src/llm/streaming.rs",
-      "type": "transforms",
-      "weight": 0.92,
-      "reason": "Anthropic SSE 被规范化为统一 StreamEvent。"
     },
     {
       "sourceFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
@@ -190,34 +214,55 @@
     {
       "title": "LLM 路由分逻辑选型和真实 provider 决策两层",
       "description": "router.select_route 给出逻辑路由骨架，是否切到 aijia-v2、是否注入 session_key、是否允许 thinking，都在 gateway 进行二次加工。",
-      "evidence": ["src-tauri/src/llm/router.rs", "src-tauri/src/llm/gateway.rs"]
+      "evidence": [
+        "src-tauri/src/llm/router.rs",
+        "src-tauri/src/llm/gateway.rs"
+      ]
     },
     {
       "title": "流式容错中心在 run_llm_step 而不是 provider",
       "description": "provider 负责把原始 SSE 转成 StreamEvent，chunk timeout、retry、retry-reset、fallback 和用户错误文案集中在 transport chat command。",
-      "evidence": ["src-tauri/src/llm/providers/claude.rs", "src-tauri/src/llm/providers/aijia_gateway_v2.rs", "src-tauri/src/transport/tauri_commands/chat.rs"]
+      "evidence": [
+        "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs"
+      ]
     },
     {
       "title": "空流链路是分层补位",
       "description": "provider 可能输出 Error、Keepalive 或 EOF，executor 可能 retry/fallback，driver 和 post_process 最后保证空 assistant 不会白屏；子 agent 还有独立零输出恢复逻辑。",
-      "evidence": ["src-tauri/src/transport/tauri_commands/chat.rs", "src-tauri/src/runtime/chat/post_process.rs", "src-tauri/src/runtime/agent/empty_response_recovery.rs"]
+      "evidence": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/chat/post_process.rs",
+        "src-tauri/src/runtime/agent/empty_response_recovery.rs"
+      ]
     }
   ],
   "tour_steps": [
     {
       "title": "先看选路和请求组装",
       "description": "从 router 的 TaskType/route 进入，再看 gateway 如何重写 provider、注入 session_key 并组装 LlmRequest。",
-      "filePaths": ["src-tauri/src/llm/router.rs", "src-tauri/src/llm/gateway.rs"]
+      "filePaths": [
+        "src-tauri/src/llm/router.rs",
+        "src-tauri/src/llm/gateway.rs"
+      ]
     },
     {
       "title": "再看 provider 如何收敛成 StreamEvent",
       "description": "比较 Lotus/Claude 与 AIjia v2 provider 如何把不同 SSE 协议转换成统一 StreamEvent。",
-      "filePaths": ["src-tauri/src/llm/providers/lotus.rs", "src-tauri/src/llm/providers/claude.rs", "src-tauri/src/llm/providers/aijia_gateway_v2.rs", "src-tauri/src/llm/streaming.rs"]
+      "filePaths": [
+        "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+        "src-tauri/src/llm/streaming.rs"
+      ]
     },
     {
       "title": "最后看 runtime 和 transport 如何兜底空流或错误",
       "description": "从 run_llm_step 到 chat_turn_driver、post_process 和 tauri_event_adapter，追踪错误、空输出和 legacy 前端事件。",
-      "filePaths": ["src-tauri/src/transport/tauri_commands/chat.rs", "src-tauri/src/runtime/chat/chat_turn_driver.rs", "src-tauri/src/runtime/chat/post_process.rs", "src-tauri/src/transport/tauri_event_adapter.rs"]
+      "filePaths": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+        "src-tauri/src/runtime/chat/post_process.rs",
+        "src-tauri/src/transport/tauri_event_adapter.rs"
+      ]
     }
   ],
   "risks_or_gaps": [

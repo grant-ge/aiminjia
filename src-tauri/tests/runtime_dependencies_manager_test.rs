@@ -1,5 +1,3 @@
-#[cfg(not(windows))]
-use app_lib::runtime::dependencies::BundledRuntimeResolver;
 use app_lib::runtime::dependencies::{
     RuntimeInstallPlan, RuntimeInstaller, RuntimeManager, RuntimeManifestSource, RuntimePaths,
     RuntimePlatform, RuntimeResolver,
@@ -145,135 +143,38 @@ async fn manager_ensure_managed_keeps_valid_cache_without_reading_manifest() {
     );
 }
 
-#[cfg(not(windows))]
 #[tokio::test]
-async fn manager_ensure_managed_bootstraps_cache_from_bundled_fallback() {
+async fn manager_ensure_managed_fails_without_cache_when_manifest_missing() {
     let tempdir = tempdir().expect("tempdir");
     let paths = RuntimePaths::new(
         tempdir.path().join("cache-root"),
         "renlijia-primary-runtime",
     )
     .expect("valid paths");
-    let resource_dir = tempdir.path().join("app-resources");
     let platform = RuntimePlatform::current().expect("current platform");
-    let runtime_dir = resource_dir.join("runtime").join(platform.manifest_key());
-    let layout = app_lib::runtime::dependencies::RuntimeLayout::for_platform(platform);
-    let deps = layout.workspace_dependencies(&runtime_dir);
-    for path in [
-        &deps.python,
-        &deps.node,
-        &deps.npm,
-        &deps.npx,
-        &deps.uv,
-        &deps.uvx,
-    ] {
-        write_test_runtime_executable(path);
-    }
-    std::fs::create_dir_all(runtime_dir.join("node/lib/node_modules")).unwrap();
-    std::fs::create_dir_all(runtime_dir.join("python/lib/python3.12/site-packages")).unwrap();
-    std::fs::write(
-        runtime_dir.join("bundled-version.json"),
-        br#"{"bundleVersion":"2026.05.13-runtime.1","platform":"placeholder"}"#,
-    )
-    .expect("write bundled version");
 
-    let manager = RuntimeManager::new(paths.clone(), "placeholder-version")
-        .with_bundled_fallback(BundledRuntimeResolver::new(resource_dir))
-        .with_manifest_source(
-            RuntimeManifestSource::File(tempdir.path().join("missing-manifest.json")),
-            "primary",
-            platform,
-        );
+    let manager = RuntimeManager::new(paths.clone(), "placeholder-version").with_manifest_source(
+        RuntimeManifestSource::File(tempdir.path().join("missing-manifest.json")),
+        "primary",
+        platform,
+    );
 
-    let result = manager
+    let error = manager
         .ensure_managed()
         .await
-        .expect("manifest failure should fall back to bundled runtime");
+        .expect_err("manifest failure should not fall back to installer resources");
 
-    assert!(!result.skipped);
-    assert_eq!(result.bundle_version, "2026.05.13-runtime.1");
     assert_eq!(
-        std::fs::read_to_string(paths.current_dir()).expect("current pointer"),
-        "versions/2026.05.13-runtime.1"
+        error
+            .to_string()
+            .contains("runtime artifact fetch io error"),
+        true,
+        "unexpected error: {error}"
     );
-    let cache_deps = manager
-        .resolver()
-        .workspace_dependencies()
-        .expect("installed cache runtime should resolve after bundled fallback");
     assert!(
-        cache_deps
-            .node
-            .starts_with(paths.version_dir("2026.05.13-runtime.1").unwrap()),
-        "resolver must return Cache runtime path, got {}",
-        cache_deps.node.display()
+        !paths.current_dir().exists(),
+        "failed manifest install must not write a current pointer"
     );
-}
-
-#[cfg(not(windows))]
-#[test]
-fn manager_resolver_bootstraps_cache_from_bundled_fallback_on_first_dependency_lookup() {
-    let tempdir = tempdir().expect("tempdir");
-    let paths = RuntimePaths::new(
-        tempdir.path().join("cache-root"),
-        "renlijia-primary-runtime",
-    )
-    .expect("valid paths");
-    let resource_dir = tempdir.path().join("app-resources");
-    let platform = RuntimePlatform::current().expect("current platform");
-    let runtime_dir = resource_dir.join("runtime").join(platform.manifest_key());
-    let layout = app_lib::runtime::dependencies::RuntimeLayout::for_platform(platform);
-    let deps = layout.workspace_dependencies(&runtime_dir);
-    for path in [
-        &deps.python,
-        &deps.node,
-        &deps.npm,
-        &deps.npx,
-        &deps.uv,
-        &deps.uvx,
-    ] {
-        write_test_runtime_executable(path);
-    }
-    std::fs::write(
-        runtime_dir.join("bundled-version.json"),
-        br#"{"bundleVersion":"2026.05.13-runtime.1","platform":"placeholder"}"#,
-    )
-    .expect("write bundled version");
-
-    let manager = RuntimeManager::new(paths.clone(), "placeholder-version")
-        .with_bundled_fallback(BundledRuntimeResolver::new(resource_dir))
-        .with_manifest_source(
-            RuntimeManifestSource::File(tempdir.path().join("missing-manifest.json")),
-            "primary",
-            platform,
-        );
-
-    let cache_deps = manager
-        .workspace_dependencies()
-        .expect("first dependency lookup should initialize cache from bundled fallback");
-
-    assert!(
-        cache_deps
-            .node
-            .starts_with(paths.version_dir("2026.05.13-runtime.1").unwrap()),
-        "resolver must return Cache runtime path, got {}",
-        cache_deps.node.display()
-    );
-}
-
-#[cfg(not(windows))]
-fn write_test_runtime_executable(path: &std::path::Path) {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).expect("create executable parent");
-    }
-    std::fs::write(path, b"#!/usr/bin/env sh\necho test-runtime\n")
-        .expect("write test runtime executable");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(path).expect("metadata").permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(path, permissions).expect("chmod executable");
-    }
 }
 
 fn write_manager_runtime_zip(path: &std::path::Path) {
