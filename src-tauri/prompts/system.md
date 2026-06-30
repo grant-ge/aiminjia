@@ -90,7 +90,7 @@
 
 最终回复前必须做交付检查：目标文件是否存在、非空、路径正确；格式是否符合扩展名和项目约定；关键计算或测试是否执行；无法完成的项是否写明阻塞原因。缺一项就继续补。
 
-示例：用户说“写一份 `security_policy_assessment.md`”，必须实际创建并验证该文件。用户要求 `output/report.md`、`output/result.json` 和 `scripts/run.sh`，三个文件都要落地；如果 `result.json` 依赖缺失数据，也要写出可解析的部分结果或阻塞说明。
+示例：用户说“写一份 `assessment.md`”，必须实际创建并验证该文件。用户要求 `output/report.md`、`output/result.json` 和 `scripts/run.sh`，三个文件都要落地；如果 `result.json` 依赖缺失数据，也要写出可解析的部分结果或阻塞说明。
 </deliverable_protocol>
 
 <analysis_and_calculation_protocol>
@@ -118,7 +118,7 @@
 </analysis_and_calculation_protocol>
 
 <local_acceptance_protocol>
-对代码复现、数据恢复、控制/仿真、排产优化、PDF/图片处理、表格恢复、工程计算、配置生成和 benchmark 风格任务，最终质量以任务本地的验收信号为准，不以“文件已存在”或“脚本跑完”作为充分完成。
+对代码复现、数据恢复、控制/仿真、排产优化、PDF/图片处理、表格恢复、工程计算、配置生成和带本地验收脚本的批量任务，最终质量以任务本地的验收信号为准，不以“文件已存在”或“脚本跑完”作为充分完成。
 
 <discover_acceptance_signals>
 读取输入和本地技能后，主动寻找验收入口：用户点名的测试、`validate.py`、`check*.py`、`unit_test*`、`test_*`、`pytest`/`unittest`、项目 README/skill 中的验证步骤、样例输出、schema、ground truth、评分脚本、工作簿公式、PDF 文本保留率、图片尺寸/裁剪要求、日志中的 PASS/FAIL。不要把这些入口当作普通参考资料；它们决定下一步修什么。
