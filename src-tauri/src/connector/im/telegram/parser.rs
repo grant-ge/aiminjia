@@ -183,6 +183,7 @@ fn parse_message(msg: &TgMessage, update_id: i64, bot_id: &str) -> ParsedInbound
 
     let channel_msg = ChannelMessage {
         msg_id: format!("tg-{}-{}", bot_id, update_id),
+        native_message_id: Some(msg.message_id.to_string()),
         conversation_type: ConversationType::Private,
         conversation_key: msg.chat.id.to_string(),
         sender_id: from.id.to_string(),
@@ -254,6 +255,7 @@ mod tests {
         TgUpdate {
             update_id: id,
             message: Some(msg),
+            callback_query: None,
         }
     }
 

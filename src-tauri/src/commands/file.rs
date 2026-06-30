@@ -2,11 +2,13 @@ use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 use crate::storage::AiJiaHome;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
+
+#[cfg(target_os = "macos")]
+use std::collections::HashSet;
 
 const MAX_PREVIEW_BYTES: u64 = 5 * 1024 * 1024;
 const FILE_RECORD_NOT_FOUND: &str = "File not found or does not belong to this conversation";

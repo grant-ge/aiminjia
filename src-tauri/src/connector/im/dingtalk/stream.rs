@@ -398,6 +398,7 @@ impl DingtalkStreamClient {
 
         Some(ChannelMessage {
             msg_id,
+            native_message_id: None,
             conversation_type,
             conversation_key,
             sender_id,

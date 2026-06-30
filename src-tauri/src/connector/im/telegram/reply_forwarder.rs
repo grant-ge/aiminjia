@@ -221,6 +221,9 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                         e
                     );
                 }
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
             RuntimeEventKind::StreamError { error, .. } => {
                 log::warn!(
@@ -245,6 +248,9 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                         e
                     );
                 }
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
             RuntimeEventKind::TurnCompleted { outcome, .. } if outcome.is_success() => {
                 if Self::should_force_completion_error_for_tests() {
@@ -267,6 +273,9 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                     )
                     .await;
                 }
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
             RuntimeEventKind::TurnCompleted { outcome, .. } if outcome.is_error() => {
                 self.set_status_reaction(
@@ -275,9 +284,15 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                     "turn-error",
                 )
                 .await;
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
             RuntimeEventKind::RunCancelled => {
                 self.clear_status_reaction(&session_id, "cancelled").await;
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
             RuntimeEventKind::MessagePersisted { role, content, .. } => {
                 if role != "assistant" {
@@ -288,6 +303,9 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                         "[telegram-reply-forwarder] event=message_persisted_skip_draft session={}",
                         session_id
                     );
+                    self.connector
+                        .stop_typing(&session_id, event.run_id.as_str())
+                        .await;
                     return Ok(());
                 }
                 let Some(text) = Self::extract_markdown(content) else {
@@ -295,6 +313,9 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                         "[telegram-reply-forwarder] empty assistant content for session={}, skip",
                         session_id
                     );
+                    self.connector
+                        .stop_typing(&session_id, event.run_id.as_str())
+                        .await;
                     return Ok(());
                 };
                 if let Err(e) = self
@@ -308,6 +329,17 @@ impl RuntimeEventSubscriber for TelegramReplyForwarder {
                         e
                     );
                 }
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
+            }
+            RuntimeEventKind::PermissionAskRequired { .. }
+            | RuntimeEventKind::UserInteractionRequired { .. }
+            | RuntimeEventKind::TurnCompleted { .. }
+            | RuntimeEventKind::RunCompleted => {
+                self.connector
+                    .stop_typing(&session_id, event.run_id.as_str())
+                    .await;
             }
             _ => {}
         }

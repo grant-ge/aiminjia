@@ -21,6 +21,7 @@ use crate::transport::tauri_commands::chat::TauriChatCommandAdapter;
 use super::dingtalk::card::CardTarget;
 use super::dingtalk::registration::{begin_registration, poll_registration, RegistrationPollState};
 use super::factory::build_dingtalk_connector;
+use super::shared::ask_coordinator::{IMAskOutputRouter, DINGTALK_ASK_ROUTE, TELEGRAM_ASK_ROUTE};
 use super::shared::config_store::ChannelConfigStore;
 use super::shared::reply_manager::DingtalkReplyManager;
 use super::shared::router::ChannelSessionRouter;
@@ -138,6 +139,7 @@ pub struct ChannelManager {
     /// `OnceCell::get_or_init` 在 register_whatsapp_connector 调用，幂等。
     whatsapp_gc_spawned: Arc<tokio::sync::OnceCell<()>>,
     ask_coordinator: Option<Arc<super::shared::ask_coordinator::IMAskCoordinator>>,
+    ask_output_router: Option<Arc<IMAskOutputRouter>>,
     ask_subscribed: Arc<AtomicBool>,
     /// 已建立的 IM 频道 session id 集合，与 ask_coordinator 的 registry 共享同一 Arc。
     /// 消息 worker 每创建一个新 session 时向此集合写入，确保 coordinator 能识别频道会话。
@@ -220,6 +222,7 @@ impl ChannelManager {
         secure_storage: Option<Arc<SecureStorage>>,
         channels_dir: PathBuf,
         ask_coordinator: Option<Arc<super::shared::ask_coordinator::IMAskCoordinator>>,
+        ask_output_router: Option<Arc<IMAskOutputRouter>>,
         reply_manager: Arc<DingtalkReplyManager>,
         channel_session_ids: Arc<std::sync::RwLock<HashSet<String>>>,
         pending_manager: Arc<crate::runtime::pending::PendingQueueManager>,
@@ -261,6 +264,7 @@ impl ChannelManager {
             whatsapp_concrete: Arc::new(tokio::sync::RwLock::new(None)),
             whatsapp_gc_spawned: Arc::new(tokio::sync::OnceCell::new()),
             ask_coordinator,
+            ask_output_router,
             ask_subscribed: Arc::new(AtomicBool::new(false)),
             channel_session_ids,
             pending_manager,
@@ -639,6 +643,11 @@ impl ChannelManager {
             self.anchor_subscriber(sub);
             log::info!("[channel/telegram] subscribed TelegramReplyForwarder to RuntimeEventBus");
         }
+        if let Some(router) = self.ask_output_router.as_ref() {
+            let sink: Arc<dyn super::shared::ask_coordinator::ImAskSink> = concrete.approval_sink();
+            router.register_sink(TELEGRAM_ASK_ROUTE, sink);
+        }
+        self.ensure_ask_coordinator_subscribed();
 
         let new_token = CancellationToken::new();
         let ctx = ConnectorContext {
@@ -680,6 +689,7 @@ impl ChannelManager {
         let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
         let pending_manager_ref = Arc::clone(&self.pending_manager);
         let platform_state_for_worker = Arc::clone(&self.platform_state);
+        let ask_output_router_for_worker = self.ask_output_router.as_ref().map(Arc::clone);
         let connector_for_worker = {
             let map = self.connectors.read().await;
             Arc::clone(
@@ -756,6 +766,10 @@ impl ChannelManager {
                 let conv_key = msg.conversation_key.clone();
                 let sender_nick = msg.sender_nick.clone();
                 let text = msg.text.clone();
+                let telegram_message_id = msg
+                    .native_message_id
+                    .as_deref()
+                    .and_then(|id| id.parse::<i64>().ok());
 
                 if !is_current_stream(&message_stream_generation, generation, &message_cancel) {
                     break;
@@ -819,19 +833,21 @@ impl ChannelManager {
                         .expect("channel_session_ids poisoned");
                     ids.insert(session_id.clone());
                 }
+                if let Some(router) = ask_output_router_for_worker.as_ref() {
+                    router.route_session(session_id.clone(), TELEGRAM_ASK_ROUTE);
+                }
 
                 // Remember the chat_id/user_id so the reply forwarder can
                 // route assistant replies back. chat_id == conv_key for telegram.
                 let chat_id: i64 = conv_key.parse().unwrap_or(0);
                 let user_id: i64 = msg.sender_id.parse().unwrap_or(0);
-                let last_inbound_message_id = msg.reply_group_id.parse::<i64>().ok();
                 concrete_telegram_for_worker
                     .remember_session(
                         session_id.clone(),
                         super::telegram::types::TelegramSessionTarget {
                             chat_id,
                             user_id,
-                            last_inbound_message_id,
+                            last_inbound_message_id: telegram_message_id,
                         },
                     )
                     .await;
@@ -990,18 +1006,35 @@ impl ChannelManager {
                 let session_for_enqueue = crate::runtime::ids::SessionId::new(session_id.clone());
                 let connector_for_send = Arc::clone(&connector_for_worker);
                 let conv_key_for_reject = conv_key.clone();
+                let concrete_telegram_for_typing = Arc::clone(&concrete_telegram_for_worker);
+                let session_for_typing = session_id.clone();
+                let run_id_for_typing = request.run_id.as_str().to_string();
+                let chat_id_for_typing = chat_id;
+                let request_for_send = request;
                 tokio::spawn(async move {
                     match pending_manager_for_send
                         .enqueue_or_send(session_for_enqueue, pending_item)
                         .await
                     {
                         Ok(crate::runtime::pending::EnqueueOutcome::SentDirectly { .. }) => {
-                            if let Err(e) = adapter_for_turn.send_chat_request(request).await {
+                            concrete_telegram_for_typing
+                                .start_typing(
+                                    session_for_typing.clone(),
+                                    run_id_for_typing.clone(),
+                                    chat_id_for_typing,
+                                )
+                                .await;
+                            if let Err(e) =
+                                adapter_for_turn.send_chat_request(request_for_send).await
+                            {
                                 log::error!(
                                     "[channel/telegram] send_chat_request failed session={}: {}",
                                     session_for_log,
                                     e
                                 );
+                                concrete_telegram_for_typing
+                                    .stop_typing(&session_for_typing, &run_id_for_typing)
+                                    .await;
                                 pending_manager_for_send
                                     .release_direct_dispatch(&crate::runtime::ids::SessionId::new(
                                         session_for_log.clone(),
@@ -4802,15 +4835,7 @@ impl ChannelManager {
             self.anchor_subscriber(reply_sub);
         }
 
-        // 订阅 ask_coordinator 到 event bus（同样只做一次，避免重连时重复订阅）
-        if let Some(coordinator) = self.ask_coordinator.as_ref() {
-            if claim_first_subscription(&self.ask_subscribed) {
-                let sub = Arc::clone(coordinator)
-                    as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-                self.chat_adapter.subscribe_event_listener(sub.clone());
-                self.anchor_subscriber(sub);
-            }
-        }
+        self.ensure_ask_coordinator_subscribed();
 
         // 消息处理 loop
         let adapter = Arc::clone(&self.chat_adapter);
@@ -4823,6 +4848,7 @@ impl ChannelManager {
         let reply_robot_code_for_worker = reply_robot_code.clone();
         let downloader_ref = Arc::clone(&downloader);
         let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
+        let ask_output_router_for_worker = self.ask_output_router.as_ref().map(Arc::clone);
         let channel_session_ids_ref = Arc::clone(&self.channel_session_ids);
         let inactive_ref = Arc::clone(&self.inactive);
         let pending_manager_ref = Arc::clone(&self.pending_manager);
@@ -4944,6 +4970,9 @@ impl ChannelManager {
                         .write()
                         .expect("channel_session_ids poisoned");
                     ids.insert(session_id.clone());
+                }
+                if let Some(router) = ask_output_router_for_worker.as_ref() {
+                    router.route_session(session_id.clone(), DINGTALK_ASK_ROUTE);
                 }
 
                 // 更新 conversations 列表（新会话）
@@ -5298,6 +5327,19 @@ impl ChannelManager {
 
     pub fn active_scope(&self) -> Option<crate::storage::UserScope> {
         self.active_scope.clone()
+    }
+
+    fn ensure_ask_coordinator_subscribed(&self) {
+        let Some(coordinator) = self.ask_coordinator.as_ref() else {
+            return;
+        };
+        if claim_first_subscription(&self.ask_subscribed) {
+            let sub = Arc::clone(coordinator)
+                as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
+            self.chat_adapter.subscribe_event_listener(sub.clone());
+            self.anchor_subscriber(sub);
+            log::info!("[channel] subscribed IMAskCoordinator to RuntimeEventBus");
+        }
     }
 
     fn anchor_subscriber(&self, sub: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {

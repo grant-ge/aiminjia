@@ -142,6 +142,7 @@ fn build_localized_app_menu<R: tauri::Runtime>(
     language: &str,
 ) -> tauri::Result<Menu<R>> {
     let labels = app_menu_labels(language);
+    #[cfg(target_os = "macos")]
     let pkg_info = app_handle.package_info();
     let about_metadata = app_about_metadata(app_handle);
 
@@ -1918,6 +1919,11 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
             output_binding_registry,
         ),
     );
+    let ask_output_router = Arc::new(connector::im::ask_coordinator::IMAskOutputRouter::new());
+    ask_output_router.register_sink(
+        connector::im::ask_coordinator::DINGTALK_ASK_ROUTE,
+        reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::ImAskSink>,
+    );
     im_app_feedback.set_sink(
         reply_manager.clone() as Arc<dyn connector::im::shared::app_feedback::AppFeedbackSink>
     );
@@ -1954,7 +1960,7 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
         connector::im::ask_coordinator::IMAskCoordinator::new_with_judge(
             channel_session_ids.clone()
                 as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
-            reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
+            ask_output_router.clone() as Arc<dyn connector::im::ask_coordinator::ImAskSink>,
             chat_adapter_ref.permission_control_plane(),
             chat_adapter_ref.interaction_control_plane(),
             reply_judge,
@@ -1978,6 +1984,7 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
             .clone(),
         paths.channels_dir(),
         Some(ask_coordinator),
+        Some(ask_output_router),
         reply_manager,
         channel_session_ids,
         app.state::<Arc<crate::runtime::pending::PendingQueueManager>>()
