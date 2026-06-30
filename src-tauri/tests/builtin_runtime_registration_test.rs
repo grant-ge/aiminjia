@@ -222,6 +222,7 @@ async fn request_scoped_memory_runtime_tools_are_visible_and_executable() {
     );
 }
 
+#[cfg(not(windows))]
 #[tokio::test]
 async fn bash_runtime_tool_executes_via_registry() {
     let registry = ToolRegistry::new();
@@ -248,6 +249,37 @@ async fn bash_runtime_tool_executes_via_registry() {
     assert!(
         result.content.contains("hi"),
         "bash output should contain echo result: {}",
+        result.content
+    );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn powershell_runtime_tool_executes_via_registry() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+    registry
+        .register_runtime(Arc::new(
+            app_lib::runtime::tools::builtin::powershell::PowerShellTool::default(),
+        ))
+        .await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let result = registry
+        .execute(
+            "PowerShell",
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
+            serde_json::json!({"command": "Write-Output hi"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect("powershell should execute via runtime tool");
+
+    assert!(
+        result.content.contains("hi"),
+        "powershell output should contain echo result: {}",
         result.content
     );
 }

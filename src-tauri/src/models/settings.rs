@@ -15,6 +15,10 @@ fn default_permission_mode() -> String {
     "default".to_string()
 }
 
+fn default_managed_runtime_enabled() -> bool {
+    true
+}
+
 fn normalize_default_permission_mode(value: &str) -> String {
     match value {
         "default" | "fullAccess" => value.to_string(),
@@ -88,6 +92,9 @@ pub struct AppSettings {
     /// Default tool permission mode for new turns: default | fullAccess.
     #[serde(default = "default_permission_mode")]
     pub default_permission_mode: String,
+    /// Whether child command processes should prefer AIjia's bundled Node/Python/uv runtime.
+    #[serde(default = "default_managed_runtime_enabled")]
+    pub managed_runtime_enabled: bool,
     /// JSON-stringified `AuthorizedWorkspaceRef` ({id, rootPath, displayName}) — 首页 task composer
     /// 当前选中的 workspace。空字符串视为未选中。
     #[serde(default)]
@@ -141,6 +148,7 @@ impl Default for AppSettings {
             accent_color: String::new(),
             chat_width_mode: default_chat_width_mode(),
             default_permission_mode: default_permission_mode(),
+            managed_runtime_enabled: default_managed_runtime_enabled(),
             ui_home_selected_workspace: String::new(),
             ui_home_recent_workspaces: String::new(),
             ui_sidebar_collapsed_projects: String::new(),
@@ -214,6 +222,10 @@ impl AppSettings {
                 "defaultPermissionMode",
                 &defaults.default_permission_mode,
             )),
+            managed_runtime_enabled: get_bool(
+                "managedRuntimeEnabled",
+                defaults.managed_runtime_enabled,
+            ),
             ui_home_selected_workspace: get_str(
                 "uiHomeSelectedWorkspace",
                 &defaults.ui_home_selected_workspace,
@@ -272,6 +284,21 @@ mod tests {
     #[test]
     fn defaults_permission_mode_to_default() {
         assert_eq!(AppSettings::default().default_permission_mode, "default");
+    }
+
+    #[test]
+    fn defaults_managed_runtime_enabled() {
+        assert!(AppSettings::default().managed_runtime_enabled);
+    }
+
+    #[test]
+    fn reads_managed_runtime_enabled_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("managedRuntimeEnabled".to_string(), "false".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert!(!settings.managed_runtime_enabled);
     }
 
     #[test]

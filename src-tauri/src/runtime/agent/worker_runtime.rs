@@ -878,6 +878,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             .with_authorized_workspace(self.runtime_deps.authorized_workspace.clone())
             .with_file_ops(file_ops)
             .with_runtime_resolver(self.runtime_deps.runtime_resolver.clone())
+            .with_managed_runtime_enabled(self.runtime_deps.managed_runtime_enabled)
             .with_read_file_state(child_read_file_state);
 
         // Phase 5: seed child QueryEngine with parent's permission_ctx snapshot
@@ -1803,6 +1804,7 @@ async fn teammate_real_turn(
         .with_authorized_workspace(engine.runtime_deps.authorized_workspace.clone())
         .with_file_ops(file_ops)
         .with_runtime_resolver(engine.runtime_deps.runtime_resolver.clone())
+        .with_managed_runtime_enabled(engine.runtime_deps.managed_runtime_enabled)
         .with_read_file_state(child_read_file_state.clone());
     // Inject the conv_dir so teammate-originated tool calls (notably
     // SendMessage) carry it via ToolExecutionContext.conv_dir. Without

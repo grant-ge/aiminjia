@@ -721,6 +721,11 @@ impl ToolRegistry {
                 cancel_token.child_token(),
             )
             .with_permission_mode(ctx.permission_mode)
+            .with_managed_runtime_enabled(
+                ctx.app_settings
+                    .as_ref()
+                    .map_or(true, |settings| settings.managed_runtime_enabled),
+            )
             .with_capability(capability);
 
             // Permission check: prefer StorePolicyPipeline if permission_store is available

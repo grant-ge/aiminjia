@@ -4,8 +4,8 @@ pub mod runtime_tool;
 pub mod types;
 
 pub use connection::{
-    build_mcp_connection, McpConnection, McpError, McpResult, SharedMcpConnection,
-    StdioMcpConnection,
+    build_mcp_connection, build_mcp_connection_with_preference, McpConnection, McpError, McpResult,
+    SharedMcpConnection, StdioMcpConnection,
 };
 pub use manager::{McpServerManager, McpServerState, McpServerStatus};
 pub use runtime_tool::McpRuntimeTool;

@@ -41,6 +41,7 @@ pub struct SubAgentRuntimeDeps {
     pub app_handle: Option<tauri::AppHandle>,
     pub auth_manager: Option<Arc<crate::auth::AuthManager>>,
     pub runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
+    pub managed_runtime_enabled: bool,
     /// Phase 5 path-auth inheritance: snapshot of the parent turn's merged
     /// ToolPermissionContext (UserSettings working dirs + allow_rules + session
     /// attachment dirs already merged in at spawn time).  When `Some`, the child's
@@ -234,6 +235,7 @@ mod tests {
             app_handle: None,
             auth_manager: Some(auth_manager.clone()),
             runtime_resolver: None,
+            managed_runtime_enabled: true,
             permission_ctx: None,
             current_persona_id: None,
         };

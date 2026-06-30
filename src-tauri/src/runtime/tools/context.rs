@@ -71,6 +71,9 @@ pub struct ToolExecutionContext {
         Option<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest>,
     /// Task V2 persistence root (AiJiaHome), used by task runtime tools.
     pub task_store_root: Option<std::path::PathBuf>,
+    /// Whether child command processes should inject AIjia's managed runtime env.
+    /// Defaults to true for compatibility; production turns set it from AppSettings.
+    pub managed_runtime_enabled: bool,
     /// Per-process Team registry injected by the orchestration layer.
     /// `None` for legacy / test paths that do not need team operations.
     pub team_registry: Option<Arc<TeamRegistry>>,
@@ -131,6 +134,7 @@ impl ToolExecutionContext {
             interaction_resolution: None,
             current_tool_call_request: None,
             task_store_root: None,
+            managed_runtime_enabled: true,
             team_registry: None,
             agent_names: None,
             inbox_registry: None,
@@ -191,6 +195,11 @@ impl ToolExecutionContext {
         request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
     ) -> Self {
         self.current_tool_call_request = Some(request);
+        self
+    }
+
+    pub fn with_managed_runtime_enabled(mut self, enabled: bool) -> Self {
+        self.managed_runtime_enabled = enabled;
         self
     }
 

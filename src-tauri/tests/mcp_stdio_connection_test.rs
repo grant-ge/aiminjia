@@ -1,4 +1,4 @@
-use std::fs;
+﻿use std::fs;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -87,26 +87,33 @@ for raw in sys.stdin:
 }
 
 fn managed_runtime_resolver() -> Arc<dyn app_lib::runtime::dependencies::RuntimeResolver> {
+    let root = std::env::temp_dir().join("renlijia-mcp-runtime");
     Arc::new(StaticRuntimeResolver::new(
-        "/tmp/renlijia/python/bin/python3".into(),
-        "/tmp/renlijia/node/bin/node".into(),
-        "/tmp/renlijia/node/bin/npm".into(),
-        "/tmp/renlijia/node/bin/npx".into(),
-        "/tmp/renlijia/uv/bin/uv".into(),
-        "/tmp/renlijia/uv/bin/uvx".into(),
-        "/tmp/renlijia/node/node_modules".into(),
-        "/tmp/renlijia/python/site-packages".into(),
+        root.join("python").join("bin").join("python3"),
+        root.join("node").join("bin").join("node"),
+        root.join("node").join("bin").join("npm"),
+        root.join("node").join("bin").join("npx"),
+        root.join("uv").join("bin").join("uv"),
+        root.join("uv").join("bin").join("uvx"),
+        root.join("node").join("lib").join("node_modules"),
+        root.join("python").join("site-packages"),
     ))
+}
+
+fn managed_runtime_root() -> std::path::PathBuf {
+    std::env::temp_dir().join("renlijia-mcp-runtime")
 }
 
 #[tokio::test]
 async fn stdio_connection_performs_initialize_list_and_call() {
     let script_path = write_fixture_server();
+    let python_cmd = if cfg!(windows) { "python" } else { "python3" };
+    let script_arg = script_path.to_string_lossy().replace('\\', "/");
     let connection = Arc::new(StdioMcpConnection::new(
         McpServerConfig {
             name: "fixture".to_string(),
             transport_type: "stdio".to_string(),
-            endpoint: format!("python3 {}", script_path.display()),
+            endpoint: format!(r#"{python_cmd} "{script_arg}""#),
             env_vars: None,
         },
         None,
@@ -169,13 +176,25 @@ fn stdio_connection_resolves_renlijia_runtime_placeholders_before_spawn() {
         .resolved_stdio_command_for_test()
         .expect("placeholder command should resolve");
 
-    assert_eq!(program, "/tmp/renlijia/node/bin/node");
+    let root = managed_runtime_root();
+    assert_eq!(
+        program,
+        root.join("node")
+            .join("bin")
+            .join("node")
+            .to_string_lossy()
+            .into_owned()
+    );
     assert_eq!(
         args,
         vec![
             "server.js".to_string(),
             "--runner".to_string(),
-            "/tmp/renlijia/node/bin/npx".to_string(),
+            root.join("node")
+                .join("bin")
+                .join("npx")
+                .to_string_lossy()
+                .into_owned(),
         ]
     );
 }
@@ -196,12 +215,23 @@ fn stdio_connection_preserves_quoted_arguments_and_embedded_placeholders() {
         .resolved_stdio_command_for_test()
         .expect("quoted command should parse and resolve");
 
-    assert_eq!(program, "/tmp/renlijia/node/bin/node");
+    let root = managed_runtime_root();
+    assert_eq!(
+        program,
+        root.join("node")
+            .join("bin")
+            .join("node")
+            .to_string_lossy()
+            .into_owned()
+    );
     assert_eq!(
         args,
         vec![
             "server path.js".to_string(),
-            "--runner=/tmp/renlijia/node/bin/npx".to_string(),
+            format!(
+                "--runner={}",
+                root.join("node").join("bin").join("npx").to_string_lossy()
+            ),
             "--json={\"mode\":\"safe\"}".to_string(),
         ]
     );

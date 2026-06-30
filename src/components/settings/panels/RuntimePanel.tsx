@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { runtimeDiagnostics, type RuntimeDiagnostics } from '@/lib/tauri'
+import { getSettings, runtimeDiagnostics, type RuntimeDiagnostics, updateSettings } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/common/Switch'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 
 function useResolverLabel(): Record<RuntimeDiagnostics['activeResolver'], string> {
@@ -37,6 +39,8 @@ export function RuntimePanel() {
   const [loading, setLoading] = useState(false)
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  const managedRuntimeEnabled = useSettingsStore((s) => s.managedRuntimeEnabled ?? true)
+  const setManagedRuntimeEnabled = useSettingsStore((s) => s.setManagedRuntimeEnabled)
 
   const load = async () => {
     setLoading(true)
@@ -61,6 +65,18 @@ export function RuntimePanel() {
     return () => window.clearInterval(id)
   }, [lastCheckedAt])
 
+  const handleManagedRuntimeChange = async (enabled: boolean) => {
+    const previous = managedRuntimeEnabled
+    setManagedRuntimeEnabled(enabled)
+    try {
+      const current = await getSettings()
+      await updateSettings({ ...current, managedRuntimeEnabled: enabled })
+    } catch (e) {
+      setManagedRuntimeEnabled(previous)
+      setError(String(e))
+    }
+  }
+
   return (
     <section className="flex flex-col gap-4">
       <header>
@@ -75,6 +91,22 @@ export function RuntimePanel() {
           {error}
         </div>
       )}
+
+      <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-card px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-foreground">
+            {t('settings.runtime.managedRuntime')}
+          </div>
+          <div className="mt-1 text-xs leading-5 text-muted-foreground">
+            {t('settings.runtime.managedRuntimeDesc')}
+          </div>
+        </div>
+        <Switch
+          checked={managedRuntimeEnabled}
+          onCheckedChange={(checked) => void handleManagedRuntimeChange(checked)}
+          aria-label={t('settings.runtime.managedRuntime')}
+        />
+      </div>
 
       {data && (
         <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 rounded-md border border-border bg-muted/30 p-4 text-sm">

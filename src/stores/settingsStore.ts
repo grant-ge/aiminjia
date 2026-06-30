@@ -33,6 +33,7 @@ interface SettingsState extends Settings {
   setFontScale: (scale: FontScale) => void
   setChatWidthMode: (mode: ChatWidthMode) => void
   setDefaultPermissionMode: (mode: DefaultPermissionMode) => void
+  setManagedRuntimeEnabled: (enabled: boolean) => void
   setCloudGatewayMode: (mode: CloudGatewayMode) => void
   markLoaded: () => void
 }
@@ -80,6 +81,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setChatWidthMode: (chatWidthMode) => set({ chatWidthMode }),
   setDefaultPermissionMode: (defaultPermissionMode) => set({ defaultPermissionMode }),
+  setManagedRuntimeEnabled: (managedRuntimeEnabled) => set({ managedRuntimeEnabled }),
   setCloudGatewayMode: (cloudGatewayMode) => set({ cloudGatewayMode }),
   markLoaded: () => set({ isLoaded: true }),
 }))

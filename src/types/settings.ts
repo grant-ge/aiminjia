@@ -36,6 +36,7 @@ export interface Settings {
   fontScale?: FontScale;
   chatWidthMode?: ChatWidthMode;
   defaultPermissionMode?: DefaultPermissionMode;
+  managedRuntimeEnabled?: boolean;
   accentColor?: string;
   uiHomeSelectedWorkspace?: string;
   uiHomeRecentWorkspaces?: string;
@@ -63,6 +64,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fontScale: "medium",
   chatWidthMode: "full",
   defaultPermissionMode: "default",
+  managedRuntimeEnabled: true,
   accentColor: "",
   uiHomeSelectedWorkspace: "",
   uiHomeRecentWorkspaces: "",

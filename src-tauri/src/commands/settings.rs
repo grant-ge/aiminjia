@@ -1,6 +1,7 @@
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::providers::{custom::CustomProvider, openai::OpenAiProvider};
 use crate::models::settings::AppSettings;
+use crate::runtime::dependencies::ManagedRuntimePreference;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_store::AppStorage;
@@ -32,13 +33,16 @@ pub async fn get_settings(
     cus: State<'_, Arc<CurrentUserStorage>>,
     root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
+    managed_runtime_preference: State<'_, Arc<ManagedRuntimePreference>>,
 ) -> Result<AppSettings, String> {
     let store = settings_store(&cus, &root_db);
     let settings_map = store.get_all_settings().map_err(|e| e.to_string())?;
 
     // If no settings stored yet, return defaults
     if settings_map.is_empty() {
-        return Ok(AppSettings::default());
+        let settings = AppSettings::default();
+        managed_runtime_preference.set_enabled(settings.managed_runtime_enabled);
+        return Ok(settings);
     }
 
     // Use type-safe parsing instead of JSON deserialization
@@ -49,6 +53,7 @@ pub async fn get_settings(
     if let Some(ss) = crypto.as_ref() {
         settings.primary_api_key = decrypt_if_encrypted(ss, &settings.primary_api_key);
     }
+    managed_runtime_preference.set_enabled(settings.managed_runtime_enabled);
 
     Ok(settings)
 }
@@ -62,6 +67,7 @@ pub async fn update_settings(
     cus: State<'_, Arc<CurrentUserStorage>>,
     root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
+    managed_runtime_preference: State<'_, Arc<ManagedRuntimePreference>>,
     settings: AppSettings,
 ) -> Result<(), String> {
     let store = settings_store(&cus, &root_db);
@@ -111,6 +117,8 @@ pub async fn update_settings(
             .set_setting(&per_provider_key, &value_str)
             .map_err(|e| e.to_string())?;
     }
+
+    managed_runtime_preference.set_enabled(settings.managed_runtime_enabled);
 
     Ok(())
 }

@@ -25,7 +25,10 @@ pub use artifact_fetcher::{
 pub use bundled_resolver::BundledRuntimeResolver;
 pub use chain_resolver::ChainResolver;
 pub use checksum::{verify_sha256, ChecksumError};
-pub use command_env::{prepend_bundle_bin_to_path, prepend_bundle_bin_to_path_tokio};
+pub use command_env::{
+    prepend_bundle_bin_to_path, prepend_bundle_bin_to_path_tokio, ManagedRuntimePreference,
+    ManagedRuntimeProcessEnv,
+};
 pub use config::{configured_runtime_manifest_url, DEFAULT_RUNTIME_MANIFEST_URL};
 pub use downloader::{
     RuntimeDownloadCancellation, RuntimeDownloadError, RuntimeDownloadOptions,

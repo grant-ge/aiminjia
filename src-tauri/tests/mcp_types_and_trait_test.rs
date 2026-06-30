@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+﻿use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -137,4 +137,21 @@ async fn shared_mcp_connection_trait_object_supports_basic_calls() {
 
     connection.disconnect().await.unwrap();
     assert!(!connection.is_connected());
+}
+
+#[test]
+fn mcp_server_config_ignores_legacy_runtime_env_field() {
+    let config: McpServerConfig = serde_json::from_value(json!({
+        "name": "legacy",
+        "transport_type": "stdio",
+        "endpoint": "node server.js",
+        "env_vars": null,
+        "runtime_env": "system"
+    }))
+    .unwrap();
+
+    assert_eq!(config.name, "legacy");
+    assert_eq!(config.transport_type, "stdio");
+    assert_eq!(config.endpoint, "node server.js");
+    assert!(config.env_vars.is_none());
 }

@@ -357,26 +357,27 @@ pub async fn collect_reader(
     ))
 }
 
-/// Inject the bundled runtime bin dir into a child shell's PATH so that
-/// shebang scripts like `npm`/`npx`/`uvx` (`#!/usr/bin/env node` /
-/// `python3`) can locate the interpreter we ship. Without this every
-/// `npm install -g …` emitted by the LLM dies with
-/// `env: node: No such file or directory` (observed on real customer
-/// machines, see screenshots in the 2026-05-21 review).
+/// Inject the managed runtime env patch into a child shell so bare
+/// `node`/`npm`/`npx`/`python`/`uv`/`uvx` resolve to AIjia runtime tools.
 ///
 /// No-op for legacy/test paths whose `ToolExecutionContext` does not carry
 /// a runtime resolver.
-pub fn inject_bundled_runtime_path(ctx: &ToolExecutionContext, command: &mut Command) {
+pub fn inject_managed_runtime_env(ctx: &ToolExecutionContext, command: &mut Command) {
+    if !ctx.managed_runtime_enabled {
+        return;
+    }
     let Some(cap) = ctx.capability.as_ref() else {
         return;
     };
     let Some(resolver) = cap.runtime_resolver.as_ref() else {
         return;
     };
-    let Ok(deps) = resolver.workspace_dependencies() else {
+    let Ok(env) =
+        crate::runtime::dependencies::ManagedRuntimeProcessEnv::from_resolver(resolver.as_ref())
+    else {
         return;
     };
-    crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(command, &deps.node);
+    env.apply_to_tokio_command(command);
 }
 
 /// Inject the current tracing span's trace/span IDs as environment variables

@@ -1,6 +1,9 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
+
+use crate::runtime::dependencies::{ManagedRuntimeProcessEnv, RuntimeResolver};
 
 #[cfg(target_os = "windows")]
 use crate::storage::process_ext::NoWindowExt;
@@ -11,6 +14,8 @@ pub struct SkillSubstitutionContext {
     pub args: String,
     pub argument_names: Vec<String>,
     pub execute_shell: bool,
+    pub runtime_resolver: Option<Arc<dyn RuntimeResolver>>,
+    pub managed_runtime_enabled: bool,
 }
 
 pub fn substitute_skill_body(body: &str, ctx: &SkillSubstitutionContext) -> Result<String> {
@@ -44,13 +49,21 @@ pub fn substitute_skill_body(body: &str, ctx: &SkillSubstitutionContext) -> Resu
     }
 
     if ctx.execute_shell {
-        out = execute_inline_shell_blocks(&out)?;
+        out = execute_inline_shell_blocks(
+            &out,
+            ctx.runtime_resolver.as_deref(),
+            ctx.managed_runtime_enabled,
+        )?;
     }
 
     Ok(out)
 }
 
-fn execute_inline_shell_blocks(input: &str) -> Result<String> {
+fn execute_inline_shell_blocks(
+    input: &str,
+    runtime_resolver: Option<&dyn RuntimeResolver>,
+    managed_runtime_enabled: bool,
+) -> Result<String> {
     let mut result = String::new();
     let mut rest = input;
     while let Some(start) = rest.find("!`") {
@@ -77,19 +90,35 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
              {cmd}"
         );
         #[cfg(target_os = "windows")]
-        let output = std::process::Command::new("powershell.exe")
-            .arg("-NoProfile")
-            .arg("-Command")
-            .arg(&wrapped_cmd)
-            .no_window()
-            .output()
-            .with_context(|| format!("failed to execute skill shell command: {cmd}"))?;
+        let output = {
+            let mut command = std::process::Command::new("powershell.exe");
+            command
+                .arg("-NoProfile")
+                .arg("-Command")
+                .arg(&wrapped_cmd)
+                .no_window();
+            inject_managed_runtime_env_if_needed(
+                &mut command,
+                runtime_resolver,
+                managed_runtime_enabled,
+            );
+            command
+                .output()
+                .with_context(|| format!("failed to execute skill shell command: {cmd}"))?
+        };
         #[cfg(not(target_os = "windows"))]
-        let output = std::process::Command::new("bash")
-            .arg("-lc")
-            .arg(cmd)
-            .output()
-            .with_context(|| format!("failed to execute skill shell command: {cmd}"))?;
+        let output = {
+            let mut command = std::process::Command::new("bash");
+            command.arg("-lc").arg(cmd);
+            inject_managed_runtime_env_if_needed(
+                &mut command,
+                runtime_resolver,
+                managed_runtime_enabled,
+            );
+            command
+                .output()
+                .with_context(|| format!("failed to execute skill shell command: {cmd}"))?
+        };
         if !output.status.success() {
             anyhow::bail!(
                 "Skill body shell command failed: {}",
@@ -103,4 +132,20 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
     }
     result.push_str(rest);
     Ok(result)
+}
+
+fn inject_managed_runtime_env_if_needed(
+    command: &mut std::process::Command,
+    runtime_resolver: Option<&dyn RuntimeResolver>,
+    managed_runtime_enabled: bool,
+) {
+    if !managed_runtime_enabled {
+        return;
+    }
+    let Some(runtime_resolver) = runtime_resolver else {
+        return;
+    };
+    if let Ok(env) = ManagedRuntimeProcessEnv::from_resolver(runtime_resolver) {
+        env.apply_to_command(command);
+    }
 }

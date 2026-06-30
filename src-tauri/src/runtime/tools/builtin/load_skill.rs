@@ -240,6 +240,11 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             args,
             argument_names: skill.frontmatter.arguments.clone(),
             execute_shell: false,
+            runtime_resolver: ctx
+                .capability
+                .as_ref()
+                .and_then(|cap| cap.runtime_resolver.clone()),
+            managed_runtime_enabled: ctx.managed_runtime_enabled,
         };
 
         let substituted_body = substitute_skill_body(&skill.body, &sub_ctx)

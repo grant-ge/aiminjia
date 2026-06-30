@@ -4,9 +4,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::runtime::dependencies::ManagedRuntimeResolver;
+use crate::runtime::dependencies::{ManagedRuntimePreference, ManagedRuntimeResolver};
 use crate::runtime::mcp::{
-    build_mcp_connection, McpServerConfig, McpServerManager, McpServerState, McpServerStatus,
+    build_mcp_connection_with_preference, McpServerConfig, McpServerManager, McpServerState,
+    McpServerStatus,
 };
 use crate::storage::mcp_config_store::McpConfigStore;
 
@@ -78,12 +79,17 @@ pub async fn add_mcp_server(
     manager: State<'_, Arc<McpServerManager>>,
     config_store: State<'_, Arc<McpConfigStore>>,
     runtime_resolver: State<'_, ManagedRuntimeResolver>,
+    managed_runtime_preference: State<'_, Arc<ManagedRuntimePreference>>,
 ) -> Result<(), String> {
     let config: McpServerConfig = config.into();
     config_store.add(config.clone())?;
 
-    let connection = build_mcp_connection(&config, Some(runtime_resolver.inner().clone()))
-        .map_err(|err| err.to_string())?;
+    let connection = build_mcp_connection_with_preference(
+        &config,
+        Some(runtime_resolver.inner().clone()),
+        managed_runtime_preference.inner().clone(),
+    )
+    .map_err(|err| err.to_string())?;
     if let Err(err) = manager.register(connection).await {
         let _ = config_store.remove(&config.name);
         return Err(err.to_string());

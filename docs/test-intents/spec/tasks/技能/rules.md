@@ -39,6 +39,9 @@
 - 场景 29：未知业务系统没有匹配技能时，不能静默安装无关技能
 - 场景 30：普通公开网页抓取仍走浏览器，不被市场发现拦截
 - 场景 31：薪酬分析类候选不唯一时，必须先询问用户选择
+- 场景 32：钉钉能力已安装并开启时，后续 dws 类任务直接复用已有技能和 CLI，不重复安装
+- 场景 33：用户说钉钉命令不可用时，如需补齐 dws CLI，默认补到 AIjia 自带命令环境
+- 场景 34：用户明确要求检查系统 PATH 里的 dws 时，使用 system 出口且不回落自带环境
 
 ## 执行约束：技能启用状态改造
 
@@ -50,7 +53,7 @@
 
 ## 执行约束：发现技能自动安装
 
-- 意图 27-45 默认依赖这些 `tauri-pilot aijia` 原子命令：`skill-center-open`、`skill-center-tab`、`skill-center-list --json`、`skill-market-list --json --include-description`、`skill-center-toggle --id --enabled`、`skill-market-add --id`、`skill-picker-open --json`、`slash-suggestions --query --json`、`sync-builtin-skills`、`visible-tools --json`、`wait-agent-idle --timeout`、`pending-action-snapshot`、`dialog-snapshot`。如果命令缺失，runner 应标记为 `CLI gap`，不能把人工点按或肉眼观察当成稳定自动化结果。
+- 意图 27-48 默认依赖这些 `tauri-pilot aijia` 原子命令：`skill-center-open`、`skill-center-tab`、`skill-center-list --json`、`skill-market-list --json --include-description`、`skill-center-toggle --id --enabled`、`skill-market-add --id`、`skill-picker-open --json`、`slash-suggestions --query --json`、`sync-builtin-skills`、`visible-tools --json`、`wait-agent-idle --timeout`、`pending-action-snapshot`、`dialog-snapshot`。如果命令缺失，runner 应标记为 `CLI gap`，不能把人工点按或肉眼观察当成稳定自动化结果。
 - 自动发现测试需要企业市场中存在测试专用技能包：`find-skills-e2e-web-fetch`、`find-skills-e2e-choice-alpha`、`find-skills-e2e-choice-beta`、`find-skills-e2e-disable-after-install`。这些包缺失时，runner 应标记为环境阻塞，不得拿真实客户技能做安装、关闭或卸载实验。
 - 自动发现测试不得删除整个 `skillsConfig.json`，不得删除用户已有真实技能目录；如需未安装状态，只能选择 `skill-market-list --json --include-description` 中 `installed == false` 的测试专用技能包。
 - 真实市场技能评测只允许验证“搜索、是否询问、是否直接加载已安装技能”；除非意图明确写出目标测试技能并确认 `installed == false`，不得用真实客户技能做关闭、卸载或重复安装实验。
@@ -67,6 +70,9 @@ find-skills 的评测不能只测“用户明确说要找技能”或“用户�
 | 业务对象型 | “这个月哪些薪资组已经生成了” | 本地没有薪酬专用技能时，先搜索市场，再安装/加载 `smartcb` |
 | 产品别名型 | “睿认识里查一下人” / “智能薪酬看下概览” | 别名、错字、简称能映射到对应市场技能 |
 | 已安装追问型 | “再帮我看一下未生成的薪资组” | 已安装且开启时直接 `Skill(smartcb)`，不再搜市场 |
+| 已安装企业工具型 | “再帮我看看钉钉待办/审批” | 已安装且开启时直接 `Skill(dws)` 或 `Skill(dingtalk-workspace)`，不再搜市场，也不重新安装 dws 相关 CLI/依赖 |
+| 企业工具缺失补齐型 | “钉钉命令好像用不了，你帮我弄一下” | 如需补齐 CLI，默认补到 AIjia 自带命令环境，不使用系统 npm / brew / winget |
+| 指定系统企业工具型 | “我就想看我电脑 PATH 里的 dws 能不能用” | 显式使用 system 出口；系统不可用时说明不可用，不回落到 AIjia 自带环境 |
 | 普通网页型 | “打开这个公开网页，把标题抓出来” | 直接 `Skill(browser)`，不触发 `SkillMarketSearch` |
 | 未知系统型 | “采购星球帮我查采购单” | 找不到匹配时不安装无关技能，向用户说明需要系统入口或更多信息 |
 | 多候选型 | “工资表做薪酬公平性分析和调薪建议” | 搜到多个接近候选时先问用户，不静默安装 |
@@ -1493,3 +1499,127 @@ find-skills 的评测不能只测“用户明确说要找技能”或“用户�
 - `SkillMarketSearch` 对应的 tool record 内容包含 `comp-analysis-v2`、`salary-benchmarking` 或 `salary-query`
 - 如果搜索结果包含两个及以上薪酬相关候选，`$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "AskUserQuestion"` 的调用
 - 如果搜索结果包含两个及以上薪酬相关候选，`$CONV_ID/messages.jsonl` 中不存在位于首次 `AskUserQuestion` 调用之前的 `toolCalls[].name == "SkillMarketInstall"` 调用
+
+---
+
+## 意图-技能-046：钉钉已安装，复用已有能力
+
+**场景**
+用户已经具备钉钉工作台能力，后续只是继续问待办、审批、日程这类钉钉业务。Agent 直接加载已安装的钉钉技能，并通过已有 `dws` 命令能力完成只读检查；不再搜索市场，不再安装同一个技能，也不在每个新对话里重新安装 dws CLI、Node 包或 Python 包。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`
+5. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$INSTALLED_SKILLS`
+6. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+7. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$BUILTIN_SKILLS`
+8. 确认 `$INSTALLED_SKILLS` 或 `$BUILTIN_SKILLS` 中存在 `id == "dws"` 且 `enabled == true`，或存在 `id == "dingtalk-workspace"` 且 `enabled == true`；如果两个技能都未安装或关闭，本意图记为环境阻塞
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_A`
+10. 在输入框输入：`帮我看一下钉钉里今天有没有待办，只读汇总，不要修改任何数据。`
+11. `tauri-pilot aijia send`
+12. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+13. 读取 `$CONV_A/messages.jsonl`
+14. 新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_B`
+15. 在输入框输入：`再帮我看看钉钉里有没有待我处理的审批，只读汇总，不要处理审批。`
+16. `tauri-pilot aijia send`
+17. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+18. 读取 `$CONV_B/messages.jsonl`
+
+**验收标准**
+- `$CONV_A/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `dws` 或 `dingtalk-workspace` 的调用
+- `$CONV_B/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `dws` 或 `dingtalk-workspace` 的调用
+- `$CONV_A/messages.jsonl` 中不存在位于首次钉钉技能 `Skill` 调用之前的 `toolCalls[].name == "SkillMarketSearch"` 调用
+- `$CONV_B/messages.jsonl` 中不存在位于首次钉钉技能 `Skill` 调用之前的 `toolCalls[].name == "SkillMarketSearch"` 调用
+- `$CONV_A/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `dws` 或 `dingtalk-workspace` 的调用
+- `$CONV_B/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `dws` 或 `dingtalk-workspace` 的调用
+- `$CONV_A/messages.jsonl` 中不存在工具调用命令包含 `npm install -g dws`
+- `$CONV_B/messages.jsonl` 中不存在工具调用命令包含 `npm install -g dws`
+- `$CONV_A/messages.jsonl` 中不存在工具调用命令包含 `npm install`、`npm i`、`pnpm add`、`yarn add`、`pip install`、`uv pip install`、`cargo install` 或 `go install`
+- `$CONV_B/messages.jsonl` 中不存在工具调用命令包含 `npm install`、`npm i`、`pnpm add`、`yarn add`、`pip install`、`uv pip install`、`cargo install` 或 `go install`
+- `$CONV_A/messages.jsonl` 中工具调用命令不包含 `renlijia-primary-runtime` 下的 Node、npm、dws 或 Python 绝对路径
+- `$CONV_B/messages.jsonl` 中工具调用命令不包含 `renlijia-primary-runtime` 下的 Node、npm、dws 或 Python 绝对路径
+- 如果 `$CONV_A/messages.jsonl` 中存在 dws 命令调用，该调用使用裸 `dws`
+- 如果 `$CONV_B/messages.jsonl` 中存在 dws 命令调用，该调用使用裸 `dws`
+- 如果 `$CONV_A/messages.jsonl` 中存在 `Bash` 或 `PowerShell` 工具调用，该命令包含 `dws`、`python` 或 `python3`
+- 如果 `$CONV_B/messages.jsonl` 中存在 `Bash` 或 `PowerShell` 工具调用，该命令包含 `dws`、`python` 或 `python3`
+- 如果 dws 认证不可用，最后一条 assistant 文本包含 `登录`、`授权`、`认证` 或 `配置`
+- `$CONV_A/messages.jsonl` 中不存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+- `$CONV_B/messages.jsonl` 中不存在 `toolCalls[].name == "Skill"` 且参数包含 `find-skills` 的调用
+
+---
+
+## 意图-技能-047：dws 缺失时，补到自带环境
+
+**场景**
+用户不关心 Node、npm 或 Runtime，只感觉“钉钉命令好像用不了”，希望 AI 自己检查并补齐。Agent 可以按钉钉技能说明补齐 dws 相关 CLI，但默认只能补到 AIjia 自带命令环境；不能使用系统 npm、系统包管理器或写死本机 Runtime 绝对路径。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`
+5. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$INSTALLED_SKILLS`
+6. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+7. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$BUILTIN_SKILLS`
+8. 确认 `$INSTALLED_SKILLS` 或 `$BUILTIN_SKILLS` 中存在 `id == "dws"` 且 `enabled == true`，或存在 `id == "dingtalk-workspace"` 且 `enabled == true`；如果两个技能都未安装或关闭，本意图记为环境阻塞
+9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+10. 在输入框输入：`钉钉命令好像用不了，你帮我检查一下 dws。如果缺了就自己补一下，然后告诉我现在能不能查看钉钉待办。不要让我去安装系统 Node，也不要改我电脑全局环境。`
+11. `tauri-pilot aijia send`
+12. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 300`
+13. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `dws` 或 `dingtalk-workspace` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在位于首次钉钉技能 `Skill` 调用之前的 `toolCalls[].name == "SkillMarketSearch"` 调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].name == "SkillMarketInstall"` 且参数包含 `dws` 或 `dingtalk-workspace` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].arguments.runtime_env` 字段
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `winget`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `choco`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `brew install`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `curl`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `wget`
+- `$CONV_ID/messages.jsonl` 中工具调用命令不包含 `C:\Program Files\nodejs`
+- `$CONV_ID/messages.jsonl` 中工具调用命令不包含 `/usr/local/bin/npm`
+- `$CONV_ID/messages.jsonl` 中工具调用命令不包含 `/opt/homebrew/bin/npm`
+- `$CONV_ID/messages.jsonl` 中工具调用命令不包含 `renlijia-primary-runtime` 下的 Node、npm、dws 或 Python 绝对路径
+- `$CONV_ID/messages.jsonl` 中包含 `npm install` 或 `npm i` 的工具调用命令数量 `<= 1`
+- 如果 `$CONV_ID/messages.jsonl` 中存在包含 `npm install` 或 `npm i` 的工具调用命令，该命令包含 `dingtalk-workspace-cli`
+- 如果 `$CONV_ID/messages.jsonl` 中存在包含 `npm install` 或 `npm i` 的工具调用命令，该命令中的 `npm` 不是绝对路径
+- 如果 `$CONV_ID/messages.jsonl` 中存在 dws 命令调用，该调用使用裸 `dws`
+- 如果 dws 认证不可用，最后一条 assistant 文本包含 `登录`、`授权`、`认证` 或 `配置`
+- 最后一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录中 `content.text` 不为空
+
+---
+
+## 意图-技能-048：指定系统 dws，使用系统路径
+
+**场景**
+用户明确要检查“我电脑 PATH 里的 dws”，不是让 AI 使用自带环境，也不是让 AI 补齐依赖。Agent 要把系统 dws 和 AIjia 自带 dws 区分开：使用动态上下文里的系统路径或先探测系统 PATH；系统环境不可用时说明不可用，不能回落到 AIjia 自带 Runtime，也不能擅自安装。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 推断 `{runtime_root}`、`{current_pointer}`、`{active_runtime}`
+4. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+5. 在输入框输入：`我想确认我电脑系统 PATH 里的 dws 能不能用。这次不要用你自带的环境，也不要安装新的东西；如果系统里没有 dws，就直接告诉我系统 dws 不可用。`
+6. `tauri-pilot aijia send`
+7. 等待对话结束或等待工具链进入稳定状态：`tauri-pilot aijia wait-agent-idle --timeout 240`
+8. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Bash"` 或 `toolCalls[].name == "PowerShell"` 的记录
+- `$CONV_ID/messages.jsonl` 中不存在 `toolCalls[].arguments.runtime_env` 字段
+- 如果本轮工具调用直接执行 dws，命令中的 dws 可执行文件使用动态上下文里的系统绝对路径，或命令先执行 `where` / `which` / `Get-Command` / `command -v` 等系统路径探测
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `npm install`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `npm i`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `pnpm add`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `yarn add`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `brew install`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `winget`
+- `$CONV_ID/messages.jsonl` 中不存在工具调用命令包含 `choco`
+- 工具输出不包含 `{active_runtime}` 下的 dws、Node、npm 或 Python 路径
+- 如果工具输出包含 dws 可执行路径，该路径不位于 `{active_runtime}` 下
+- 如果系统 dws 不可用，最后一条 assistant 文本包含 `系统 dws 不可用`
+- 最后一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录中 `content.text` 不为空

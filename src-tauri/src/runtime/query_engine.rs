@@ -96,7 +96,7 @@ mod tests {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct QueryEngine {
     tool_dispatcher: Option<Arc<ToolDispatcher>>,
     /// Workspace path injected at construction time so that workspace-scoped
@@ -120,6 +120,8 @@ pub struct QueryEngine {
     cost_per_1k_tokens: Option<f64>,
     /// Managed Node/Python runtime resolver propagated into capability contexts.
     runtime_resolver: Option<ManagedRuntimeResolver>,
+    /// Whether shell-like child processes should inject AIjia managed runtime env.
+    managed_runtime_enabled: bool,
     /// Base permission context loaded from PermissionStore at session setup
     /// (UserSettings working dirs + allow_rules).  Per-turn attachment dirs are
     /// merged in at capability-build time via `session_attachment_dirs`.
@@ -165,6 +167,34 @@ pub struct TotalTokenUsage {
     pub cache_read_input_tokens: u64,
 }
 
+impl Default for QueryEngine {
+    fn default() -> Self {
+        Self {
+            tool_dispatcher: None,
+            workspace_path: None,
+            authorized_workspace: None,
+            file_ops: None,
+            read_file_state: Arc::new(FileStateCache::new()),
+            total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
+            permission_denials: Arc::new(Mutex::new(Vec::new())),
+            max_budget_usd: None,
+            cost_per_1k_tokens: None,
+            runtime_resolver: None,
+            managed_runtime_enabled: true,
+            base_permission_ctx: None,
+            permission_store: None,
+            session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
+            run_path_deny_rules: Arc::new(Mutex::new(HashMap::new())),
+            team_registry: None,
+            agent_names: None,
+            inbox_registry: None,
+            lead_idle: None,
+            cancellation_registry: None,
+            conv_dir: None,
+        }
+    }
+}
+
 impl QueryEngine {
     pub fn new() -> Self {
         Self::default()
@@ -182,6 +212,7 @@ impl QueryEngine {
             max_budget_usd: None,
             cost_per_1k_tokens: None,
             runtime_resolver: None,
+            managed_runtime_enabled: true,
             base_permission_ctx: None,
             permission_store: None,
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
@@ -215,6 +246,7 @@ impl QueryEngine {
             max_budget_usd: self.max_budget_usd,
             cost_per_1k_tokens: self.cost_per_1k_tokens,
             runtime_resolver: self.runtime_resolver.clone(),
+            managed_runtime_enabled: self.managed_runtime_enabled,
             base_permission_ctx: self.base_permission_ctx.clone(),
             permission_store: self.permission_store.clone(),
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
@@ -363,6 +395,11 @@ impl QueryEngine {
         runtime_resolver: Option<ManagedRuntimeResolver>,
     ) -> Self {
         self.runtime_resolver = runtime_resolver;
+        self
+    }
+
+    pub fn with_managed_runtime_enabled(mut self, enabled: bool) -> Self {
+        self.managed_runtime_enabled = enabled;
         self
     }
 
@@ -821,7 +858,9 @@ impl QueryEngine {
         // Build execution context with the real tool_call_id from the LLM.
         // TurnState centralizes tool-call scoped cancellation so each call gets
         // a child token of the turn token.
-        let ctx = turn.build_execution_context(call.tool_call_id.clone());
+        let ctx = turn
+            .build_execution_context(call.tool_call_id.clone())
+            .with_managed_runtime_enabled(self.managed_runtime_enabled);
         let ctx = self.attach_ltr_registries(ctx).await;
 
         // Inject capability context (Workspace-First guarantee) — same logic as
@@ -1006,7 +1045,9 @@ impl QueryEngine {
             .tool_dispatcher
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
-        let ctx = turn.build_execution_context(format!("tool-call-{tool_name}"));
+        let ctx = turn
+            .build_execution_context(format!("tool-call-{tool_name}"))
+            .with_managed_runtime_enabled(self.managed_runtime_enabled);
         let ctx = self.attach_ltr_registries(ctx).await;
         // Inject capability context when workspace_path is available so that
         // workspace-scoped runtime tools (read_workspace_file, etc.)

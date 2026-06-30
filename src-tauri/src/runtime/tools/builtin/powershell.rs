@@ -25,8 +25,8 @@ use crate::storage::process_ext::NoWindowExt;
 use super::powershell_detect::{detect, PowerShellEdition, PowerShellLocation};
 use super::shell_common::{
     collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, inject_bundled_runtime_path, inject_trace_env,
-    interpret_command_result, kill_child_process_tree, optional_transcript_path,
+    format_command_failure, inject_managed_runtime_env, inject_trace_env, interpret_command_result,
+    kill_child_process_tree, optional_transcript_path,
     read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes, ExitKind,
     MAX_OUTPUT_BYTES,
 };
@@ -78,6 +78,14 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
         "Refusing: WebClient.DownloadString followed by execution is RCE",
     ),
 ];
+
+fn dangerous_command_view(command: &str) -> String {
+    command
+        .to_lowercase()
+        .chars()
+        .filter(|ch| !matches!(ch, '\'' | '"' | '`'))
+        .collect()
+}
 
 #[derive(Clone, Default)]
 pub struct PowerShellTool {
@@ -491,7 +499,7 @@ impl RuntimeTool for PowerShellTool {
         use crate::runtime::store::permission_store::PolicyDecision;
 
         let command = input.get("command").and_then(Value::as_str).unwrap_or("");
-        let lc = command.to_lowercase();
+        let lc = dangerous_command_view(command);
         for (pattern_lc, message) in DANGEROUS_PATTERNS {
             if lc.contains(pattern_lc) {
                 return Some(PermissionDecision::Deny {
@@ -578,7 +586,7 @@ impl RuntimeTool for PowerShellTool {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .no_window();
-        inject_bundled_runtime_path(&ctx, &mut shell);
+        inject_managed_runtime_env(&ctx, &mut shell);
         inject_trace_env(&mut shell);
         let mut child = shell
             .spawn()

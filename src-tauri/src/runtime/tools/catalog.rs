@@ -224,6 +224,7 @@ fn build_default_catalog() -> ToolCatalog {
             "在授权工作目录中执行 shell 命令。默认 timeout 120000ms；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
+            \n\nRuntime 环境：是否优先注入 AIjia 自带 Node/Python/uv 由设置页“优先使用 AIjia 自带运行环境”开关决定；本工具没有 runtime_env 参数。用户明确要求系统 Node/Python/npm/uv 时，按动态上下文里的系统绝对路径调用。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
         .with_kind(ToolKind::Primitive)
@@ -273,6 +274,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式。\
+            \n\nRuntime 环境：是否优先注入 AIjia 自带 Node/Python/uv 由设置页“优先使用 AIjia 自带运行环境”开关决定；本工具没有 runtime_env 参数。用户明确要求系统 Node/Python/npm/uv 时，按动态上下文里的系统绝对路径调用。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理。",
         )
         .with_kind(ToolKind::Primitive)
@@ -1071,6 +1073,23 @@ mod tests {
 
         assert!(allowed.contains(&"SkillMarketSearch"));
         assert!(allowed.contains(&"SkillMarketInstall"));
+    }
+
+    #[test]
+    fn shell_tools_do_not_expose_runtime_env_selector() {
+        for tool_name in ["Bash", "PowerShell"] {
+            let entry = TOOL_CATALOG
+                .get_entry(tool_name)
+                .expect("shell tool should be registered");
+            assert!(entry
+                .json_schema
+                .pointer("/properties/runtime_env")
+                .is_none());
+            assert!(entry
+                .definition
+                .description
+                .contains("没有 runtime_env 参数"));
+        }
     }
 
     #[test]

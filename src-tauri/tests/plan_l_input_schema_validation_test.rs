@@ -299,11 +299,14 @@ mod l4_query_engine_validation_error_encoding {
 mod l5_builtin_tool_validation {
     use serde_json::json;
 
+    #[cfg(not(windows))]
     use app_lib::runtime::tools::builtin::bash::BashTool;
     use app_lib::runtime::tools::builtin::grep::GrepContentTool;
+    #[cfg(not(windows))]
     use app_lib::runtime::tools::executor::ToolError;
     use app_lib::runtime::tools::RuntimeTool;
 
+    #[cfg(not(windows))]
     #[test]
     fn l5_bash_validates_missing_command_field() {
         let tool = BashTool::default();
@@ -316,6 +319,7 @@ mod l5_builtin_tool_validation {
         ));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn l5_bash_validates_command_must_be_string() {
         let tool = BashTool::default();
@@ -324,6 +328,7 @@ mod l5_builtin_tool_validation {
         assert!(result.is_some());
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn l5_bash_accepts_valid_input() {
         let tool = BashTool::default();
@@ -331,6 +336,7 @@ mod l5_builtin_tool_validation {
         assert!(tool.validate_input(&good).is_none());
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn l5_bash_accepts_valid_input_with_timeout() {
         let tool = BashTool::default();

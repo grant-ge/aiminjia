@@ -387,6 +387,8 @@
       "upgraded": "Upgraded",
       "unavailable": "Unavailable",
       "source": "Source",
+      "managedRuntime": "Prefer AIjia bundled runtime",
+      "managedRuntimeDesc": "When enabled, local commands, skill inline commands, and MCP subprocesses prefer AIjia's bundled Node, Python, and uv. When disabled, only the system environment is used.",
       "bundledVersion": "Bundled version",
       "upgradedVersion": "Upgraded version",
       "checking": "Checking...",

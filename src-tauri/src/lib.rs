@@ -693,6 +693,21 @@ pub fn run() {
                 }
             }
 
+            let managed_runtime_preference = {
+                let settings_db = current_user_storage
+                    .get()
+                    .unwrap_or_else(|| root_db.clone());
+                let settings_map = settings_db.get_all_settings().unwrap_or_default();
+                let settings = if settings_map.is_empty() {
+                    models::settings::AppSettings::default()
+                } else {
+                    models::settings::AppSettings::from_string_map(&settings_map)
+                };
+                Arc::new(runtime::dependencies::ManagedRuntimePreference::new(
+                    settings.managed_runtime_enabled,
+                ))
+            };
+
             #[allow(deprecated)]
             let (agent_store_path, subagent_transcript_store_dir) = current_user_storage
                 .resolve_paths()
@@ -937,9 +952,10 @@ pub fn run() {
 
             tauri::async_runtime::block_on(async {
                 for config in persisted_mcp_configs {
-                    let connection = match runtime::mcp::build_mcp_connection(
+                    let connection = match runtime::mcp::build_mcp_connection_with_preference(
                         &config,
                         Some(runtime_resolver.clone()),
+                        managed_runtime_preference.clone(),
                     ) {
                         Ok(connection) => connection,
                         Err(err) => {
@@ -1112,6 +1128,7 @@ pub fn run() {
             app.manage(global_store);
             app.manage(current_user_storage.clone());
             app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);
+            app.manage(managed_runtime_preference.clone());
             app.manage(skill_enablement_store);
             app.manage(auth_manager);
             app.manage(dingtalk_bridge);

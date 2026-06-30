@@ -1018,6 +1018,7 @@ impl SharedChatRuntimeServices {
     ) -> SessionRuntime {
         let conversation_id = request.conversation_id.as_str().to_string();
         let workspace_path = self.file_mgr.workspace_path();
+        let app_settings = self.load_app_settings();
         let active_persona_id: Option<String> = match request.persona_id_override.as_deref() {
             Some(id) => Some(id.to_string()),
             None => self.db().get_active_persona_id().ok(),
@@ -1041,7 +1042,7 @@ impl SharedChatRuntimeServices {
             model: String::new(),
             gateway: Some(self.gateway.clone()),
             tool_registry: Some(self.tool_registry.clone()),
-            app_settings: Some(self.load_app_settings()),
+            app_settings: Some(app_settings.clone()),
             agent_runtime,
             async_agent_task_store: self.task_store.clone(),
             task_notification_queue: self.task_notification_queue.clone(),
@@ -1060,7 +1061,8 @@ impl SharedChatRuntimeServices {
         let dispatcher = self.tool_registry.to_runtime_dispatcher(deps).await;
         let mut query_engine = QueryEngine::with_dispatcher(dispatcher)
             .with_workspace_path(workspace_path)
-            .with_runtime_resolver(self.runtime_resolver.clone());
+            .with_runtime_resolver(self.runtime_resolver.clone())
+            .with_managed_runtime_enabled(app_settings.managed_runtime_enabled);
         if let Some(permission_ctx) = self.permission_ctx.clone() {
             query_engine = query_engine.with_permission_ctx(permission_ctx);
         }
@@ -2889,6 +2891,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         use crate::runtime::chat::context_builder::{build_env_info, ManagedRuntimeEnvInfo};
 
         let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
+        let app_settings = self.services.load_app_settings();
 
         let authorized = self.services.load_authorized_workspace(conversation_id);
         let authorized_tuple = authorized.as_ref().map(|aw| {
@@ -2920,7 +2923,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             None => None,
         };
 
-        let env_info = build_env_info(&workspace_path, authorized_ref, runtime_info.as_ref()).await;
+        let env_info = build_env_info(
+            &workspace_path,
+            authorized_ref,
+            runtime_info.as_ref(),
+            app_settings.managed_runtime_enabled,
+        )
+        .await;
 
         log::debug!(
             "[get_env_info] conv={} workspace={} authorized={} env_info_len={}",
@@ -4675,6 +4684,18 @@ impl TauriChatCommandAdapter {
             .app
             .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
             .map(|v| v.inner().clone());
+        let app_settings_arc = {
+            let map = self.services.db().get_all_settings().unwrap_or_default();
+            let mut s = if map.is_empty() {
+                AppSettings::default()
+            } else {
+                AppSettings::from_string_map(&map)
+            };
+            if let Some(ss) = self.services.crypto.as_ref() {
+                s.primary_api_key = decrypt_api_key(ss, &s.primary_api_key);
+            }
+            Arc::new(s)
+        };
         let workspace_path = self.services.file_mgr.workspace_path();
         let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
             storage: self.services.db().clone(),
@@ -4689,7 +4710,7 @@ impl TauriChatCommandAdapter {
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
             tool_registry: Some(self.services.tool_registry.clone()),
-            app_settings: Some(Arc::new(AppSettings::default())),
+            app_settings: Some(app_settings_arc.clone()),
             agent_runtime,
             async_agent_task_store: None,
             task_notification_queue: None,
@@ -4713,7 +4734,8 @@ impl TauriChatCommandAdapter {
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(self.services.runtime_resolver.clone()),
+                .with_runtime_resolver(self.services.runtime_resolver.clone())
+                .with_managed_runtime_enabled(app_settings_arc.managed_runtime_enabled),
         );
         let result = runtime.run_chat_request(request).await;
         self.services
@@ -4978,7 +5000,7 @@ impl TauriChatCommandAdapter {
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
             tool_registry: Some(self.services.tool_registry.clone()),
-            app_settings: Some(app_settings_arc),
+            app_settings: Some(app_settings_arc.clone()),
             agent_runtime,
             async_agent_task_store: None,
             task_notification_queue: None,
@@ -5013,7 +5035,8 @@ impl TauriChatCommandAdapter {
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(self.services.runtime_resolver.clone()),
+                .with_runtime_resolver(self.services.runtime_resolver.clone())
+                .with_managed_runtime_enabled(app_settings_arc.managed_runtime_enabled),
         );
         log::info!(
             "[send_message] calling runtime.run_chat_request conv={}",

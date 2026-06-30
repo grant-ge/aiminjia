@@ -96,6 +96,7 @@ pub async fn build_env_info(
     workspace_path: &std::path::PathBuf,
     authorized: Option<(&str, &str)>,
     runtime_info: Option<&ManagedRuntimeEnvInfo>,
+    managed_runtime_enabled: bool,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -119,11 +120,82 @@ pub async fn build_env_info(
     };
     parts.push(format!("Platform: {}", platform));
 
-    if let Some(runtime_info) = runtime_info {
-        parts.push(runtime_info.format_for_env_info());
+    let system_info =
+        SystemRuntimeEnvInfo::detect(runtime_info.map(|info| info.runtime_root.as_path()));
+    parts.push(system_info.format_for_env_info(managed_runtime_enabled));
+
+    if managed_runtime_enabled {
+        match runtime_info {
+            Some(runtime_info) => parts.push(runtime_info.format_enabled_for_env_info()),
+            None => parts.push(
+                "AIjia 自带运行环境：已开启，但当前没有检测到可用的 AIjia Runtime。\n\
+                 当前不要假设裸 `node` / `python` / `uv` 已经命中 AIjia 自带环境；如系统环境检测可用，可按用户意图使用系统环境。"
+                    .to_string(),
+            ),
+        }
+    } else {
+        parts.push(
+            "AIjia 自带运行环境：已关闭（默认使用系统环境）\n\
+             规则:\n\
+             1. 本地 Bash / PowerShell / Skill / MCP 子进程不会注入 AIjia 自带 Runtime。\n\
+             2. 裸 `node`、`npm`、`npx`、`python`、`python3`、`uv`、`uvx` 来自系统 PATH；如系统环境检测未发现对应命令，需要说明系统环境不可用。\n\
+             3. 工具没有 `runtime_env` 参数，不要在工具调用里传这个字段。"
+                .to_string(),
+        );
     }
 
     format!("\n\n[当前环境]\n{}", parts.join("\n"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemRuntimeEnvInfo {
+    pub node: Vec<std::path::PathBuf>,
+    pub npm: Vec<std::path::PathBuf>,
+    pub npx: Vec<std::path::PathBuf>,
+    pub python: Vec<std::path::PathBuf>,
+    pub uv: Vec<std::path::PathBuf>,
+    pub uvx: Vec<std::path::PathBuf>,
+}
+
+impl SystemRuntimeEnvInfo {
+    pub fn detect(managed_runtime_root: Option<&std::path::Path>) -> Self {
+        Self {
+            node: detect_system_command_paths(&["node"], managed_runtime_root),
+            npm: detect_system_command_paths(&["npm"], managed_runtime_root),
+            npx: detect_system_command_paths(&["npx"], managed_runtime_root),
+            python: if cfg!(target_os = "windows") {
+                detect_system_command_paths(&["python", "py"], managed_runtime_root)
+            } else {
+                detect_system_command_paths(&["python3", "python"], managed_runtime_root)
+            },
+            uv: detect_system_command_paths(&["uv"], managed_runtime_root),
+            uvx: detect_system_command_paths(&["uvx"], managed_runtime_root),
+        }
+    }
+
+    pub fn format_for_env_info(&self, managed_runtime_enabled: bool) -> String {
+        let explicit_system_rule = if managed_runtime_enabled {
+            "用户明确说“用系统自带 / 我电脑上的 / 不要用你自带”时，请直接使用这里检测到的系统绝对路径；不要在工具里用裸 `where node` / `Get-Command node` / `which node` 的第一条结果当系统路径，因为当前工具环境会优先看到 AIjia 自带 Runtime。确需复核时，只能验证这里列出的系统绝对路径，或过滤掉 AIjia Runtime 路径后再判断。"
+        } else {
+            "当前默认就是系统环境；如果这里未发现对应命令，说明系统环境不可用，不要假设 AIjia 自带环境已注入。"
+        };
+        format!(
+            "系统环境检测（未注入 AIjia 自带 Runtime）:\n\
+             {}\n\
+             {}\n\
+             {}\n\
+             {}\n\
+             {}\n\
+             {}\n\
+             说明: {explicit_system_rule}",
+            format_paths("node", &self.node),
+            format_paths("npm", &self.npm),
+            format_paths("npx", &self.npx),
+            format_paths("python", &self.python),
+            format_paths("uv", &self.uv),
+            format_paths("uvx", &self.uvx),
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,7 +210,21 @@ pub struct ManagedRuntimeEnvInfo {
 }
 
 impl ManagedRuntimeEnvInfo {
-    pub fn format_for_env_info(&self) -> String {
+    pub fn from_workspace_dependencies(
+        deps: &crate::runtime::dependencies::WorkspaceDependencies,
+    ) -> Self {
+        Self {
+            runtime_root: infer_runtime_root(&deps.python),
+            python_path: deps.python.clone(),
+            node_path: deps.node.clone(),
+            npm_path: deps.npm.clone(),
+            npx_path: deps.npx.clone(),
+            uv_path: deps.uv.clone(),
+            uvx_path: deps.uvx.clone(),
+        }
+    }
+
+    pub fn format_enabled_for_env_info(&self) -> String {
         let node_prefix = self
             .npm_path
             .parent()
@@ -163,62 +249,18 @@ impl ManagedRuntimeEnvInfo {
             node_prefix.join("lib").join("node_modules")
         };
 
-        // Shell 语法因平台而异：Windows 走 powershell，需要 `& "exe"` call operator；
-        // macOS / Linux 走 /bin/sh，必须裸命令（路径用引号包住即可）。
-        // 给 LLM 的模板写错平台 → 工具执行直接 syntax error。
-        let (
-            python_install_template,
-            node_install_template,
-            node_require_template,
-            node_cli_template,
-        ) = if cfg!(target_os = "windows") {
-            (
-                format!(
-                    r#"& "{uv}" pip install <包名> --python "{python}" --quiet"#,
-                    uv = self.uv_path.display(),
-                    python = self.python_path.display(),
-                ),
-                format!(
-                    r#"& "{npm}" install -g <包名> --prefix "{node_prefix}" --silent"#,
-                    npm = self.npm_path.display(),
-                    node_prefix = node_prefix.display(),
-                ),
-                format!(
-                    r#"$env:NODE_PATH="{node_global_modules}"; & "{node}" -e "require('<包名>'); console.log('ok')""#,
-                    node_global_modules = node_global_modules.display(),
-                    node = self.node_path.display(),
-                ),
-                format!(
-                    r#"& "{node_cli_dir}\命令名.cmd" <参数>"#,
-                    node_cli_dir = node_cli_dir.display(),
-                ),
-            )
+        let python_command_name = if cfg!(target_os = "windows") {
+            "python"
         } else {
-            (
-                format!(
-                    r#""{uv}" pip install <包名> --python "{python}" --quiet"#,
-                    uv = self.uv_path.display(),
-                    python = self.python_path.display(),
-                ),
-                format!(
-                    r#""{npm}" install -g <包名> --prefix "{node_prefix}" --silent"#,
-                    npm = self.npm_path.display(),
-                    node_prefix = node_prefix.display(),
-                ),
-                format!(
-                    r#"NODE_PATH="{node_global_modules}" "{node}" -e "require('<包名>'); console.log('ok')""#,
-                    node_global_modules = node_global_modules.display(),
-                    node = self.node_path.display(),
-                ),
-                format!(
-                    r#""{node_cli_dir}/命令名" <参数>"#,
-                    node_cli_dir = node_cli_dir.display(),
-                ),
-            )
+            "python3"
         };
-
+        let python_install_template =
+            format!("uv pip install <包名> --python {python_command_name} --quiet");
+        let node_install_template = "npm install -g <包名> --silent";
+        let node_require_template = r#"node -e "require('<包名>'); console.log('ok')""#;
+        let node_cli_template = "命令名 <参数>";
         format!(
-            r#"Runtime: 已安装
+            r#"AIjia 自带运行环境：已开启（默认优先）
 Runtime 当前目录: {runtime_root}
 Python: {python}
 Node: {node}
@@ -230,26 +272,29 @@ Node 全局包目录: {node_global_modules}
 Node 命令目录: {node_cli_dir}
 
 规则:
-1. 运行 Python / Node / npm / npx / uv 命令时，默认使用上面列出的绝对路径；只有用户明确要求系统环境时，才使用系统 PATH 中的命令。
-2. 安装第三方 Python 包必须使用以下模板（替换包名即可），禁止任何变体：
+1. Bash / PowerShell / Skill / MCP 本地子进程默认会把 AIjia 自带 Runtime 放到 PATH 前面；普通任务直接使用裸 `node`、`npm`、`npx`、`{python_command_name}`、`uv`、`uvx` 即可命中上面的 Runtime。
+2. 不要为了使用默认 Runtime 而手写上面这些可执行文件的绝对路径；这些路径主要用于诊断、核对和故障说明。
+3. 工具没有 `runtime_env` 参数，不要在工具调用里传这个字段。
+4. 用户明确要求系统 Node / Python / npm / uv 时，直接使用上方“系统环境检测”里的系统绝对路径验证和执行；不要先运行裸 `node` / `python` / `where node` / `Get-Command node` 来判断系统环境，因为这些会优先命中 AIjia Runtime。系统环境未发现时说明不可用，不要静默切回 AIjia 自带 Runtime。
+5. 安装第三方 Python 包使用以下模板（替换包名即可）：
 
    {python_install_template}
 
-3. 禁止使用 --system / 裸 pip / python -m pip / pip install 后省略 --python。
-4. uv 装包是幂等的：已安装的包会秒过（< 1s），不会重复下载，所以可以放心在每次需要时直接调用上述模板。
-5. 安装第三方 Node 包必须使用以下模板（替换包名即可），禁止安装到当前工作目录：
+6. 禁止使用 --system / 裸 pip / python -m pip / pip install 后省略 --python。
+7. uv 装包是幂等的：已安装的包会秒过（< 1s），不会重复下载，所以可以放心在每次需要时直接调用上述模板。
+8. 安装第三方 Node 包使用以下模板（替换包名即可），不要安装到当前工作目录：
 
    {node_install_template}
 
-6. 检查或 require Runtime Node 全局包时，必须带 NODE_PATH：
+9. 检查或 require Runtime Node 全局包时，直接使用裸 node；NODE_PATH 已由工具环境注入：
 
    {node_require_template}
 
-7. 已安装的 Node CLI 要从 Node 命令目录用绝对路径执行，例如：
+10. 已安装的 Node CLI 可直接用命令名执行，例如：
 
    {node_cli_template}
 
-   不要用 npx 运行已安装的包；npx 可能触发临时下载或重复安装。"#,
+   不要用 npx 运行已安装的包；npx 只在需要临时执行未安装包时使用。"#,
             runtime_root = self.runtime_root.display(),
             python = self.python_path.display(),
             node = self.node_path.display(),
@@ -259,11 +304,140 @@ Node 命令目录: {node_cli_dir}
             uvx = self.uvx_path.display(),
             node_global_modules = node_global_modules.display(),
             node_cli_dir = node_cli_dir.display(),
+            python_command_name = python_command_name,
             python_install_template = python_install_template,
             node_install_template = node_install_template,
             node_require_template = node_require_template,
             node_cli_template = node_cli_template,
         )
+    }
+}
+
+fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
+    let mut current = path.parent();
+    while let Some(dir) = current {
+        let name = dir.file_name().and_then(|value| value.to_str());
+        if matches!(name, Some("node" | "python" | "uv")) {
+            return dir.parent().unwrap_or(dir).to_path_buf();
+        }
+        current = dir.parent();
+    }
+    path.parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
+fn format_paths(label: &str, paths: &[std::path::PathBuf]) -> String {
+    if paths.is_empty() {
+        return format!("- {label}: 未发现");
+    }
+    let joined = paths
+        .iter()
+        .take(3)
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join("; ");
+    if paths.len() > 3 {
+        format!("- {label}: {joined}; ...")
+    } else {
+        format!("- {label}: {joined}")
+    }
+}
+
+fn detect_system_command_paths(
+    commands: &[&str],
+    managed_runtime_root: Option<&std::path::Path>,
+) -> Vec<std::path::PathBuf> {
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    for command in commands {
+        for path in detect_command_paths(command) {
+            if managed_runtime_root.is_some_and(|root| path_is_inside_managed_runtime(&path, root))
+            {
+                continue;
+            }
+            if !paths.iter().any(|existing| paths_equal(existing, &path)) {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
+fn detect_command_paths(command: &str) -> Vec<std::path::PathBuf> {
+    let mut paths = if cfg!(target_os = "windows") {
+        let mut detect = std::process::Command::new("where.exe");
+        detect.arg(command);
+        command_output_lines(&mut detect)
+    } else {
+        let mut detect = std::process::Command::new("which");
+        detect.arg("-a").arg(command);
+        command_output_lines(&mut detect)
+    };
+
+    if cfg!(target_os = "macos") {
+        if let Some(shell_paths) = detect_command_paths_from_login_shell(command) {
+            paths.extend(shell_paths);
+        }
+    }
+
+    paths
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| std::path::PathBuf::from(line.trim()))
+        .collect()
+}
+
+fn detect_command_paths_from_login_shell(command: &str) -> Option<Vec<String>> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let output = std::process::Command::new(shell)
+        .arg("-lc")
+        .arg(format!("command -v {command}"))
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(
+        crate::storage::console_decode::decode_console_bytes(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect(),
+    )
+}
+
+fn command_output_lines(command: &mut std::process::Command) -> Vec<String> {
+    let Ok(output) = command.output() else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    crate::storage::console_decode::decode_console_bytes(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn path_is_inside_managed_runtime(path: &std::path::Path, root: &std::path::Path) -> bool {
+    let path = normalize_path_for_compare(path);
+    let root = normalize_path_for_compare(root);
+    path.starts_with(&root)
+}
+
+fn paths_equal(a: &std::path::Path, b: &std::path::Path) -> bool {
+    normalize_path_for_compare(a) == normalize_path_for_compare(b)
+}
+
+fn normalize_path_for_compare(path: &std::path::Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    if cfg!(target_os = "windows") {
+        text.to_ascii_lowercase()
+    } else {
+        text
     }
 }
 
@@ -362,6 +536,7 @@ mod tests {
             &workspace_path,
             authorized.as_ref().map(|(p, n)| (p.as_str(), n.as_str())),
             None,
+            true,
         )
         .await;
         assert!(
@@ -379,7 +554,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_env_info_without_authorized_workspace() {
         let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
-        let result = build_env_info(&workspace_path, None, None).await;
+        let result = build_env_info(&workspace_path, None, None, true).await;
         assert!(
             result.contains("[当前环境]"),
             "must have env section header"
@@ -395,7 +570,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_env_info_platform_info() {
         let workspace_path = std::path::PathBuf::from("/tmp");
-        let result = build_env_info(&workspace_path, None, None).await;
+        let result = build_env_info(&workspace_path, None, None, true).await;
         let has_platform =
             result.contains("darwin") || result.contains("windows") || result.contains("linux");
         assert!(has_platform, "must include OS type, got: {}", result);
@@ -414,9 +589,10 @@ mod tests {
             uvx_path: "/cache/renlijia/uv/bin/uvx".into(),
         };
 
-        let result = build_env_info(&workspace_path, None, Some(&runtime_info)).await;
+        let result = build_env_info(&workspace_path, None, Some(&runtime_info), true).await;
 
-        assert!(result.contains("Runtime: 已安装"));
+        assert!(result.contains("系统环境检测（未注入 AIjia 自带 Runtime）"));
+        assert!(result.contains("AIjia 自带运行环境：已开启（默认优先）"));
         assert!(result.contains("Runtime 当前目录: /cache/renlijia/current"));
         assert!(result.contains("Python: /cache/renlijia/python/bin/python3"));
         assert!(result.contains("Node: /cache/renlijia/node/bin/node"));
@@ -434,42 +610,55 @@ mod tests {
             result.contains(expected_node_command_dir),
             "must include the platform-correct Node command dir, got:\n{result}"
         );
-        assert!(result.contains("默认使用上面列出的绝对路径"));
-        assert!(result.contains("只有用户明确要求系统环境时"));
+        assert!(result.contains("默认会把 AIjia 自带 Runtime 放到 PATH 前面"));
+        assert!(result.contains("直接使用裸 `node`"));
+        assert!(result.contains("工具没有 `runtime_env` 参数"));
+        assert!(result.contains("使用上方“系统环境检测”里的系统绝对路径"));
         let expected_python_template = if cfg!(target_os = "windows") {
-            r#"& "/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
+            "uv pip install <包名> --python python --quiet"
         } else {
-            r#""/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
+            "uv pip install <包名> --python python3 --quiet"
         };
         assert!(
             result.contains(expected_python_template),
-            "must include uv pip install template with concrete absolute paths, got:\n{result}"
-        );
-        let expected_node_template = if cfg!(target_os = "windows") {
-            r#"& "/cache/renlijia/node/bin/npm" install -g <包名> --prefix "/cache/renlijia/node" --silent"#
-        } else {
-            r#""/cache/renlijia/node/bin/npm" install -g <包名> --prefix "/cache/renlijia/node" --silent"#
-        };
-        assert!(
-            result.contains(expected_node_template),
-            "must include npm install template with concrete absolute paths, got:\n{result}"
+            "must include uv pip install template with bare runtime commands, got:\n{result}"
         );
         assert!(
-            result.contains(r#"NODE_PATH="/cache/renlijia/node/lib/node_modules""#),
-            "must teach Node global package resolution, got:\n{result}"
+            result.contains("npm install -g <包名> --silent"),
+            "must include npm install template with bare runtime commands, got:\n{result}"
         );
-        let expected_node_cli_template = if cfg!(target_os = "windows") {
-            r#"& "/cache/renlijia/node\命令名.cmd" <参数>"#
-        } else {
-            r#""/cache/renlijia/node/bin/命令名" <参数>"#
-        };
         assert!(
-            result.contains(expected_node_cli_template),
-            "must teach absolute CLI execution instead of npx, got:\n{result}"
+            result.contains(r#"node -e "require('<包名>'); console.log('ok')""#),
+            "must teach Node global package resolution through injected NODE_PATH, got:\n{result}"
         );
         assert!(result.contains("不要用 npx 运行已安装的包"));
         assert!(result.contains("禁止使用 --system"));
         assert!(result.contains("uv 装包是幂等的"));
+        assert!(!result.contains("默认使用上面列出的绝对路径"));
+        assert!(!result.contains("必须带 NODE_PATH"));
         assert!(!result.contains("仁励家 Runtime"));
+    }
+
+    #[tokio::test]
+    async fn test_build_env_info_switch_off_does_not_expose_runtime_paths() {
+        let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
+        let runtime_info = ManagedRuntimeEnvInfo {
+            runtime_root: "/cache/renlijia/current".into(),
+            python_path: "/cache/renlijia/python/bin/python3".into(),
+            node_path: "/cache/renlijia/node/bin/node".into(),
+            npm_path: "/cache/renlijia/node/bin/npm".into(),
+            npx_path: "/cache/renlijia/node/bin/npx".into(),
+            uv_path: "/cache/renlijia/uv/bin/uv".into(),
+            uvx_path: "/cache/renlijia/uv/bin/uvx".into(),
+        };
+
+        let result = build_env_info(&workspace_path, None, Some(&runtime_info), false).await;
+
+        assert!(result.contains("AIjia 自带运行环境：已关闭（默认使用系统环境）"));
+        assert!(result.contains("系统环境检测（未注入 AIjia 自带 Runtime）"));
+        assert!(result.contains("不要假设 AIjia 自带环境已注入"));
+        assert!(result.contains("工具没有 `runtime_env` 参数"));
+        assert!(!result.contains("Runtime 当前目录: /cache/renlijia/current"));
+        assert!(!result.contains("默认会把 AIjia 自带 Runtime 放到 PATH 前面"));
     }
 }

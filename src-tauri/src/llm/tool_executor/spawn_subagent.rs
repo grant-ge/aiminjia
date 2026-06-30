@@ -431,12 +431,25 @@ impl DefaultSpawnSubagentLauncher {
                 aw.display_name.clone(),
             )
         });
+        let managed_runtime_enabled = scoped_deps
+            .app_settings
+            .as_ref()
+            .map_or(true, |settings| settings.managed_runtime_enabled);
+        let runtime_info = scoped_deps
+            .runtime_resolver
+            .as_ref()
+            .and_then(|resolver| {
+                resolver.workspace_dependencies().ok().map(|deps| {
+                    crate::runtime::chat::context_builder::ManagedRuntimeEnvInfo::from_workspace_dependencies(&deps)
+                })
+            });
         let env_info = crate::runtime::chat::context_builder::build_env_info(
             &scoped_deps.workspace_path,
             authorized_pair
                 .as_ref()
                 .map(|(root, name)| (root.as_str(), name.as_str())),
-            None,
+            runtime_info.as_ref(),
+            managed_runtime_enabled,
         )
         .await;
         if !env_info.is_empty() {
@@ -480,6 +493,7 @@ impl DefaultSpawnSubagentLauncher {
             app_handle: scoped_deps.app_handle.clone(),
             auth_manager: scoped_deps.auth_manager.clone(),
             runtime_resolver: scoped_deps.runtime_resolver.clone(),
+            managed_runtime_enabled,
             // Phase 5: snapshot of the parent turn's merged permission_ctx,
             // extracted from SpawnSubagentContext which received it from the
             // parent ToolExecutionContext.capability.storage.permission_ctx.
@@ -861,6 +875,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
             app_handle: self.deps.app_handle.clone(),
             auth_manager: self.deps.auth_manager.clone(),
             runtime_resolver: self.deps.runtime_resolver.clone(),
+            managed_runtime_enabled: app_settings.managed_runtime_enabled,
             permission_ctx: context.permission_ctx.clone(),
             current_persona_id: self.deps.current_persona_id.clone(),
         };

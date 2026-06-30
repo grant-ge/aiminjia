@@ -387,6 +387,8 @@
       "upgraded": "已升级",
       "unavailable": "不可用",
       "source": "来源",
+      "managedRuntime": "优先使用 AIjia 自带运行环境",
+      "managedRuntimeDesc": "开启后，本地命令、技能内联命令和 MCP 子进程会优先使用 AIjia 内置的 Node、Python、uv；关闭后只使用系统环境。",
       "bundledVersion": "内置版本",
       "upgradedVersion": "升级版本",
       "checking": "检测中...",

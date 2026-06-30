@@ -9,7 +9,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 
-use crate::runtime::dependencies::{ManagedRuntimeResolver, WorkspaceDependencies};
+use crate::runtime::dependencies::{
+    ManagedRuntimePreference, ManagedRuntimeProcessEnv, ManagedRuntimeResolver,
+    WorkspaceDependencies,
+};
 use crate::runtime::mcp::types::{McpServerConfig, McpToolDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +76,7 @@ struct StdioProcessIo {
 pub struct StdioMcpConnection {
     config: McpServerConfig,
     runtime_resolver: Option<ManagedRuntimeResolver>,
+    managed_runtime_preference: Arc<ManagedRuntimePreference>,
     connected: AtomicBool,
     next_request_id: AtomicU64,
     io: Mutex<Option<StdioProcessIo>>,
@@ -81,9 +85,22 @@ pub struct StdioMcpConnection {
 
 impl StdioMcpConnection {
     pub fn new(config: McpServerConfig, runtime_resolver: Option<ManagedRuntimeResolver>) -> Self {
+        Self::new_with_preference(
+            config,
+            runtime_resolver,
+            Arc::new(ManagedRuntimePreference::default()),
+        )
+    }
+
+    pub fn new_with_preference(
+        config: McpServerConfig,
+        runtime_resolver: Option<ManagedRuntimeResolver>,
+        managed_runtime_preference: Arc<ManagedRuntimePreference>,
+    ) -> Self {
         Self {
             config,
             runtime_resolver,
+            managed_runtime_preference,
             connected: AtomicBool::new(false),
             next_request_id: AtomicU64::new(1),
             io: Mutex::new(None),
@@ -333,13 +350,16 @@ impl McpConnection for StdioMcpConnection {
             .stderr(Stdio::inherit());
         crate::storage::process_ext::NoWindowExt::no_window(&mut command);
 
-        // Prepend the bundle bin dir to PATH so shebang scripts (npx → node, etc.) find
-        // the bundled node interpreter rather than failing on systems without system node.
-        log::debug!("[mcp] prepending bundle bin to PATH for MCP server command: {program}");
-        crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(
-            &mut command,
-            std::path::Path::new(&program),
-        );
+        if self.managed_runtime_preference.is_enabled() {
+            if let Some(resolver) = self.runtime_resolver.as_ref() {
+                let env = ManagedRuntimeProcessEnv::from_resolver(resolver.as_ref())
+                    .map_err(|err| McpError::ConnectionFailed(err.to_string()))?;
+                log::debug!(
+                    "[mcp] injecting managed runtime env for MCP server command: {program}"
+                );
+                env.apply_to_tokio_command(&mut command);
+            }
+        }
 
         // Force UTF-8 stdio for MCP children. Windows zh-CN consoles default to
         // CP936; many MCP servers (Python, Node) honor these env vars and emit
@@ -531,10 +551,23 @@ pub fn build_mcp_connection(
     config: &McpServerConfig,
     runtime_resolver: Option<ManagedRuntimeResolver>,
 ) -> McpResult<SharedMcpConnection> {
+    build_mcp_connection_with_preference(
+        config,
+        runtime_resolver,
+        Arc::new(ManagedRuntimePreference::default()),
+    )
+}
+
+pub fn build_mcp_connection_with_preference(
+    config: &McpServerConfig,
+    runtime_resolver: Option<ManagedRuntimeResolver>,
+    managed_runtime_preference: Arc<ManagedRuntimePreference>,
+) -> McpResult<SharedMcpConnection> {
     match config.transport_type.as_str() {
-        "stdio" => Ok(Arc::new(StdioMcpConnection::new(
+        "stdio" => Ok(Arc::new(StdioMcpConnection::new_with_preference(
             config.clone(),
             runtime_resolver,
+            managed_runtime_preference,
         ))),
         _ => Ok(Arc::new(UnsupportedMcpConnection::new(config.clone()))),
     }

@@ -10,6 +10,8 @@ fn substitutes_skill_dir_session_and_arguments() {
         args: "北京 工程师".to_string(),
         argument_names: vec!["city".to_string(), "role".to_string()],
         execute_shell: false,
+        runtime_resolver: None,
+        managed_runtime_enabled: true,
     };
     let body = "Dir=${AIJIA_SKILL_DIR}\nSession=${AIJIA_SESSION_ID}\nArgs=$ARGUMENTS\nCity=$city\nRole=$role\nFirst=$1";
     let result = substitute_skill_body(body, &ctx).unwrap();
@@ -30,6 +32,8 @@ fn appends_arguments_when_placeholder_absent() {
         args: "raw args".to_string(),
         argument_names: vec![],
         execute_shell: false,
+        runtime_resolver: None,
+        managed_runtime_enabled: true,
     };
     let result = substitute_skill_body("body", &ctx).unwrap();
     assert!(result.contains("ARGUMENTS: raw args"));
@@ -44,6 +48,8 @@ fn leaves_unknown_placeholders_unchanged() {
         args: "".to_string(),
         argument_names: vec![],
         execute_shell: false,
+        runtime_resolver: None,
+        managed_runtime_enabled: true,
     };
     let result = substitute_skill_body("$unknown ${AIJIA_UNKNOWN}", &ctx).unwrap();
     assert!(result.contains("$unknown"));
@@ -53,13 +59,20 @@ fn leaves_unknown_placeholders_unchanged() {
 #[test]
 fn executes_inline_shell_blocks_when_enabled() {
     let dir = tempfile::TempDir::new().unwrap();
+    let shell_command = if cfg!(windows) {
+        "[Console]::Write('hello')"
+    } else {
+        "printf hello"
+    };
     let ctx = SkillSubstitutionContext {
         skill_dir: dir.path().to_path_buf(),
         session_id: "s".to_string(),
         args: "".to_string(),
         argument_names: vec![],
         execute_shell: true,
+        runtime_resolver: None,
+        managed_runtime_enabled: true,
     };
-    let result = substitute_skill_body("before !`printf hello` after", &ctx).unwrap();
+    let result = substitute_skill_body(&format!("before !`{shell_command}` after"), &ctx).unwrap();
     assert_eq!(result, "before hello after");
 }
