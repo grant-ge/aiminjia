@@ -199,7 +199,7 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 仓库已经依赖 `lucide-react`，覆盖 90% 以上常见图标场景。**新做图标不要画 SVG**——理由有三：① 自造 SVG 的 stroke / fill / opacity 不跟主题变量，dark mode 切换、租户换肤、状态色都得手 patch；② Tauri webview 对 SVG 比 Chrome 严格（XML 注释 `--` 会被拒、缺 `width`/`height` intrinsic size 不渲染），每加一个 svg 资产就是一个潜在踩坑点；③ 静态资源会进 bundle，安装包/启动时间持续膨胀。
 
-- ✅ 用 lucide：`import { User, Search, X } from 'lucide-react'`，外层包圆 `bg-primary/12 rounded-full text-primary p-[15%]` 就能达到"中性头像 + 跟主题色"的视觉，跟着 `--primary` 自动换肤
+- ✅ 用 lucide：`import { User, Search, X } from 'lucide-react'`，外层包圆 `bg-[rgba(var(--primary-rgb),0.12)] rounded-full text-primary p-[15%]` 就能达到"中性头像 + 跟主题色"的视觉，跟着 `--primary` 自动换肤
 - ✅ lucide 没有的图标 → 先在 lucide 全集 (https://lucide.dev/icons) 搜近似语义；再不行用 `@radix-ui/react-icons` 的字符 / 系统图标作为补充
 - ❌ 禁止往 `public/` 加新的 SVG / PNG / 图标资产仅为了"做一个图"
 - ❌ 禁止自己写 `<svg viewBox=... ><path .../></svg>` inline 图形（除非是项目主 logo / 启动闪屏这种**唯一身份性**资产）
@@ -233,11 +233,12 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 `vite.config.ts` 的 `build.target: 'safari13'` **只降级 JS 语法，对 CSS 完全无效**。以下 CSS 特性在 Safari 13 上不可用，禁止在源码中使用：
 
 - ❌ `color-mix()` — Safari 16.2+。替代方案：在 `:root` 定义 `--foo-rgb: R, G, B` 变量，用 `rgba(var(--foo-rgb), 0.X)` 替代；需要混合两个实色时预计算静态 hex 值
+- ❌ Tailwind v4 主题色 slash 透明度工具类（`bg-primary/10` / `bg-muted/40` / `border-border/70` / `text-foreground/80` / `hover:bg-destructive/10` 等）— 这类颜色来自 CSS 变量，v4 会生成 `color-mix()` 并给旧 WebView 一个“实色”fallback，Intel 旧 WebView 会把淡红/淡灰渲染成整块实色。替代方案：`bg-[rgba(var(--primary-rgb),0.10)]` / `border-[rgba(var(--border-rgb),0.70)]` / `text-[rgba(var(--foreground-rgb),0.80)]`；状态色优先使用 `--color-semantic-*-bg(-light)` / `--color-semantic-*-border`
 - ❌ Tailwind v4 渐变工具类（`bg-gradient-to-*` / `from-*` / `to-*`）— v4 生成带 `in oklch` 色彩空间的 CSS，Safari 15.4+ 才支持。替代方案：内联 style 手写标准 `linear-gradient(to top, var(--primary), transparent)`
 - ❌ `color-mix()` 嵌套在 `linear-gradient` / `radial-gradient` 中 — 整条渐变声明失效
 - ❌ Tailwind 任意值 `drop-shadow-[..._color-mix(...)]` — 整条 filter 失效，改用内联 style `filter: drop-shadow(...)`
 
-项目已有 `--primary-rgb` / `--foreground-rgb` / `--color-bg-base-rgb` / `--muted-foreground-rgb` / `--card-rgb` 等 RGB 分量变量（`globals.css :root`），新增颜色混合需求优先复用。`src/lib/themeUtils.ts` 中已有 `mixColors(hex1, hex2, weight)` 可用于运行时计算两个 hex 色的混合值。
+项目已有 `--primary-rgb` / `--primary-foreground-rgb` / `--foreground-rgb` / `--background-rgb` / `--muted-rgb` / `--muted-foreground-rgb` / `--border-rgb` / `--card-rgb` / `--sidebar-accent-rgb` / `--sidebar-foreground-rgb` 等 RGB 分量变量（`globals.css :root`），新增颜色混合需求优先复用。`src/lib/themeUtils.ts` 中已有 `mixColors(hex1, hex2, weight)` 可用于运行时计算两个 hex 色的混合值。测试契约：`src/styles/__tests__/webview-color-compat.test.ts` 会扫描生产源码，禁止 `color-mix()` 和主题色 slash 透明度类重新出现。
 
 ## 存储结构
 

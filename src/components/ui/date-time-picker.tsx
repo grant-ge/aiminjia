@@ -114,7 +114,7 @@ function SingleDateTimePicker(
           data-aijia-date-time-trigger={id ?? label}
           disabled={disabled}
           className={cn(
-            'w-full justify-between text-left font-normal focus-visible:ring-primary/15',
+            'w-full justify-between text-left font-normal focus-visible:ring-[rgba(var(--primary-rgb),0.15)]',
             !display && 'text-muted-foreground',
             className,
           )}
@@ -208,7 +208,7 @@ function RangeDateTimePicker(props: Extract<DateTimePickerProps, { mode: 'range'
           aria-label={label}
           disabled={disabled}
           className={cn(
-            'w-full justify-between text-left font-normal focus-visible:ring-primary/15',
+            'w-full justify-between text-left font-normal focus-visible:ring-[rgba(var(--primary-rgb),0.15)]',
             !display && 'text-muted-foreground',
             className,
           )}
@@ -489,7 +489,7 @@ function TimeColumn({
         data-aijia-time-list
         data-aijia-time-unit={unit}
         className={cn(
-          'overflow-y-auto rounded-md border border-border p-1 pr-1.5 [scrollbar-color:var(--muted-foreground)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-md [&::-webkit-scrollbar-thumb]:bg-muted-foreground/45 [&::-webkit-scrollbar-track]:bg-transparent',
+          'overflow-y-auto rounded-md border border-border p-1 pr-1.5 [scrollbar-color:var(--muted-foreground)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-md [&::-webkit-scrollbar-thumb]:bg-[rgba(var(--muted-foreground-rgb),0.45)] [&::-webkit-scrollbar-track]:bg-transparent',
           stretch ? 'h-[248px]' : 'h-[204px]',
         )}
       >
@@ -538,7 +538,7 @@ function PickerCell({
       className={cn(
         'rounded-md text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         square ? 'h-8' : 'h-9 px-2',
-        muted && 'text-muted-foreground/55',
+        muted && 'text-[rgba(var(--muted-foreground-rgb),0.55)]',
         selected && 'bg-primary text-primary-foreground hover:bg-primary',
       )}
       onClick={onClick}

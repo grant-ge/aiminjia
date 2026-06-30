@@ -26,7 +26,7 @@ function sleep(ms: number) {
 
 function CredentialRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
+    <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
@@ -79,7 +79,7 @@ function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading:
         </div>
       )}
       {loading && (
-        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]">
+        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-[rgba(var(--background-rgb),0.75)] backdrop-blur-[1px]">
           <Spinner size="lg" className="text-primary" />
         </div>
       )}

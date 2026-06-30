@@ -30,7 +30,7 @@ export function CompactBoundaryBar({
   return (
     <div className="flex justify-center">
       <div
-        className="w-full max-w-xl rounded-md border border-border bg-muted/40 text-muted-foreground"
+        className="w-full max-w-xl rounded-md border border-border bg-[rgba(var(--muted-rgb),0.40)] text-muted-foreground"
         data-aijia-compact-boundary
       >
         <Button unstyled

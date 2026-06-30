@@ -92,7 +92,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
 
   if (!target) {
     return (
-      <div className="flex h-full flex-1 items-center justify-center bg-muted/20 px-6 text-center">
+      <div className="flex h-full flex-1 items-center justify-center bg-[rgba(var(--muted-rgb),0.20)] px-6 text-center">
         <p className="text-sm text-muted-foreground">{t('filePreview.selectArtifact')}</p>
       </div>
     )
@@ -150,7 +150,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
             {t('filePreview.loadingPreview')}
           </div>
         ) : previewState.status === 'error' ? (
-          <div className="space-y-3 rounded-md border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+          <div className="space-y-3 rounded-md border border-[rgba(var(--destructive-rgb),0.20)] bg-[rgba(var(--destructive-rgb),0.05)] p-4 text-sm text-destructive">
             <p>{previewState.error}</p>
             <Button type="button" variant="outline" size="sm" onClick={retryPreview}>
               {t('filePreview.retry')}
@@ -191,7 +191,7 @@ function PreviewContent({
       )
     case 'image': {
       const imagePreview = (
-        <div className="flex h-full min-h-[520px] items-center justify-center rounded-md bg-muted/30 p-4">
+        <div className="flex h-full min-h-[520px] items-center justify-center rounded-md bg-[rgba(var(--muted-rgb),0.30)] p-4">
           <img
             src={preview.dataUrl}
             alt={preview.fileName}
@@ -227,7 +227,7 @@ function PreviewContent({
       )
     case 'unsupported':
       return (
-        <div className="rounded-md border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+        <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.40)] p-4 text-sm text-muted-foreground">
           {preview.reason}
         </div>
       )

@@ -70,7 +70,7 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
       {loading && qrDataUrl && (
         <div
           data-testid="qr-spinner-overlay"
-          className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]"
+          className="absolute inset-4 flex items-center justify-center rounded-md bg-[rgba(var(--background-rgb),0.75)] backdrop-blur-[1px]"
         >
           <Spinner size="lg" className="text-primary" />
         </div>

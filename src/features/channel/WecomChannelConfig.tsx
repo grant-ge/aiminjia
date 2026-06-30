@@ -76,7 +76,7 @@ function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading:
         </div>
       )}
       {loading && (
-        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]">
+        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-[rgba(var(--background-rgb),0.75)] backdrop-blur-[1px]">
           <Spinner size="lg" className="text-primary" />
         </div>
       )}
@@ -112,7 +112,7 @@ function HelpPanel() {
   ]
 
   return (
-    <details className="w-full rounded-md border border-border bg-muted/30 px-4 py-3 text-sm">
+    <details className="w-full rounded-md border border-border bg-[rgba(var(--muted-rgb),0.30)] px-4 py-3 text-sm">
       <summary className="flex cursor-pointer items-center gap-2 font-semibold text-foreground">
         <HelpCircle className="h-4 w-4 text-primary" />
         {t('channel.wecom.help.summary')}

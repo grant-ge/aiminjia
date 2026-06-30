@@ -90,7 +90,7 @@ export function UpdaterPanel() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {t('updater.releaseNotesHeader')}
                   </p>
-                  <ul className="space-y-1.5 pl-5 list-disc text-sm text-foreground/80">
+                  <ul className="space-y-1.5 pl-5 list-disc text-sm text-[rgba(var(--foreground-rgb),0.80)]">
                     {bullets.map((line, i) => <li key={i}>{line}</li>)}
                   </ul>
                 </>
@@ -123,7 +123,7 @@ export function UpdaterPanel() {
           {/* Phase: ready — download complete, show release notes for context */}
           {phase === 'ready' && (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 rounded-md bg-[var(--color-semantic-green)]/8 px-4 py-3">
+              <div className="flex items-center gap-3 rounded-md bg-[rgba(var(--color-semantic-green-rgb),0.08)] px-4 py-3">
                 <CheckCircle2
                   className="h-5 w-5 shrink-0 text-[var(--color-semantic-green)]"
                   strokeWidth={2.25}
@@ -137,7 +137,7 @@ export function UpdaterPanel() {
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {t('updater.releaseNotesHeader')}
                   </p>
-                  <ul className="space-y-1.5 pl-5 list-disc text-sm text-foreground/80">
+                  <ul className="space-y-1.5 pl-5 list-disc text-sm text-[rgba(var(--foreground-rgb),0.80)]">
                     {bullets.map((line, i) => <li key={i}>{line}</li>)}
                   </ul>
                 </div>

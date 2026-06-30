@@ -136,7 +136,7 @@ export function AboutPanel({
           <div className="flex min-w-0 flex-col gap-1.5 pt-1">
             <div className="text-base font-bold leading-none text-foreground">{appName}</div>
             {trimmedTenantName ? (
-              <div className="max-w-[260px] truncate text-sm font-medium leading-none text-foreground/80">
+              <div className="max-w-[260px] truncate text-sm font-medium leading-none text-[rgba(var(--foreground-rgb),0.80)]">
                 {trimmedTenantName}
               </div>
             ) : null}

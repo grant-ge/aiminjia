@@ -81,7 +81,7 @@ function SkillField({
           prominent
             ? 'min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-foreground'
             : mono
-              ? 'min-w-0 flex-1 truncate font-mono text-sm leading-5 text-foreground/82'
+              ? 'min-w-0 flex-1 truncate font-mono text-sm leading-5 text-[rgba(var(--foreground-rgb),0.82)]'
               : 'min-w-0 flex-1 line-clamp-2 text-sm leading-5 text-muted-foreground'
         }
       >

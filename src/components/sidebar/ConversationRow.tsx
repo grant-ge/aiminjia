@@ -89,7 +89,7 @@ export function ConversationRow({
   const paddingCls = indent ? "pl-[32px] pr-2" : "pl-2 pr-2";
   const wrapperCls = active
     ? `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
-    : `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
+    : `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} text-[rgba(var(--sidebar-foreground-rgb),0.70)] transition-colors hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground`;
   const showTrailing = showActions || showStatus;
 
   return (

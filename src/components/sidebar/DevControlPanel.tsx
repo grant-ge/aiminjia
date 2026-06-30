@@ -34,7 +34,7 @@ export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
               <h3 id="dev-control-display-title" className="text-xs font-medium text-muted-foreground">
                 显示
               </h3>
-              <div className="divide-y divide-border/70 border-y border-border/70">
+              <div className="divide-y divide-[rgba(var(--border-rgb),0.70)] border-y border-[rgba(var(--border-rgb),0.70)]">
                 <div className="flex items-center justify-between gap-4 py-4">
                   <div className="min-w-0 pr-4">
                     <div className="text-sm font-medium text-foreground">显示工具失败图标</div>

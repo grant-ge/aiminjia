@@ -263,7 +263,7 @@ function PermissionPanel({
                 onClick={() => void submitPermissionChoice()}
               >
                 {t("pendingAction.permission.submit")}
-                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary-foreground/15">
+                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[rgba(var(--primary-foreground-rgb),0.15)]">
                   <CornerDownLeft className="h-3 w-3" aria-hidden="true" />
                 </span>
               </Button>
@@ -424,7 +424,7 @@ function PermissionGroupPanel({
                 onClick={() => void submitPermissionChoice()}
               >
                 {t("pendingAction.permission.submit")}
-                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary-foreground/15">
+                <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[rgba(var(--primary-foreground-rgb),0.15)]">
                   <CornerDownLeft className="h-3 w-3" aria-hidden="true" />
                 </span>
               </Button>
@@ -459,7 +459,7 @@ function PermissionOption({
     <label
       className={cn(
         "group flex min-h-9 cursor-pointer items-start gap-3 rounded-md px-3 py-2 text-sm text-foreground transition-colors",
-        selected ? "bg-muted/60" : "hover:bg-muted/40",
+        selected ? "bg-[rgba(var(--muted-rgb),0.60)]" : "hover:bg-[rgba(var(--muted-rgb),0.40)]",
         muted && !selected && "text-muted-foreground",
       )}
     >
@@ -751,7 +751,7 @@ function UserQuestionPanel({
         data-aijia-pending-action-action="confirm"
       >
         {t("pendingAction.interaction.continue")}
-        <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary-foreground/15">
+        <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[rgba(var(--primary-foreground-rgb),0.15)]">
           <CornerDownLeft className="h-3 w-3" aria-hidden="true" />
         </span>
       </Button>
@@ -762,7 +762,7 @@ function UserQuestionPanel({
     <label
       className={cn(
         "group flex min-h-9 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-md px-3 py-2 text-sm text-foreground transition-colors",
-        activeCustomSelected ? "bg-muted/60" : "hover:bg-muted/40",
+        activeCustomSelected ? "bg-[rgba(var(--muted-rgb),0.60)]" : "hover:bg-[rgba(var(--muted-rgb),0.40)]",
       )}
     >
       <span className="w-5 shrink-0 pt-0.5 text-right text-sm tabular-nums text-muted-foreground">
@@ -869,7 +869,7 @@ function UserQuestionPanel({
                   key={option.label}
                   className={cn(
                     "group flex min-h-9 cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm text-foreground transition-colors",
-                    selected ? "bg-muted/60" : "hover:bg-muted/40",
+                    selected ? "bg-[rgba(var(--muted-rgb),0.60)]" : "hover:bg-[rgba(var(--muted-rgb),0.40)]",
                   )}
                 >
                   <span className="w-5 shrink-0 text-right text-sm tabular-nums text-muted-foreground">
@@ -1204,7 +1204,7 @@ export function PendingActionSurface(props: Props) {
                 "rounded px-2.5 py-1 text-xs transition-colors",
                 selected
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  : "text-muted-foreground hover:bg-[rgba(var(--muted-rgb),0.60)] hover:text-foreground",
               )}
               onClick={() => setActiveKey(key)}
             >

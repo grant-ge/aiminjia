@@ -421,11 +421,11 @@ function SystemDivider({ icon, label, ts }: SystemDividerProps) {
   const markerClass = systemMarkerClass(icon)
   return (
     <div className="flex justify-center px-8 py-0.5">
-      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-muted/45 px-2.5 py-1 text-[11px] leading-4 text-muted-foreground">
+      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[rgba(var(--muted-rgb),0.45)] px-2.5 py-1 text-[11px] leading-4 text-muted-foreground">
         <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', markerClass)} />
         <span aria-hidden className="sr-only">{icon}</span>
         <span className="min-w-0">{label}</span>
-        <span className="shrink-0 text-muted-foreground/55">{formatClock(ts)}</span>
+        <span className="shrink-0 text-[rgba(var(--muted-foreground-rgb),0.55)]">{formatClock(ts)}</span>
       </span>
     </div>
   )
@@ -434,14 +434,14 @@ function SystemDivider({ icon, label, ts }: SystemDividerProps) {
 function systemMarkerClass(icon: string): string {
   switch (icon) {
     case '✓':
-      return 'bg-primary/70'
+      return 'bg-[rgba(var(--primary-rgb),0.70)]'
     case '✗':
-      return 'bg-destructive/70'
+      return 'bg-[rgba(var(--destructive-rgb),0.70)]'
     case '⊙':
     case '≪':
-      return 'bg-primary/45'
+      return 'bg-[rgba(var(--primary-rgb),0.45)]'
     default:
-      return 'bg-muted-foreground/55'
+      return 'bg-[rgba(var(--muted-foreground-rgb),0.55)]'
   }
 }
 
@@ -496,25 +496,25 @@ function FacilitationNote({ item }: { item: Extract<TeamChatRenderItem, { kind: 
         className={cn(
           'max-w-[88%] overflow-hidden rounded-md border text-xs leading-5 text-muted-foreground',
           item.category === 'hidden_low_signal'
-            ? 'border-primary/20 bg-primary/5'
-            : 'border-border bg-muted/35',
+            ? 'border-[rgba(var(--primary-rgb),0.20)] bg-[rgba(var(--primary-rgb),0.05)]'
+            : 'border-border bg-[rgba(var(--muted-rgb),0.35)]',
         )}
       >
         <Button
           unstyled
           type="button"
-          className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/45"
+          className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-[rgba(var(--muted-rgb),0.45)]"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
           aria-label={`${actionLabel} ${label}`}
         >
           <span className="min-w-0">
-            <span className="flex items-center gap-1.5 font-medium text-foreground/80">
+            <span className="flex items-center gap-1.5 font-medium text-[rgba(var(--foreground-rgb),0.80)]">
               <span
                 aria-hidden
                 className={cn(
                   'h-1.5 w-1.5 shrink-0 rounded-full',
-                  item.category === 'hidden_low_signal' ? 'bg-primary/70' : 'bg-muted-foreground/55',
+                  item.category === 'hidden_low_signal' ? 'bg-[rgba(var(--primary-rgb),0.70)]' : 'bg-[rgba(var(--muted-foreground-rgb),0.55)]',
                 )}
               />
               <span>{label}</span>
@@ -526,10 +526,10 @@ function FacilitationNote({ item }: { item: Extract<TeamChatRenderItem, { kind: 
           </span>
         </Button>
         {expanded && (
-          <div className="border-t border-border/70 bg-card/70 px-3 py-2">
+          <div className="border-t border-[rgba(var(--border-rgb),0.70)] bg-[rgba(var(--card-rgb),0.70)] px-3 py-2">
             <div className="flex flex-col gap-2">
               {item.details.map((detail, index) => (
-                <div key={`${detail.to}-${detail.ts}-${index}`} className="rounded-md bg-muted/30 px-2.5 py-2">
+                <div key={`${detail.to}-${detail.ts}-${index}`} className="rounded-md bg-[rgba(var(--muted-rgb),0.30)] px-2.5 py-2">
                   <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                     <span>{formatLeadDisplayName('team-lead')} → {formatAgentDisplayName(teamVisual, detail.to)}</span>
                     <span className="shrink-0 opacity-70">{formatClock(detail.ts)}</span>
@@ -606,7 +606,7 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
         className={cn(
           'w-fit max-w-[85%] break-words rounded-md px-3 py-2 text-sm leading-6 shadow-[var(--shadow-card)]',
           isError
-            ? 'border border-destructive/40 bg-destructive/10 text-destructive'
+            ? 'border border-[rgba(var(--destructive-rgb),0.40)] bg-[rgba(var(--destructive-rgb),0.10)] text-destructive'
             : 'border border-border bg-card text-foreground',
         )}
       >

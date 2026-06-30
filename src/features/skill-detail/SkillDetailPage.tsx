@@ -149,7 +149,7 @@ function SkillSpecificDetails({ detail }: { detail: SkillDetailInfo | null }) {
             <div className="text-sm font-semibold text-foreground">技能说明</div>
             <div className="grid gap-3 md:grid-cols-2">
               {sections.map((section) => (
-                <div key={section.title} className="flex min-w-0 flex-col gap-1.5 rounded-md bg-muted/40 p-3">
+                <div key={section.title} className="flex min-w-0 flex-col gap-1.5 rounded-md bg-[rgba(var(--muted-rgb),0.40)] p-3">
                   <div className="text-xs font-semibold text-foreground">{section.title}</div>
                   <p className="break-words text-xs leading-5 text-muted-foreground">{section.body}</p>
                 </div>
@@ -184,7 +184,7 @@ function SkillSpecificDetails({ detail }: { detail: SkillDetailInfo | null }) {
       {showRawSkillContent && detail.rawContent ? (
         <section className="flex flex-col gap-2 rounded-md border border-border bg-card p-4">
           <div className="text-sm font-semibold text-foreground">原始技能内容</div>
-          <div className="max-h-[420px] overflow-auto rounded-md bg-muted/40 p-3 [&_.assistant-markdown]:text-xs [&_.assistant-markdown]:leading-5">
+          <div className="max-h-[420px] overflow-auto rounded-md bg-[rgba(var(--muted-rgb),0.40)] p-3 [&_.assistant-markdown]:text-xs [&_.assistant-markdown]:leading-5">
             <AssistantMarkdown text={normalizeRawSkillMarkdown(detail.rawContent)} disableCodeHighlight />
           </div>
         </section>

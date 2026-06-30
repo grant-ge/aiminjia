@@ -347,7 +347,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                     variant="ghost"
                     size="sm"
                     disabled={disabled}
-                    className="focus-visible:ring-0 data-[state=open]:bg-muted/70"
+                    className="focus-visible:ring-0 data-[state=open]:bg-[rgba(var(--muted-rgb),0.70)]"
                     aria-label={t('composer.permissionModeLabel', {
                       mode: fullAccess
                         ? t('composer.permissionModeFull')
@@ -409,7 +409,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                     variant={deepReasoning ? 'secondary' : 'ghost'}
                     size="sm"
                     disabled={disabled}
-                    className="focus-visible:ring-0 data-[state=open]:bg-muted/70"
+                    className="focus-visible:ring-0 data-[state=open]:bg-[rgba(var(--muted-rgb),0.70)]"
                     aria-label={t('composer.reasoningModeLabel', {
                       mode: deepReasoning
                         ? t('composer.reasoningModeDeep')

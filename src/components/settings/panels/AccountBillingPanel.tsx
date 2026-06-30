@@ -265,7 +265,7 @@ export function AccountBillingPanel() {
           </div>
         </div>
         {recordsError && !loadingRecords ? (
-          <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground flex items-center justify-between gap-3">
+          <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.30)] px-3 py-2 text-sm text-muted-foreground flex items-center justify-between gap-3">
             <span>{t('settings.billing.recordsUnavailable')}</span>
             <Button variant="ghost" size="sm" onClick={() => void fetchRecords(pagination.page)}>
               {t('settings.billing.retry')}
@@ -305,7 +305,7 @@ export function AccountBillingPanel() {
                 {records.map((r) => {
                   const recordTokens = r.input_tokens + r.output_tokens + r.cached_tokens
                   return (
-                    <tr key={r.id} className="border-b border-border/50">
+                    <tr key={r.id} className="border-b border-[rgba(var(--border-rgb),0.50)]">
                       <td className="py-2 pr-3 text-foreground">
                         {formatDate(r.created_at)}
                       </td>

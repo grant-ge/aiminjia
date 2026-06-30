@@ -205,7 +205,7 @@ export function ToolStepGroupBlock({ steps }: ToolStepGroupBlockProps) {
         // ml-[7px] 对齐 summary 行 leading icon 中心（h-3.5 = 14px，center
         // 在 x=7）。pl-3 给 row 内容留出离线的横向距离，ToolStepRow ::before
         // 短横线从主干接到 row 起点，组成"├──"分支感。
-        <div className="ml-[7px] mt-1 flex flex-col gap-0.5 border-l border-border/60 pl-3">
+        <div className="ml-[7px] mt-1 flex flex-col gap-0.5 border-l border-[rgba(var(--border-rgb),0.60)] pl-3">
           {displayedSteps.map((s) => (
             <ToolStepRow key={s.toolCallId} step={s} />
           ))}
@@ -232,7 +232,7 @@ function BucketIcon({ bucket }: { bucket: ToolBucket }) {
     <Icon
       aria-hidden="true"
       data-testid={`tool-bucket-icon-${bucket}`}
-      className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
+      className="h-3.5 w-3.5 shrink-0 text-[rgba(var(--muted-foreground-rgb),0.80)]"
     />
   );
 }

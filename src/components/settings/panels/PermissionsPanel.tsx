@@ -44,9 +44,9 @@ export function PermissionsPanel() {
 
   return (
     <div className="rounded-md border border-border bg-card text-foreground">
-      <section className="border-b border-border bg-muted/25 px-4 py-3">
+      <section className="border-b border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
         <div className="flex gap-3">
-          <span className="mt-1 h-8 w-1 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
+          <span className="mt-1 h-8 w-1 shrink-0 rounded-full bg-[rgba(var(--primary-rgb),0.70)]" aria-hidden="true" />
           <div className="min-w-0">
             <h3 className="text-sm font-bold leading-5 text-foreground">
               {t('settings.permissions.title')}
@@ -71,7 +71,7 @@ export function PermissionsPanel() {
               onClick={() => handleChange(option.value)}
               className={cn(
                 'flex w-full items-start justify-between gap-4 px-4 py-3 text-left transition-colors',
-                selected ? 'bg-[rgba(var(--primary-rgb),0.06)]' : 'hover:bg-muted/40',
+                selected ? 'bg-[rgba(var(--primary-rgb),0.06)]' : 'hover:bg-[rgba(var(--muted-rgb),0.40)]',
               )}
             >
               <span className="flex min-w-0 flex-col gap-1">

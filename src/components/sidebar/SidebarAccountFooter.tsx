@@ -25,6 +25,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { getSettings, setImChannelKeepAwake, updateSettings } from "@/lib/tauri";
 import { tenantHost } from "@/lib/environment";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,13 @@ type PreferencePanelKey =
   | "fontSize"
   | "chatWidth"
   | "keepAwake";
+
+const preferenceDetailVerticalClass: Record<PreferencePanelKey, string> = {
+  language: "top-0",
+  fontSize: "bottom-0",
+  chatWidth: "top-16",
+  keepAwake: "bottom-0",
+};
 
 function MenuShell({
   label,
@@ -93,7 +101,7 @@ function MenuButton({
   children?: ReactNode;
 }) {
   return (
-    <button
+    <Button unstyled
       type="button"
       aria-current={active ? "true" : undefined}
       aria-label={label}
@@ -102,7 +110,7 @@ function MenuButton({
         active
           ? "bg-accent text-accent-foreground"
           : "text-foreground hover:bg-accent hover:text-accent-foreground",
-        danger && "text-destructive hover:bg-destructive/10 hover:text-destructive",
+        danger && "text-destructive hover:bg-[rgba(var(--destructive-rgb),0.10)] hover:text-destructive",
       )}
       onPointerEnter={activateOnHover ? onClick : onHover}
       onMouseEnter={activateOnHover ? onClick : onHover}
@@ -121,7 +129,7 @@ function MenuButton({
       {showChevron ? (
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       ) : null}
-    </button>
+    </Button>
   );
 }
 
@@ -139,7 +147,7 @@ function ChoiceRow({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button unstyled
       type="button"
       role="menuitemradio"
       aria-checked={checked}
@@ -157,7 +165,7 @@ function ChoiceRow({
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {checked ? <Check className="h-4 w-4 shrink-0 text-foreground" aria-hidden /> : null}
-    </button>
+    </Button>
   );
 }
 
@@ -515,7 +523,10 @@ export function SidebarAccountFooter({
               {activePreference ? (
                 <MenuShell
                   label={activePreferenceLabel}
-                  widthClass="absolute bottom-0 left-[calc(var(--sidebar-account-menu-width)+var(--sidebar-account-preferences-menu-width)-var(--sidebar-account-menu-overlap)-var(--sidebar-account-menu-overlap))] w-[var(--sidebar-account-detail-menu-width)]"
+                  widthClass={cn(
+                    "absolute left-[calc(var(--sidebar-account-menu-width)+var(--sidebar-account-preferences-menu-width)-var(--sidebar-account-menu-overlap)-var(--sidebar-account-menu-overlap))] w-[var(--sidebar-account-detail-menu-width)]",
+                    preferenceDetailVerticalClass[activePreference],
+                  )}
                 >
                   {renderPreferenceDetail()}
                 </MenuShell>

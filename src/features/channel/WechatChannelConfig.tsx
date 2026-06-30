@@ -288,7 +288,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
 
 function CredentialRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
+    <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>

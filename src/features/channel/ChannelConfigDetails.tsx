@@ -22,7 +22,7 @@ interface ChannelConfigDetailsProps {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
+    <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
@@ -150,7 +150,7 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
 
         <div className="grid gap-3 px-8 pb-8 pt-4">
           <DetailRow label={copy.appKeyLabel} value={config.appKey} />
-          <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
+          <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{copy.secretLabel}</div>

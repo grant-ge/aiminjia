@@ -48,7 +48,7 @@ function StepRow({
         ) : active ? (
           <Spinner className="text-primary" aria-hidden />
         ) : (
-          <span className="h-2 w-2 rounded-md bg-muted-foreground/40" />
+          <span className="h-2 w-2 rounded-md bg-[rgba(var(--muted-foreground-rgb),0.40)]" />
         )}
       </span>
       <span className={done || active ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
@@ -95,7 +95,7 @@ export function ConversationExportDialog({
 
         <div className="space-y-4 px-6 py-5">
           {isSuccess ? (
-            <div className="flex items-start gap-3 overflow-hidden rounded-md border border-border bg-muted/40 p-3">
+            <div className="flex items-start gap-3 overflow-hidden rounded-md border border-border bg-[rgba(var(--muted-rgb),0.40)] p-3">
               <Package className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
               <div className="min-w-0 flex-1 overflow-hidden">
                 <div
@@ -114,12 +114,12 @@ export function ConversationExportDialog({
               </div>
             </div>
           ) : isError ? (
-            <div className="flex items-start gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+            <div className="flex items-start gap-3 rounded-md border border-[rgba(var(--destructive-rgb),0.30)] bg-[rgba(var(--destructive-rgb),0.05)] p-3">
               <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden />
               <div className="text-sm text-foreground">{error || '导出失败。'}</div>
             </div>
           ) : isIdle ? (
-            <div className="flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
+            <div className="flex items-start gap-3 rounded-md border border-border bg-[rgba(var(--muted-rgb),0.30)] p-3">
               <Package className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
               <div className="space-y-1 text-sm">
                 <div className="font-medium text-foreground">准备生成对话文件</div>
@@ -127,7 +127,7 @@ export function ConversationExportDialog({
               </div>
             </div>
           ) : (
-            <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
+            <div className="space-y-3 rounded-md border border-border bg-[rgba(var(--muted-rgb),0.30)] p-3">
               <StepRow done={progressStep > 0} active={progressStep === 0} label="整理对话内容" />
               <StepRow done={progressStep > 1} active={progressStep === 1} label="收集最近 24 小时运行信息" />
               <StepRow done={false} active={progressStep >= 2} label="生成文件" />
@@ -136,7 +136,7 @@ export function ConversationExportDialog({
         </div>
 
         <DialogFooter
-          className="gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:space-x-0"
+          className="gap-2 border-t border-border bg-[rgba(var(--muted-rgb),0.20)] px-6 py-4 sm:space-x-0"
           style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end' }}
         >
           {isSuccess ? (

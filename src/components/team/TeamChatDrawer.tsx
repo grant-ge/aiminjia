@@ -228,7 +228,7 @@ function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderPro
   return (
     <div
       data-testid="team-process-header"
-      className="flex h-12 items-center gap-3 border-b border-border bg-muted/30 px-4"
+      className="flex h-12 items-center gap-3 border-b border-border bg-[rgba(var(--muted-rgb),0.30)] px-4"
     >
       <h2 className="text-base font-medium text-foreground">{title}</h2>
       <span className="text-xs text-muted-foreground">{subtitle}</span>
@@ -261,14 +261,14 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
   const title = teamVisual?.name ?? session.teamName ?? t('team.session.untitled')
   return (
     <section data-team-id={session.teamId} className="border-b border-border last:border-b-0">
-      <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
+      <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-[rgba(var(--background-rgb),0.95)] px-4 py-2 backdrop-blur">
         <div className="flex items-center justify-between gap-2 text-xs">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-medium text-foreground">
               {title}
             </span>
             {isLive ? (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[rgba(var(--primary-rgb),0.10)] px-1.5 py-0.5 text-[10px] font-medium text-primary">
                 <span className="h-1.5 w-1.5 rounded-md bg-primary" />
                 {t('team.session.live')}
               </span>
@@ -277,7 +277,7 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
                 className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                 title={t('team.session.dismissedAt', { time: formatShortDateTime(session.deletedAt!) })}
               >
-                <span className="h-1.5 w-1.5 rounded-md bg-muted-foreground/60" />
+                <span className="h-1.5 w-1.5 rounded-md bg-[rgba(var(--muted-foreground-rgb),0.60)]" />
                 {t('team.session.dismissed')}
               </span>
             )}

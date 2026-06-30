@@ -19,15 +19,15 @@ interface ScheduleTaskRowProps {
 }
 
 const STATUS_BADGE: Record<AgendaItem['status'], string> = {
-  active: 'bg-primary/10 text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.10)]',
+  active: 'bg-[rgba(var(--primary-rgb),0.10)] text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.10)]',
   paused: 'bg-muted text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]',
   completed: 'bg-emerald-50 text-emerald-700 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.12)]',
-  orphaned: 'bg-destructive/10 text-destructive shadow-[inset_0_0_0_1px_rgba(220,38,38,0.10)]',
+  orphaned: 'bg-[rgba(var(--destructive-rgb),0.10)] text-destructive shadow-[inset_0_0_0_1px_rgba(220,38,38,0.10)]',
   cancelled: 'bg-muted text-foreground line-through shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]',
 }
 
 const ACTION_BUTTON_CLASS =
-  'h-7 w-7 rounded border border-transparent text-muted-foreground transition-[border-color,background-color,color] hover:border-foreground/15 hover:bg-foreground hover:text-background'
+  'h-7 w-7 rounded border border-transparent text-muted-foreground transition-[border-color,background-color,color] hover:border-[rgba(var(--foreground-rgb),0.15)] hover:bg-foreground hover:text-background'
 
 export function ScheduleTaskRow({
   item,
@@ -56,7 +56,7 @@ export function ScheduleTaskRow({
       data-aijia-agenda-id={item.id}
       data-aijia-agenda-title={item.title}
       data-aijia-agenda-status={item.status}
-      className={`grid ${SCHEDULE_TABLE_GRID_COLUMNS} items-center gap-3 border-t border-border/55 bg-card px-4 py-2.5 text-[0.8125rem] transition-colors hover:bg-muted/20 ${dimmed}`}
+      className={`grid ${SCHEDULE_TABLE_GRID_COLUMNS} items-center gap-3 border-t border-[rgba(var(--border-rgb),0.55)] bg-card px-4 py-2.5 text-[0.8125rem] transition-colors hover:bg-[rgba(var(--muted-rgb),0.20)] ${dimmed}`}
     >
       {/* Column 1: task name */}
       <div className="flex min-w-0 items-center gap-2">

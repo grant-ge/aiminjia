@@ -64,7 +64,7 @@ export function SettingsMenu({ activeKey, onSelect, hiddenKeys = [] }: SettingsM
                 'flex items-center rounded-md px-3 py-2.5 text-left text-sm',
                 active
                   ? 'bg-card font-semibold text-foreground'
-                  : 'font-medium text-muted-foreground transition-colors hover:bg-card/60',
+                  : 'font-medium text-muted-foreground transition-colors hover:bg-[rgba(var(--card-rgb),0.60)]',
               )}
             >
               <span className="min-w-0 flex-1 truncate">{label}</span>

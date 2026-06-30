@@ -167,7 +167,7 @@ function TaskStatusIcon({ status }: { status: string }) {
     case 'cancelled':
       return <MinusCircle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
     default:
-      return <Circle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/40" />
+      return <Circle className="mt-0.5 h-3 w-3 shrink-0 text-[rgba(var(--muted-foreground-rgb),0.40)]" />
   }
 }
 
@@ -283,7 +283,7 @@ function ArtifactItem({
         onOpenExternal?.(previewTarget)
       }}
       className={cn(
-        'flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/70',
+        'flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-[rgba(var(--muted-rgb),0.70)]',
         active && 'bg-muted',
         !enabled && 'cursor-not-allowed opacity-50 hover:bg-transparent',
       )}

@@ -36,19 +36,19 @@ const closeSizeClasses: Record<TagSize, string> = {
 const variantClasses: Record<TagVariant, Record<TagColor, string>> = {
   filled: {
     default: 'border-transparent bg-muted text-muted-foreground',
-    primary: 'border-transparent bg-primary/10 text-primary',
+    primary: 'border-transparent bg-[rgba(var(--primary-rgb),0.10)] text-primary',
     accent: 'border-transparent bg-accent text-accent-foreground',
-    success: 'border-transparent bg-success/10 text-success',
-    warning: 'border-transparent bg-warning/15 text-warning',
-    destructive: 'border-transparent bg-destructive/10 text-destructive',
+    success: 'border-transparent bg-[rgba(var(--color-semantic-green-rgb),0.10)] text-success',
+    warning: 'border-transparent bg-[rgba(var(--color-semantic-orange-rgb),0.15)] text-warning',
+    destructive: 'border-transparent bg-[rgba(var(--destructive-rgb),0.10)] text-destructive',
   },
   outlined: {
     default: 'border-border bg-transparent text-muted-foreground',
-    primary: 'border-primary/30 bg-transparent text-primary',
+    primary: 'border-[rgba(var(--primary-rgb),0.30)] bg-transparent text-primary',
     accent: 'border-accent bg-transparent text-foreground',
-    success: 'border-success/40 bg-transparent text-success',
-    warning: 'border-warning/40 bg-transparent text-warning',
-    destructive: 'border-destructive/40 bg-transparent text-destructive',
+    success: 'border-[rgba(var(--color-semantic-green-rgb),0.40)] bg-transparent text-success',
+    warning: 'border-[rgba(var(--color-semantic-orange-rgb),0.40)] bg-transparent text-warning',
+    destructive: 'border-[rgba(var(--destructive-rgb),0.40)] bg-transparent text-destructive',
   },
   solid: {
     default: 'border-muted bg-muted text-foreground',
@@ -155,7 +155,7 @@ export function Tag({
             onClose(event)
           }}
           className={cn(
-            '-mr-0.5 inline-flex shrink-0 items-center justify-center rounded text-current opacity-70 transition-colors hover:bg-foreground/10 hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+            '-mr-0.5 inline-flex shrink-0 items-center justify-center rounded text-current opacity-70 transition-colors hover:bg-[rgba(var(--foreground-rgb),0.10)] hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
             closeSizeClasses[size],
           )}
         >

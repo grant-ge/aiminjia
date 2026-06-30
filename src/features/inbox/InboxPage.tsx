@@ -165,7 +165,7 @@ export function InboxPage() {
                 'h-8 max-w-[120px] shrink-0 truncate rounded-md px-3 text-sm font-semibold transition-colors',
                 kindFilter === tab.key
                   ? 'bg-[rgba(var(--primary-rgb),0.10)] text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.12)]'
-                  : 'text-muted-foreground/80 hover:bg-muted/45 hover:text-foreground',
+                  : 'text-[rgba(var(--muted-foreground-rgb),0.80)] hover:bg-[rgba(var(--muted-rgb),0.45)] hover:text-foreground',
               )}
             >
               {t(tab.i18nKey)}
@@ -177,7 +177,7 @@ export function InboxPage() {
           <select
             value={empFilter}
             onChange={(e) => setEmpFilter(e.target.value)}
-            className="h-8 rounded-md border border-border/70 bg-card px-2.5 text-sm font-medium text-foreground shadow-[var(--shadow-sm)] outline-none transition-colors hover:border-border focus:border-primary"
+            className="h-8 rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card px-2.5 text-sm font-medium text-foreground shadow-[var(--shadow-sm)] outline-none transition-colors hover:border-border focus:border-primary"
           >
             <option value="all">{t('inbox.allEmployees')}</option>
             {employees
@@ -193,11 +193,11 @@ export function InboxPage() {
 
       {/* Entry list */}
       {filtered.length === 0 ? (
-        <div className="flex h-[240px] items-center justify-center rounded-md border border-dashed border-border/70 bg-card shadow-[var(--shadow-card)]">
+        <div className="flex h-[240px] items-center justify-center rounded-md border border-dashed border-[rgba(var(--border-rgb),0.70)] bg-card shadow-[var(--shadow-card)]">
           <p className="text-sm text-muted-foreground">{t('inbox.noRecords')}</p>
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-md border border-border/70 bg-card shadow-[var(--shadow-card)]">
+        <div className="flex flex-col divide-y divide-[rgba(var(--border-rgb),0.60)] overflow-hidden rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card shadow-[var(--shadow-card)]">
           {filtered.map((entry) => {
             const emp = employees.find((e) => e.id === entry.employeeId)
             const title = formatInboxTitleParts(entry.title, emp, i18n.language)
@@ -219,7 +219,7 @@ export function InboxPage() {
                 onClick={handleClick}
                 disabled={!clickable}
                 className={cn(
-                  'flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent',
+                  'flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-[rgba(var(--muted-rgb),0.40)] disabled:cursor-default disabled:hover:bg-transparent',
                   !entry.read && 'bg-[rgba(var(--primary-rgb),0.055)]',
                 )}
               >
@@ -237,11 +237,11 @@ export function InboxPage() {
                     <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{entry.summary}</p>
                   )}
                   {entry.catchupInfo && (
-                    <p className="mt-0.5 text-xs italic text-muted-foreground/60">{entry.catchupInfo}</p>
+                    <p className="mt-0.5 text-xs italic text-[rgba(var(--muted-foreground-rgb),0.60)]">{entry.catchupInfo}</p>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-xs text-muted-foreground/60">{timeLabel(entry.createdAt)}</span>
+                  <span className="text-xs text-[rgba(var(--muted-foreground-rgb),0.60)]">{timeLabel(entry.createdAt)}</span>
                   {!entry.read && (
                     <span className="h-1.5 w-1.5 rounded-md bg-primary" />
                   )}

@@ -32,12 +32,12 @@ const radiusClasses: Record<'sm' | 'md' | 'lg', string> = {
 }
 
 const variantClasses: Record<Exclude<ButtonVariant, 'link'>, string> = {
-  default: 'border border-primary bg-primary text-primary-foreground hover:bg-primary/90',
-  primary: 'border border-primary bg-primary text-primary-foreground hover:bg-primary/90',
-  secondary: 'border border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
+  default: 'border border-primary bg-primary text-primary-foreground hover:bg-[rgba(var(--primary-rgb),0.90)]',
+  primary: 'border border-primary bg-primary text-primary-foreground hover:bg-[rgba(var(--primary-rgb),0.90)]',
+  secondary: 'border border-transparent bg-secondary text-secondary-foreground hover:bg-[rgba(var(--secondary-rgb),0.80)]',
   ghost: 'border border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground',
   outline: 'border border-input bg-card text-foreground hover:bg-accent',
-  destructive: 'border border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90',
+  destructive: 'border border-destructive bg-destructive text-destructive-foreground hover:bg-[rgba(var(--destructive-rgb),0.90)]',
 }
 
 function normalizeSize(size: ButtonSize | null | undefined): 'sm' | 'md' | 'lg' {

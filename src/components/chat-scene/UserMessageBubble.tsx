@@ -84,7 +84,7 @@ export function UserMessageBubble({
               data-testid="user-skill-token"
               // bubble 外层是 bg-sidebar，内嵌 token 用前景色低透明底维持层次。
               size="sm"
-              className="mr-2 translate-y-[1px] bg-foreground/10 px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              className="mr-2 translate-y-[1px] bg-[rgba(var(--foreground-rgb),0.10)] px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
               title={command}
               icon={<Blocks aria-hidden="true" style={{ transform: 'translateY(1px)' }} />}
             >
@@ -95,7 +95,7 @@ export function UserMessageBubble({
             <Tag
               data-testid="user-reasoning-token"
               size="sm"
-              className="mr-2 translate-y-[1px] bg-foreground/10 px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              className="mr-2 translate-y-[1px] bg-[rgba(var(--foreground-rgb),0.10)] px-2 font-semibold text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
               title={t('composer.reasoningModeDeepLong')}
               icon={<BrainCircuit aria-hidden="true" style={{ transform: 'translateY(1px)' }} />}
             >
@@ -110,7 +110,7 @@ export function UserMessageBubble({
           <Button unstyled
             type="button"
             onClick={() => setExpanded((next) => !next)}
-            className="mt-1 text-xs font-semibold text-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
+            className="mt-1 text-xs font-semibold text-[rgba(var(--foreground-rgb),0.70)] underline-offset-2 hover:text-foreground hover:underline"
           >
             {expanded ? t('userMessage.collapse') : t('userMessage.expandAll')}
           </Button>

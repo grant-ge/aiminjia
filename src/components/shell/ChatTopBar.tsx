@@ -179,7 +179,7 @@ export function ChatTopBar({
         ) : workspaceChip}
         {kind && kind !== "user" && kind !== "employee" && !expertTeam && sourceLabel ? (
           <>
-            <span aria-hidden className="text-xs text-muted-foreground/40">
+            <span aria-hidden className="text-xs text-[rgba(var(--muted-foreground-rgb),0.40)]">
               ·
             </span>
             <SourceChip kind={kind} label={sourceLabel} />

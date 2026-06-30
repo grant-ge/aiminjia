@@ -81,7 +81,7 @@ function ChannelConversationRow({
 }: ChannelConversationRowProps) {
   const rowClassName = active
     ? `flex h-8 w-full items-center justify-between rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground`
-    : `flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
+    : `flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-[rgba(var(--sidebar-foreground-rgb),0.70)] hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground`;
 
   return (
     <ContextMenuPrimitive.Root>
@@ -475,7 +475,7 @@ export function AppSidebar() {
                   value={sidebarTab}
                   onValueChange={switchTab}
                   testId="sidebar-body-tabs"
-                  className="w-full border border-sidebar-border bg-sidebar-accent/70"
+                  className="w-full border border-sidebar-border bg-[rgba(var(--sidebar-accent-rgb),0.70)]"
                   options={TABS.map(({ key, Icon, labelKey }) => {
                     const label = t(labelKey);
                     return {
@@ -532,7 +532,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(dingtalkState)}
                       </Button>
@@ -560,7 +560,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(feishuState)}
                       </Button>
@@ -588,7 +588,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wecomState)}
                       </Button>
@@ -616,7 +616,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wechatState)}
                       </Button>
@@ -644,7 +644,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(telegramState)}
                       </Button>
@@ -672,7 +672,7 @@ export function AppSidebar() {
                       <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
-                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                        className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(whatsappState)}
                       </Button>

@@ -50,7 +50,7 @@ export function SidebarRowStatusIndicator({
     <TooltipProvider delayDuration={400}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex h-5 items-center gap-1 rounded-full bg-primary/10 px-1.5 text-[10px] font-medium leading-none text-primary">
+          <span className="inline-flex h-5 items-center gap-1 rounded-full bg-[rgba(var(--primary-rgb),0.10)] px-1.5 text-[10px] font-medium leading-none text-primary">
             <ShieldQuestionMark className="h-3 w-3" />
             {label}
           </span>

@@ -180,7 +180,7 @@ function ModeRadio({
       >
         <span
           className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border-2 ${
-            active ? 'border-primary' : 'border-muted-foreground/50'
+            active ? 'border-primary' : 'border-[rgba(var(--muted-foreground-rgb),0.50)]'
           }`}
         >
           {active && <span className="h-2 w-2 rounded-md bg-primary" />}

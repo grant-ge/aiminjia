@@ -142,7 +142,7 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
           placeholder={t('employee.config.weeklyReport.watchGroupsPlaceholder')}
           className="text-xs"
         />
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-xs text-[rgba(var(--muted-foreground-rgb),0.70)]">
           {t('employee.config.weeklyReport.watchGroupsHintSimple')}
         </p>
         {parsedGroups.length > 0 && (

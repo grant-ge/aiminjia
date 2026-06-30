@@ -67,7 +67,7 @@ export function ExpertTeamAvatarStack({ team, size = 'sm' }: ExpertTeamAvatarSta
             />
             <span
               className={cn(
-                'absolute inset-0 m-auto flex items-center justify-center rounded-full border border-card bg-background/90 text-foreground/80 shadow-[0_1px_2px_rgba(0,0,0,0.08)]',
+                'absolute inset-0 m-auto flex items-center justify-center rounded-full border border-card bg-[rgba(var(--background-rgb),0.90)] text-[rgba(var(--foreground-rgb),0.80)] shadow-[0_1px_2px_rgba(0,0,0,0.08)]',
                 classes.questionBadge,
               )}
             >

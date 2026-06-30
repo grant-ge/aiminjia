@@ -63,7 +63,7 @@ describe("SidebarAccountFooter", () => {
     expect(accountTrigger.parentElement).toHaveClass("px-2", "py-2");
     expect(accountTrigger.parentElement).not.toHaveClass("pt-1");
     expect(accountTrigger.parentElement).not.toHaveClass("pb-2");
-    expect(accountTrigger).not.toHaveClass("border", "bg-sidebar-accent/45");
+    expect(accountTrigger).not.toHaveClass("border", "bg-[rgba(var(--sidebar-accent-rgb),0.45)]");
     expect(accountTrigger.className).not.toContain("shadow-");
     expect(accountTrigger).not.toHaveClass("px-2", "py-2");
     expect(accountTrigger).not.toHaveClass("pt-2");
@@ -99,6 +99,14 @@ describe("SidebarAccountFooter", () => {
     expect(preferencesMenu).toHaveClass("absolute", "bottom-0");
     expect(screen.queryByRole("button", { name: "主题" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "字体设置" })).not.toBeInTheDocument();
+
+    fireEvent.pointerEnter(screen.getByRole("button", { name: "语言" }));
+
+    const languageMenu = screen.getByRole("menu", { name: "语言" });
+    expect(languageMenu).toBeInTheDocument();
+    expect(languageMenu).toHaveClass("absolute", "top-0");
+    expect(languageMenu).not.toHaveClass("bottom-0");
+    expect(screen.getByRole("menuitemradio", { name: "中文" })).toHaveClass("h-8");
 
     fireEvent.pointerEnter(screen.getByRole("button", { name: "关于我们" }));
 

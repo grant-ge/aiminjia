@@ -220,7 +220,7 @@ function ToolReceiptBlock({
   })();
 
   return (
-    <div className="flex max-w-full flex-col gap-1 overflow-hidden rounded-md bg-muted/45 px-3 py-2 text-sm text-muted-foreground">
+    <div className="flex max-w-full flex-col gap-1 overflow-hidden rounded-md bg-[rgba(var(--muted-rgb),0.45)] px-3 py-2 text-sm text-muted-foreground">
       <div className="text-foreground">{title}</div>
       {receipt.summary ? (
         <div className="line-clamp-2 min-w-0 break-words text-foreground">

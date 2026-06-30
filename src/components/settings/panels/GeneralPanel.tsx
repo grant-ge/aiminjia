@@ -240,7 +240,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                     setAvatarUploadError(null)
                     handleInitialAvatar()
                   }}
-                  className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
+                  className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-[rgba(var(--muted-rgb),0.70)]"
                 >
                   <span className={profileAvatarMode === 'initial' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
                   <span className="text-base font-medium">{t('settings.general.avatarInitial')}</span>
@@ -252,7 +252,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                   aria-checked={profileAvatarMode === 'emoji'}
                   aria-label="Emoji"
                   onClick={handleEmojiAvatarMode}
-                  className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
+                  className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-[rgba(var(--muted-rgb),0.70)]"
                 >
                   <span className={profileAvatarMode === 'emoji' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
                   <span className="text-base font-medium">Emoji</span>
@@ -270,7 +270,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                           onClick={() => handleEmojiAvatar(emoji)}
                           className={
                             selected
-                              ? 'flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-xl ring-1 ring-primary'
+                              ? 'flex h-9 w-9 items-center justify-center rounded-md bg-[rgba(var(--primary-rgb),0.10)] text-xl ring-1 ring-primary'
                               : 'flex h-9 w-9 items-center justify-center rounded-md text-xl transition-colors hover:bg-muted'
                           }
                         >
@@ -287,7 +287,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                   aria-checked={profileAvatarMode === 'image'}
                   aria-label={t('settings.general.avatarUpload')}
                   onClick={handleImageAvatarMode}
-                  className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-muted/70"
+                  className="flex items-center gap-3 rounded px-1 py-0.5 text-left text-foreground transition-colors hover:bg-[rgba(var(--muted-rgb),0.70)]"
                 >
                   <span className={profileAvatarMode === 'image' ? 'h-4 w-4 rounded-full border-4 border-primary' : 'h-4 w-4 rounded-full border border-border bg-background'} />
                   <span className="text-base font-medium">{t('settings.general.avatarUpload')}</span>
@@ -368,9 +368,9 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
           </div>
 
           <section className="rounded-md border border-border bg-card">
-            <div className="border-b border-border bg-muted/25 px-4 py-3">
+            <div className="border-b border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
               <div className="flex gap-3">
-                <span className="mt-1 h-8 w-1 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
+                <span className="mt-1 h-8 w-1 shrink-0 rounded-full bg-[rgba(var(--primary-rgb),0.70)]" aria-hidden="true" />
                 <div className="min-w-0">
                   <h3 className="text-sm font-bold leading-5 text-foreground">
                     {t('settings.system.interfaceTitle')}
@@ -437,9 +437,9 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
           </section>
 
           <section className="rounded-md border border-border bg-card">
-            <div className="border-b border-border bg-muted/25 px-4 py-3">
+            <div className="border-b border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
               <div className="flex gap-3">
-                <span className="mt-1 h-8 w-1 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
+                <span className="mt-1 h-8 w-1 shrink-0 rounded-full bg-[rgba(var(--primary-rgb),0.70)]" aria-hidden="true" />
                 <div className="min-w-0">
                   <h3 className="text-sm font-bold leading-5 text-foreground">
                     {t('settings.system.runtimeTitle')}

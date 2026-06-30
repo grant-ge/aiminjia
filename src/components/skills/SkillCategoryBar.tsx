@@ -28,7 +28,7 @@ export function SkillCategoryBar({ items, activeKey, onSelect, itemDataAttribute
             className={
               active
                 ? 'inline-flex h-8 max-w-[220px] shrink-0 items-center truncate rounded-md bg-[rgba(var(--primary-rgb),0.10)] px-3 text-sm font-semibold text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.12)]'
-                : 'inline-flex h-8 max-w-[220px] shrink-0 items-center truncate rounded-md px-3 text-sm font-semibold text-muted-foreground/80 transition-colors hover:bg-muted/40 hover:text-foreground'
+                : 'inline-flex h-8 max-w-[220px] shrink-0 items-center truncate rounded-md px-3 text-sm font-semibold text-[rgba(var(--muted-foreground-rgb),0.80)] transition-colors hover:bg-[rgba(var(--muted-rgb),0.40)] hover:text-foreground'
             }
             title={it.label}
           >

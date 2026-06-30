@@ -105,7 +105,7 @@ export function ChatRow({
                 data-testid="chat-row-time"
                 dateTime={timestamp}
                 title={formatFullDateTime(timestamp)}
-                className="font-normal text-muted-foreground/70 tabular-nums"
+                className="font-normal text-[rgba(var(--muted-foreground-rgb),0.70)] tabular-nums"
               >
                 {formatChatTime(timestamp)}
               </time>

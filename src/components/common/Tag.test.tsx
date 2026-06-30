@@ -24,8 +24,8 @@ describe('Tag', () => {
       </>,
     )
 
-    expect(screen.getByText('平台技能')).toHaveClass('h-[18px]', 'text-[10px]', 'bg-primary/10', 'text-primary')
-    expect(screen.getByText('需授权')).toHaveClass('h-7', 'border-warning/40', 'bg-transparent', 'text-warning')
+    expect(screen.getByText('平台技能')).toHaveClass('h-[18px]', 'text-[10px]', 'bg-[rgba(var(--primary-rgb),0.10)]', 'text-primary')
+    expect(screen.getByText('需授权')).toHaveClass('h-7', 'border-[rgba(var(--color-semantic-orange-rgb),0.40)]', 'bg-transparent', 'text-warning')
     expect(screen.getByText('失败')).toHaveClass('bg-destructive', 'text-destructive-foreground')
   })
 

@@ -43,7 +43,7 @@ describe('ConfirmDialog', () => {
 
     const confirm = screen.getByRole('button', { name: '恢复' })
 
-    expect(confirm).toHaveClass('h-8', 'px-[15px]', 'transition-colors', 'hover:bg-primary/90')
+    expect(confirm).toHaveClass('h-8', 'px-[15px]', 'transition-colors', 'hover:bg-[rgba(var(--primary-rgb),0.90)]')
     expect(confirm).not.toHaveClass('hover:opacity-90', 'active:scale-[0.98]')
     expect(confirm).not.toHaveClass(
       'h-9',

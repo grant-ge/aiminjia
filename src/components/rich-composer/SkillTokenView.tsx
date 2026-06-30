@@ -40,7 +40,7 @@ export function SkillTokenView({ node, deleteNode }: SkillTokenViewProps) {
             event.stopPropagation()
             deleteNode()
           }}
-          className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-primary/60 transition-all hover:bg-primary/20 hover:text-primary"
+          className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-[rgba(var(--primary-rgb),0.60)] transition-all hover:bg-[rgba(var(--primary-rgb),0.20)] hover:text-primary"
         >
           <X className="h-3 w-3" />
         </Button>

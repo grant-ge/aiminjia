@@ -287,7 +287,7 @@ function FieldRow({ name, prop, value, required, error, onChange }: FieldRowProp
         {required && <span className="ml-0.5 text-destructive">*</span>}
       </label>
       {prop.description && (
-        <p className="text-xs text-muted-foreground/80">{prop.description}</p>
+        <p className="text-xs text-[rgba(var(--muted-foreground-rgb),0.80)]">{prop.description}</p>
       )}
       <Widget prop={prop} value={value} onChange={onChange} placeholder={placeholder} />
       {error && <p className="text-xs text-destructive">{error}</p>}

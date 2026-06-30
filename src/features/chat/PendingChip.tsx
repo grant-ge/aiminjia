@@ -63,7 +63,7 @@ export function PendingChip({ item, onRemove }: Props) {
         aria-label={t('chat.pending.removeAria')}
         className="
           ml-0.5 shrink-0
-          hover:bg-destructive/10 hover:text-destructive
+          hover:bg-[rgba(var(--destructive-rgb),0.10)] hover:text-destructive
           rounded p-0.5
           transition-colors
         "

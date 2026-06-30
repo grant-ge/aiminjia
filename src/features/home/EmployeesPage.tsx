@@ -158,7 +158,7 @@ function EmployeeDirectoryCard({
       aria-busy={busy}
       disabled={busy}
       onClick={() => onOpen(template)}
-      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-border/50 bg-card p-3 text-left text-card-foreground shadow-[0_1px_3px_rgba(0,0,0,0.035)] transition-all hover:border-border/70 hover:bg-muted/20 disabled:cursor-wait disabled:opacity-70"
+      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-[rgba(var(--border-rgb),0.50)] bg-card p-3 text-left text-card-foreground shadow-[0_1px_3px_rgba(0,0,0,0.035)] transition-all hover:border-[rgba(var(--border-rgb),0.70)] hover:bg-[rgba(var(--muted-rgb),0.20)] disabled:cursor-wait disabled:opacity-70"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -564,11 +564,11 @@ export function EmployeesPage() {
         </div>
 
         {todayEntries.length === 0 ? (
-          <div className="flex h-[120px] items-center justify-center rounded-md border border-dashed border-border/70 bg-card">
+          <div className="flex h-[120px] items-center justify-center rounded-md border border-dashed border-[rgba(var(--border-rgb),0.70)] bg-card">
             <p className="text-sm text-muted-foreground">{t('employeesPage.noFeedToday')}</p>
           </div>
         ) : (
-          <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-md border border-border/70 bg-card shadow-[var(--shadow-card)]">
+          <div className="flex flex-col divide-y divide-[rgba(var(--border-rgb),0.60)] overflow-hidden rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card shadow-[var(--shadow-card)]">
             {todayEntries.slice(0, 8).map((entry) => {
               const emp = employees.find((e) => e.id === entry.employeeId)
               const title = formatTodayFeedTitleParts(entry.title, emp, i18n.language)
@@ -589,7 +589,7 @@ export function EmployeesPage() {
                   aria-label={title.identity ? `${title.identity} ${title.status}` : title.status}
                   onClick={handleClick}
                   disabled={!clickable}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[rgba(var(--muted-rgb),0.40)] disabled:cursor-default disabled:hover:bg-transparent"
                 >
                   <TodayFeedAvatar name={emp?.name ?? entry.employeeId} />
                   <div className="min-w-0 flex-1">
@@ -606,7 +606,7 @@ export function EmployeesPage() {
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-xs text-muted-foreground/60">{timeLabel(entry.createdAt)}</span>
+                    <span className="text-xs text-[rgba(var(--muted-foreground-rgb),0.60)]">{timeLabel(entry.createdAt)}</span>
                     {!entry.read && (
                       <span className="h-1.5 w-1.5 rounded-md bg-primary" />
                     )}

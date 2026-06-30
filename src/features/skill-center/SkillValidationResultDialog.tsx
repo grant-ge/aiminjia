@@ -81,7 +81,7 @@ export function SkillValidationResultDialog({
             })}
           </ul>
 
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="rounded-md border border-[rgba(var(--destructive-rgb),0.40)] bg-[rgba(var(--destructive-rgb),0.05)] p-3 text-sm text-destructive">
             {detailLine(failure.kind, failure.detail)}
           </div>
         </DialogBody>

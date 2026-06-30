@@ -59,7 +59,7 @@ export function NetworkStatusIndicator() {
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 border-b border-border bg-warning/10 px-4 py-2 text-sm text-destructive"
+      className="flex shrink-0 items-center gap-2 border-b border-border bg-[rgba(var(--color-semantic-orange-rgb),0.10)] px-4 py-2 text-sm text-destructive"
     >
       <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
       <span className="flex-1">{bannerText}</span>
