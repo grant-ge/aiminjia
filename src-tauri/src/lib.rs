@@ -19,6 +19,7 @@ pub mod updater;
 
 use commands::chat;
 use commands::file;
+use commands::power;
 use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
@@ -1207,6 +1208,7 @@ pub fn run() {
             // ensure_channel_manager_registered() either now (if logged in at boot)
             // or later via cloud_login.
             app.manage(Arc::new(connector::im::ChannelManagerSlot::new()));
+            app.manage(Arc::new(power::PowerAssertionManager::new()));
             app.manage(channel_session_ids);
 
             // Boot-time bring-up: only effective when current_user_storage already
@@ -1396,6 +1398,7 @@ pub fn run() {
             settings::get_settings,
             settings::update_settings,
             settings::save_profile_avatar_image,
+            power::set_im_channel_keep_awake,
             settings::validate_api_key,
             settings::get_configured_providers,
             settings::switch_provider,

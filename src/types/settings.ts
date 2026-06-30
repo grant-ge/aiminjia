@@ -46,6 +46,7 @@ export interface Settings {
   uiSidebarCollapsedProjects?: string;
   uiSidebarConversationStatuses?: string;
   contextWindow?: number | null;
+  imChannelKeepAwakeEnabled?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -75,6 +76,7 @@ export const DEFAULT_SETTINGS: Settings = {
   uiHomeRecentWorkspaces: "",
   uiSidebarCollapsedProjects: "",
   uiSidebarConversationStatuses: "",
+  imChannelKeepAwakeEnabled: false,
 };
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

@@ -121,6 +121,9 @@ pub struct AppSettings {
     /// over model-name-based context window resolution.
     #[serde(default)]
     pub context_window: Option<usize>,
+    /// Keep the machine awake so IM channel workers can continue handling remote messages.
+    #[serde(default)]
+    pub im_channel_keep_awake_enabled: bool,
 }
 
 fn default_font_scale() -> String {
@@ -162,6 +165,7 @@ impl Default for AppSettings {
             ui_sidebar_collapsed_projects: String::new(),
             ui_sidebar_conversation_statuses: String::new(),
             context_window: None,
+            im_channel_keep_awake_enabled: false,
         }
     }
 }
@@ -253,6 +257,10 @@ impl AppSettings {
                 &defaults.ui_sidebar_conversation_statuses,
             ),
             context_window: get_usize_option("contextWindow"),
+            im_channel_keep_awake_enabled: get_bool(
+                "imChannelKeepAwakeEnabled",
+                defaults.im_channel_keep_awake_enabled,
+            ),
         }
     }
 }
@@ -302,6 +310,21 @@ mod tests {
     #[test]
     fn defaults_permission_mode_to_default() {
         assert_eq!(AppSettings::default().default_permission_mode, "default");
+    }
+
+    #[test]
+    fn defaults_im_channel_keep_awake_to_disabled() {
+        assert!(!AppSettings::default().im_channel_keep_awake_enabled);
+    }
+
+    #[test]
+    fn reads_im_channel_keep_awake_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("imChannelKeepAwakeEnabled".to_string(), "true".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert!(settings.im_channel_keep_awake_enabled);
     }
 
     #[test]

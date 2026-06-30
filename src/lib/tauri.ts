@@ -1507,6 +1507,13 @@ export function updateSettings(settings: Settings): Promise<void> {
 }
 
 /**
+ * Enable or disable the OS power assertion used to keep IM channel workers online.
+ */
+export function setImChannelKeepAwake(enabled: boolean): Promise<void> {
+  return invoke<void>("set_im_channel_keep_awake", { enabled });
+}
+
+/**
  * Copy a chosen local profile avatar image into the active user profile dir.
  *
  * @param filePath - Absolute path selected by the user.
@@ -1861,7 +1868,7 @@ export function getPluginInfo(): Promise<PluginInfo> {
 /** Cloud auth info returned from login/get_cloud_auth. */
 export interface CloudAuthInfo {
   loggedIn: boolean;
-  user: { id: number; name: string; username: string } | null;
+  user: { id: number; name: string; username: string; role?: string } | null;
   tenant: {
     id: number;
     name: string;

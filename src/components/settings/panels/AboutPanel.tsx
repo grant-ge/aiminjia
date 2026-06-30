@@ -9,6 +9,7 @@ import { getLogLevel, setLogLevel } from '@/lib/tauri'
 import type { AppLogLevel } from '@/types/settings'
 import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { Button } from '@/components/ui/button'
+import { DevControlPanel } from '@/components/sidebar/DevControlPanel'
 
 interface AboutPanelLinks {
   customerService: () => void
@@ -21,6 +22,7 @@ interface AboutPanelProps {
   appName: string
   version: string
   logoUrl: string
+  tenantName?: string
   checkingUpdate?: boolean
   onCheckUpdate: () => void
   onUploadLogs: () => void | Promise<void>
@@ -33,6 +35,10 @@ type PillButtonProps = Omit<ComponentProps<typeof Button>, 'type' | 'variant' | 
   onClick: () => void
   danger?: boolean
   disabled?: boolean
+}
+
+function isAppLogLevel(value: string): value is AppLogLevel {
+  return value === 'error' || value === 'warn' || value === 'info' || value === 'debug'
 }
 
 function PillButton({
@@ -60,6 +66,7 @@ export function AboutPanel({
   appName,
   version,
   logoUrl,
+  tenantName = '',
   checkingUpdate = false,
   onCheckUpdate,
   onUploadLogs,
@@ -68,9 +75,16 @@ export function AboutPanel({
   const { t } = useTranslation()
   const [uploadingLogs, setUploadingLogs] = useState(false)
   const [logLevel, setLogLevelState] = useState<AppLogLevel>('info')
+  const [devPanelOpen, setDevPanelOpen] = useState(false)
+  const [, setAppMetadataClickCount] = useState(0)
+  const trimmedTenantName = tenantName.trim()
 
   useEffect(() => {
-    getLogLevel().then(setLogLevelState).catch(() => {})
+    getLogLevel()
+      .then((level) => {
+        setLogLevelState(isAppLogLevel(level) ? level : 'info')
+      })
+      .catch(() => {})
   }, [])
 
   const handleLogLevelChange = (level: AppLogLevel) => {
@@ -95,10 +109,25 @@ export function AboutPanel({
     }
   }
 
+  const handleAppMetadataClick = () => {
+    setAppMetadataClickCount((count) => {
+      const next = count + 1
+      if (next >= 7) {
+        setDevPanelOpen(true)
+        return 0
+      }
+      return next
+    })
+  }
+
   return (
     <div className="flex flex-col gap-4 text-foreground">
       <section className="flex items-center justify-between gap-6">
-        <div className="flex min-w-0 items-center justify-center gap-4">
+        <div
+          data-aijia-about-metadata
+          className="flex min-w-0 cursor-default items-center justify-center gap-4 rounded-md text-left"
+          onClick={handleAppMetadataClick}
+        >
           <img
             src={logoUrl}
             alt={`${appName} ${t('settings.about.icon')}`}
@@ -106,6 +135,11 @@ export function AboutPanel({
           />
           <div className="flex min-w-0 flex-col gap-1.5 pt-1">
             <div className="text-base font-bold leading-none text-foreground">{appName}</div>
+            {trimmedTenantName ? (
+              <div className="max-w-[260px] truncate text-sm font-medium leading-none text-foreground/80">
+                {trimmedTenantName}
+              </div>
+            ) : null}
             <div className="text-sm leading-none text-muted-foreground">{t('settings.about.version')} {version}</div>
           </div>
         </div>
@@ -166,6 +200,7 @@ export function AboutPanel({
           />
         </div>
       </section>
+      <DevControlPanel open={devPanelOpen} onOpenChange={setDevPanelOpen} />
     </div>
   )
 }

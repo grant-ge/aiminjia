@@ -11,6 +11,7 @@ import { GeneralPanel } from '../panels/GeneralPanel'
 const tauriMock = vi.hoisted(() => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
+  setImChannelKeepAwake: vi.fn(),
   saveProfileAvatarImage: vi.fn(),
 }))
 
@@ -26,7 +27,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
 }))
 
-const mockUser = { name: '姚域权', tenantName: '仁励家网络科技(杭州)有限公司', avatarUrl: '' }
+const mockUser = {
+  name: '姚域权',
+  accountName: 'yyq',
+  tenantName: '仁励家网络科技(杭州)有限公司',
+  avatarUrl: '',
+}
 
 describe('GeneralPanel', () => {
   beforeEach(() => {
@@ -36,15 +42,21 @@ describe('GeneralPanel', () => {
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, isLoaded: false })
     tauriMock.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS })
     tauriMock.updateSettings.mockResolvedValue(undefined)
+    tauriMock.setImChannelKeepAwake.mockResolvedValue(undefined)
     tauriMock.saveProfileAvatarImage.mockResolvedValue('/Users/me/.renlijia/users/t_1__u_2/profile/avatars/avatar.png')
     dialogMock.open.mockResolvedValue(null)
   })
 
   it('renders user info card with name, backend product name, and logout button', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
+    expect(screen.getByText('个人资料')).toBeInTheDocument()
+    expect(screen.getByText('头像、账号与组织信息。')).toBeInTheDocument()
     expect(screen.getByText('姚域权')).toBeInTheDocument()
     expect(screen.getByText('AI猫')).toBeInTheDocument()
-    expect(screen.queryByText(/仁励家网络科技/)).not.toBeInTheDocument()
+    expect(screen.getByText('账号')).toBeInTheDocument()
+    expect(screen.getByText('yyq')).toBeInTheDocument()
+    expect(screen.getByText('组织')).toBeInTheDocument()
+    expect(screen.getByText('仁励家网络科技(杭州)有限公司')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument()
   })
 
@@ -72,8 +84,8 @@ describe('GeneralPanel', () => {
 
   it('renders profile avatar controls without name or background editing', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
-    expect(screen.getByText('个人信息')).toBeInTheDocument()
-    expect(screen.getByText('头像')).toBeInTheDocument()
+    expect(screen.getByText('头像设置')).toBeInTheDocument()
+    expect(screen.getByText('选择你的头像显示方式。')).toBeInTheDocument()
     expect(screen.getByTestId('settings-profile-avatar-preview')).toHaveStyle({
       background: 'rgba(var(--primary-rgb), 0.12)',
     })
@@ -189,6 +201,31 @@ describe('GeneralPanel', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: '全宽' }))
     expect(setChatWidthMode).toHaveBeenCalledWith('full')
+  })
+
+  it('persists runtime keep-awake and applies the native power assertion', async () => {
+    const setImChannelKeepAwakeEnabled = vi.fn()
+    useSettingsStore.setState({
+      imChannelKeepAwakeEnabled: false,
+      setImChannelKeepAwakeEnabled,
+    } as never)
+
+    render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
+
+    expect(screen.getByText('运行时防止休眠')).toBeInTheDocument()
+    expect(screen.getByText('在 AI猫 运行聊天时，保持电脑唤醒。')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: '开' }))
+
+    expect(setImChannelKeepAwakeEnabled).toHaveBeenCalledWith(true)
+    await waitFor(() => {
+      expect(tauriMock.setImChannelKeepAwake).toHaveBeenCalledWith(true)
+      expect(tauriMock.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imChannelKeepAwakeEnabled: true,
+        }),
+      )
+    })
   })
 
   it('does not render language select while language switching is unavailable', () => {

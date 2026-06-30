@@ -84,7 +84,24 @@
     "project": "Projects",
     "employeeTab": "Staff",
     "expertTeamTab": "Experts",
-    "channel": "Channels"
+    "channel": "Channels",
+    "account": {
+      "trigger": "Account and settings",
+      "productFallback": "AIjia",
+      "settings": "Settings",
+      "adminPortal": "Admin portal",
+      "adminPortalDescription": "Open the admin portal inside the app.",
+      "preferences": "Preferences",
+      "about": "About us",
+      "profile": "Profile",
+      "billing": "Usage",
+      "logout": "Log out",
+      "language": "Language",
+      "fontSize": "Font size",
+      "chatWidth": "Chat width",
+      "imKeepAwake": "Prevent sleep",
+      "imKeepAwakeHint": "Keep the computer awake while {{productName}} chats are running"
+    }
   },
   "inputBar": {
     "placeholder": "Ask anything, or upload a file for analysis..."
@@ -155,7 +172,8 @@
       "account": "Account",
       "models": "Models",
       "search": "Search",
-      "general": "General",
+      "general": "Profile",
+      "system": "System settings",
       "persona": "Persona",
       "skills": "Skills",
       "mcp": "MCP",
@@ -333,7 +351,7 @@
       "metricsCleared": "Metrics data cleared",
       "cleanupFailed": "Cleanup failed",
       "cleanup": "Clear",
-      "appearance": "Appearance",
+      "appearance": "System settings",
       "languageZh": "中文",
       "languageEn": "English",
       "logout": "Sign out",
@@ -354,7 +372,28 @@
       "chatWidth": "Chat width",
       "chatWidthDesc": "Control whether chat content is centered or spans the available width",
       "chatWidthCentered": "Centered",
-      "chatWidthFull": "Full width"
+      "chatWidthFull": "Full width",
+      "imChannelKeepAwake": "Prevent sleep while running",
+      "imChannelKeepAwakeDesc": "Keep the computer awake while {{productName}} chats are running.",
+      "switchOff": "Off",
+      "switchOn": "On"
+    },
+    "profile": {
+      "description": "Avatar, account, and organization information.",
+      "avatarTitle": "Avatar settings",
+      "avatarDesc": "Choose how your avatar is shown.",
+      "accountTitle": "Account",
+      "accountDesc": "Current signed-in account",
+      "organizationTitle": "Organization",
+      "organizationDesc": "Organization for this account",
+      "logoutDesc": "Sign out on this device. You can sign back in anytime."
+    },
+    "system": {
+      "description": "Configure system-level options for display, chat runtime, and permission behavior.",
+      "interfaceTitle": "Interface",
+      "interfaceDesc": "Adjust display, language, and chat layout.",
+      "runtimeTitle": "Runtime",
+      "runtimeDesc": "Control system behavior while chats are running."
     },
     "permissions": {
       "title": "Permissions",

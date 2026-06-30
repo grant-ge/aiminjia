@@ -376,6 +376,13 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
+[role="button"][aria-label^="账户与设置"],
+[role="button"][aria-label^="账户与设置"] *,
+[role="button"][aria-label^="Account and settings"],
+[role="button"][aria-label^="Account and settings"] * {
+  cursor: pointer !important;
+}
+
 .titlebar-window-button {
   width: 44px;
   height: 28px;

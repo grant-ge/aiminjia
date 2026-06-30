@@ -38,6 +38,7 @@ interface SettingsState extends Settings {
     emoji?: string
     imagePath?: string
   }) => void
+  setImChannelKeepAwakeEnabled: (enabled: boolean) => void
   setDefaultPermissionMode: (mode: DefaultPermissionMode) => void
   setCloudGatewayMode: (mode: CloudGatewayMode) => void
   markLoaded: () => void
@@ -91,6 +92,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       profileAvatarEmoji: emoji ?? state.profileAvatarEmoji ?? '',
       profileAvatarImagePath: imagePath ?? state.profileAvatarImagePath ?? '',
     })),
+  setImChannelKeepAwakeEnabled: (imChannelKeepAwakeEnabled) => set({ imChannelKeepAwakeEnabled }),
   setDefaultPermissionMode: (defaultPermissionMode) => set({ defaultPermissionMode }),
   setCloudGatewayMode: (cloudGatewayMode) => set({ cloudGatewayMode }),
   markLoaded: () => set({ isLoaded: true }),

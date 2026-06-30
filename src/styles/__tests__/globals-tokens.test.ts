@@ -52,6 +52,14 @@ describe("design.pen token alignment", () => {
     );
   });
 
+  it("forces pointer cursor for sidebar account trigger descendants", () => {
+    expect(CSS).toContain('[role="button"][aria-label^="账户与设置"] *');
+    expect(CSS).toContain('[role="button"][aria-label^="Account and settings"] *');
+    expect(CSS).toMatch(
+      /\[role="button"\]\[aria-label\^="账户与设置"\][\s\S]*cursor:\s*pointer\s*!important;/,
+    );
+  });
+
   it("maps Tailwind text size utilities to the compact app scale", () => {
     expect(tokenValue("--text-2xs")).toBe("0.6875rem");
     expect(tokenValue("--text-xs")).toBe("0.75rem");

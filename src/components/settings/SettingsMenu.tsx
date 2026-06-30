@@ -22,9 +22,9 @@ export interface SettingsMenuItem {
 // eslint-disable-next-line react-refresh/only-export-components
 export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', labelKey: 'settings.tabs.general' },
+  { key: 'system', labelKey: 'settings.tabs.system' },
   { key: 'account-billing', labelKey: 'settings.billing.title' },
   { key: 'usage', labelKey: 'settings.tabs.usage', disabled: true },
-  { key: 'permissions', labelKey: 'settings.tabs.permissions' },
   { key: 'mcp', labelKey: 'settings.tabs.mcp', disabled: true },
   { key: 'sso', labelKey: 'settings.tabs.sso', disabled: true },
   { key: 'shortcuts', labelKey: 'settings.tabs.shortcuts', disabled: true },
