@@ -33,7 +33,17 @@ describe('ArchivedPanel', () => {
       .mockResolvedValueOnce([])
     useChatStore.setState({ activeConversationId: 'c-existing' })
     tauriMock.getConversations.mockResolvedValue([
-      { id: 'c1', title: '归档会话', createdAt: '2026-04-27T00:00:00Z', updatedAt: '2026-04-28T00:00:00Z', isArchived: false },
+      {
+        id: 'c1',
+        title: '归档会话',
+        createdAt: '2026-04-27T00:00:00Z',
+        updatedAt: '2026-04-28T00:00:00Z',
+        isArchived: false,
+        workspaceName: '销售项目',
+        kind: 'employee',
+        sourceLabel: '销售助理',
+        isPinned: true,
+      },
     ])
     tauriMock.restoreConversation.mockResolvedValue(undefined)
 
@@ -47,7 +57,17 @@ describe('ArchivedPanel', () => {
     await waitFor(() => expect(tauriMock.restoreConversation).toHaveBeenCalledWith('c1'))
     await waitFor(() => expect(screen.getByText('暂无归档记录')).toBeInTheDocument())
     expect(useChatStore.getState().conversations).toEqual([
-      { id: 'c1', title: '归档会话', createdAt: '2026-04-27T00:00:00Z', updatedAt: '2026-04-28T00:00:00Z', isArchived: false, workspaceName: undefined },
+      {
+        id: 'c1',
+        title: '归档会话',
+        createdAt: '2026-04-27T00:00:00Z',
+        updatedAt: '2026-04-28T00:00:00Z',
+        isArchived: false,
+        workspaceName: '销售项目',
+        kind: 'employee',
+        sourceLabel: '销售助理',
+        isPinned: true,
+      },
     ])
     expect(useChatStore.getState().activeConversationId).toBe('c-existing')
     expect(useNotificationStore.getState().notifications[0]).toMatchObject({
