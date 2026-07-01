@@ -52,7 +52,7 @@ fn platform_set_enabled(manager: &PowerAssertionManager, enabled: bool) -> Resul
         }
 
         let child = Command::new("/usr/bin/caffeinate")
-            .args(["-dimsu"])
+            .args(macos_caffeinate_args())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -67,6 +67,20 @@ fn platform_set_enabled(manager: &PowerAssertionManager, enabled: bool) -> Resul
         let _ = child.wait();
     }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_caffeinate_args() -> [&'static str; 1] {
+    ["-i"]
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_keep_awake_only_prevents_idle_system_sleep() {
+        assert_eq!(super::macos_caffeinate_args(), ["-i"]);
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -157,11 +171,11 @@ impl Drop for WindowsPowerWorker {
 #[cfg(target_os = "windows")]
 fn set_windows_execution_state(enabled: bool) {
     use windows_sys::Win32::System::Power::{
-        SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
+        SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED,
     };
 
     let flags = if enabled {
-        ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+        ES_CONTINUOUS | ES_SYSTEM_REQUIRED
     } else {
         ES_CONTINUOUS
     };
