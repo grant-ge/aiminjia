@@ -15,6 +15,10 @@ dist-ssr
 # Rust build artifacts
 src-tauri/target
 
+# Bundled runtime artifacts (built by scripts/prepare-bundled-runtime.{sh,ps1})
+src-tauri/resources/runtime/
+.runtime-cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
