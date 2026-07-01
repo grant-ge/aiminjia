@@ -1,8 +1,8 @@
 import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
-import { Loader2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { Spinner } from '@/components/ui/spinner'
 
 type ButtonSize = 'sm' | 'md' | 'lg' | 'icon' | 'default'
 type ButtonVariant = 'default' | 'primary' | 'secondary' | 'ghost' | 'outline' | 'destructive' | 'link'
@@ -25,13 +25,19 @@ const iconGraphicSizeClasses: Record<'sm' | 'md' | 'lg', string> = {
   lg: 'h-4 w-4',
 }
 
+const radiusClasses: Record<'sm' | 'md' | 'lg', string> = {
+  sm: 'rounded',
+  md: 'rounded-md',
+  lg: 'rounded-md',
+}
+
 const variantClasses: Record<Exclude<ButtonVariant, 'link'>, string> = {
-  default: 'border border-primary bg-primary text-primary-foreground',
-  primary: 'border border-primary bg-primary text-primary-foreground',
-  secondary: 'border border-transparent bg-secondary text-secondary-foreground',
-  ghost: 'border border-transparent bg-transparent text-muted-foreground',
-  outline: 'border border-input bg-card text-foreground',
-  destructive: 'border border-destructive bg-destructive text-destructive-foreground',
+  default: 'border border-primary bg-primary text-primary-foreground hover:bg-[rgba(var(--primary-rgb),0.90)]',
+  primary: 'border border-primary bg-primary text-primary-foreground hover:bg-[rgba(var(--primary-rgb),0.90)]',
+  secondary: 'border border-transparent bg-secondary text-secondary-foreground hover:bg-[rgba(var(--secondary-rgb),0.80)]',
+  ghost: 'border border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+  outline: 'border border-input bg-card text-foreground hover:bg-accent',
+  destructive: 'border border-destructive bg-destructive text-destructive-foreground hover:bg-[rgba(var(--destructive-rgb),0.90)]',
 }
 
 function normalizeSize(size: ButtonSize | null | undefined): 'sm' | 'md' | 'lg' {
@@ -71,6 +77,7 @@ export interface ButtonProps
   link?: boolean
   loading?: boolean
   size?: ButtonSize
+  suffixIcon?: React.ReactNode
   unstyled?: boolean
   variant?: ButtonVariant
 }
@@ -88,6 +95,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       link = false,
       loading = false,
       size = 'md',
+      suffixIcon,
       unstyled = false,
       variant = 'default',
       ...props
@@ -100,8 +108,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const isDanger = danger || variant === 'destructive'
     const isDisabled = disabled || loading
     const hasChildren = React.Children.count(children) > 0
-    const contentIcon = loading ? <Loader2 className="animate-spin" /> : icon
+    const contentIcon = loading ? <Spinner /> : icon
     const iconOnly = !isLink && (size === 'icon' || (!hasChildren && Boolean(contentIcon)))
+    const hasInlineIcon = Boolean(contentIcon || suffixIcon)
     const variantClassKey = normalizeVariantClassKey(variant, isDanger)
 
     if (unstyled) {
@@ -126,19 +135,17 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-busy={loading ? true : props['aria-busy']}
         className={cn(
           block ? 'flex w-full' : 'inline-flex',
-          'items-center justify-center whitespace-nowrap rounded-md font-medium',
-          isLink
-            ? 'transition-colors duration-150 ease-out'
-            : 'transition-[opacity,transform] duration-150 ease-out hover:opacity-90',
+          'items-center justify-center whitespace-nowrap font-medium',
+          !isLink ? radiusClasses[normalizedSize] : 'rounded-md',
+          'transition-colors duration-150 ease-out',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0',
           'disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-45',
           isLink
-            ? 'h-auto border-transparent bg-transparent p-0 text-primary active:scale-100'
+            ? 'h-auto border-transparent bg-transparent p-0 text-primary'
             : [
-                'active:scale-[0.98]',
                 variantClasses[variantClassKey],
                 iconOnly ? iconSizeClasses[normalizedSize] : sizeClasses[normalizedSize],
-                hasChildren && contentIcon ? 'gap-1.5' : null,
+                !iconOnly && hasChildren && hasInlineIcon ? 'gap-1.5' : null,
               ],
           className,
         )}
@@ -148,6 +155,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {contentIcon ? renderIcon(contentIcon, iconGraphicSizeClasses[normalizedSize]) : null}
         {children}
+        {suffixIcon ? renderIcon(suffixIcon, iconGraphicSizeClasses[normalizedSize]) : null}
       </Comp>
     )
   },

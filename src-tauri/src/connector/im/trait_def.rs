@@ -59,7 +59,8 @@ pub struct ConnectorCapabilities {
     /// - dingtalk / feishu: `false` (they have `outbound_aicard = true`,
     ///   so this field is ignored; explicitly `false` for clarity)
     /// - whatsapp: `true` (send_text + edit_message; see Phase 4 spec §6)
-    /// - wecom / wechat / telegram: `false` (final-only, no edit API used)
+    /// - telegram: `true` (sendMessage + editMessageText draft preview)
+    /// - wecom / wechat: `false` (final-only, no edit API used)
     pub outbound_text_streaming: bool,
     pub outbound_markdown: bool,
     pub supports_attachments: bool,

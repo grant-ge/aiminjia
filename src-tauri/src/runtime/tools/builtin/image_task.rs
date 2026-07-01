@@ -194,21 +194,37 @@ impl ImageTaskRuntimeTool {
             .join(&self.deps.conversation_id)
     }
 
-    fn output_storage_root(&self) -> (std::path::PathBuf, FileStorageRoot) {
+    fn storage_root_for_authorized_workspace(
+        workspace: &AuthorizedWorkspaceRef,
+    ) -> (std::path::PathBuf, FileStorageRoot) {
+        let kind = if workspace.id == "default" {
+            "defaultFolder"
+        } else {
+            "authorizedWorkspace"
+        };
+        (
+            workspace.root_path.clone(),
+            FileStorageRoot {
+                kind: kind.to_string(),
+                path: workspace.root_path.clone(),
+                display_name: Some(workspace.display_name.clone()),
+            },
+        )
+    }
+
+    fn output_storage_root(
+        &self,
+        ctx: Option<&ToolExecutionContext>,
+    ) -> (std::path::PathBuf, FileStorageRoot) {
+        if let Some(workspace) = ctx
+            .and_then(|ctx| ctx.capability.as_ref())
+            .and_then(|cap| cap.storage.as_ref())
+            .and_then(|storage| storage.authorized_workspace.as_ref())
+        {
+            return Self::storage_root_for_authorized_workspace(workspace);
+        }
         if let Some(workspace) = &self.deps.authorized_workspace {
-            let kind = if workspace.id == "default" {
-                "defaultFolder"
-            } else {
-                "authorizedWorkspace"
-            };
-            return (
-                workspace.root_path.clone(),
-                FileStorageRoot {
-                    kind: kind.to_string(),
-                    path: workspace.root_path.clone(),
-                    display_name: Some(workspace.display_name.clone()),
-                },
-            );
+            return Self::storage_root_for_authorized_workspace(workspace);
         }
         (
             self.deps.workspace_path.clone(),
@@ -297,6 +313,7 @@ impl ImageTaskRuntimeTool {
         &self,
         input: &ImageTaskToolInput,
         response: &PiImageTaskResponse,
+        ctx: Option<&ToolExecutionContext>,
     ) -> Result<Vec<PersistedImageFile>, ToolError> {
         if response.outputs.is_empty() {
             return Err(ToolError::ExecutionFailed(
@@ -329,7 +346,7 @@ impl ImageTaskRuntimeTool {
                 input.output.format.as_deref(),
             );
             let file_name = generated_file_name(response.task_id.as_deref(), idx, &ext);
-            let (output_root, storage_root) = self.output_storage_root();
+            let (output_root, storage_root) = self.output_storage_root(ctx);
             let output_subdir = format!("generated/{}/images", self.deps.conversation_id);
             let info = FileManager::write_file_under_root(
                 &output_root,
@@ -364,7 +381,7 @@ impl ImageTaskRuntimeTool {
                     None,
                     None,
                     "workspace",
-                    Some(storage_root),
+                    Some(storage_root.clone()),
                 )
                 .map_err(|err| {
                     ToolError::ExecutionFailed(format!(
@@ -385,6 +402,7 @@ impl ImageTaskRuntimeTool {
                 stored_path: info.stored_path.clone(),
                 category: "image".to_string(),
             };
+            let file_path = output_root.join(&info.stored_path);
 
             files.push(PersistedImageFile {
                 file_id,
@@ -395,6 +413,8 @@ impl ImageTaskRuntimeTool {
                 mime_type,
                 source_asset_id: asset.id.clone(),
                 file_meta,
+                storage_root,
+                file_path,
             });
         }
 
@@ -486,7 +506,9 @@ impl RuntimeTool for ImageTaskRuntimeTool {
         );
 
         let response = self.post_image_task(&request).await?;
-        let files = self.persist_output_assets(&input, &response).await?;
+        let files = self
+            .persist_output_assets(&input, &response, Some(&ctx))
+            .await?;
         let content = build_result_content(&response, &files);
         let data = build_result_data(&response, &files);
         let mut result = ToolResult::new(TOOL_NAME, content, Some(data));
@@ -644,6 +666,8 @@ struct PersistedImageFile {
     mime_type: Option<String>,
     source_asset_id: Option<String>,
     file_meta: FileMeta,
+    storage_root: FileStorageRoot,
+    file_path: std::path::PathBuf,
 }
 
 fn validate_tool_input(input: &ImageTaskToolInput) -> Result<(), ToolError> {
@@ -769,8 +793,12 @@ fn build_result_content(response: &PiImageTaskResponse, files: &[PersistedImageF
     ));
     for file in files {
         lines.push(format!(
-            "fileId: {} name: {} storedPath: {}",
-            file.file_id, file.file_name, file.stored_path
+            "fileId: {} name: {} storedPath: {} storageRoot: {} filePath: {}",
+            file.file_id,
+            file.file_name,
+            file.stored_path,
+            file.storage_root.path.display(),
+            file.file_path.display()
         ));
     }
     lines.join("\n")
@@ -788,6 +816,8 @@ fn build_result_data(response: &PiImageTaskResponse, files: &[PersistedImageFile
                 "fileSize": file.file_size,
                 "mimeType": file.mime_type,
                 "sourceAssetId": file.source_asset_id,
+                "storageRoot": file.storage_root,
+                "filePath": file.file_path,
             })
         })
         .collect();
@@ -1138,7 +1168,10 @@ mod tests {
             cost: None,
         };
 
-        let files = tool.persist_output_assets(&input, &response).await.unwrap();
+        let files = tool
+            .persist_output_assets(&input, &response, None)
+            .await
+            .unwrap();
 
         assert_eq!(files.len(), 1);
         assert!(
@@ -1167,6 +1200,146 @@ mod tests {
         assert_eq!(
             record["storageRoot"]["path"].as_str(),
             Some(workspace_root.as_str())
+        );
+    }
+
+    #[test]
+    fn result_content_includes_resolved_file_path_and_storage_root() {
+        let file = PersistedImageFile {
+            file_id: "file-1".to_string(),
+            file_name: "image-task-demo.png".to_string(),
+            stored_path: "generated/conv-1/images/image-task-demo.png".to_string(),
+            file_type: "png".to_string(),
+            file_size: 3,
+            mime_type: Some("image/png".to_string()),
+            source_asset_id: Some("asset-1".to_string()),
+            file_meta: FileMeta {
+                file_id: "file-1".to_string(),
+                file_name: "image-task-demo.png".to_string(),
+                requested_format: "png".to_string(),
+                actual_format: "png".to_string(),
+                file_size: 3,
+                stored_path: "generated/conv-1/images/image-task-demo.png".to_string(),
+                category: "image".to_string(),
+            },
+            storage_root: FileStorageRoot {
+                kind: "authorizedWorkspace".to_string(),
+                path: std::path::PathBuf::from("/tmp/aijia-workspace"),
+                display_name: Some("aijia-workspace".to_string()),
+            },
+            file_path: std::path::PathBuf::from(
+                "/tmp/aijia-workspace/generated/conv-1/images/image-task-demo.png",
+            ),
+        };
+        let response = PiImageTaskResponse {
+            task_id: Some("task-1".to_string()),
+            status: Some("completed".to_string()),
+            outputs: Vec::new(),
+            usage: None,
+            cost: None,
+        };
+
+        let content = build_result_content(&response, &[file]);
+
+        assert!(content.contains("storageRoot: /tmp/aijia-workspace"));
+        assert!(content.contains(
+            "filePath: /tmp/aijia-workspace/generated/conv-1/images/image-task-demo.png"
+        ));
+    }
+
+    #[tokio::test]
+    async fn persist_output_prefers_context_authorized_workspace_over_deps_workspace_path() {
+        let storage_dir = TempDir::new().unwrap();
+        let internal_workspace = TempDir::new().unwrap();
+        let authorized_workspace = TempDir::new().unwrap();
+        let storage = Arc::new(AppStorage::new(storage_dir.path()).unwrap());
+        storage
+            .create_conversation("conv-1", "Image test")
+            .expect("create conversation");
+        let file_manager = Arc::new(FileManager::new(internal_workspace.path()));
+        let tool = ImageTaskRuntimeTool::new(ImageTaskDeps {
+            auth_manager: None,
+            storage: storage.clone(),
+            file_manager,
+            workspace_path: internal_workspace.path().to_path_buf(),
+            authorized_workspace: None,
+            conversation_id: "conv-1".to_string(),
+            run_id: Some("run-1".to_string()),
+            gateway_base_url: None,
+        });
+        let input = ImageTaskToolInput {
+            action: "image.create".to_string(),
+            instruction: "draw a simple icon".to_string(),
+            input_images: Vec::new(),
+            output: ImageTaskOutputInput {
+                format: Some("png".to_string()),
+                ..Default::default()
+            },
+        };
+        let response = PiImageTaskResponse {
+            task_id: Some("task-ctx".to_string()),
+            status: Some("completed".to_string()),
+            outputs: vec![PiOutputAsset {
+                id: Some("asset-ctx".to_string()),
+                mime_type: Some("image/png".to_string()),
+                data: Some(base64::engine::general_purpose::STANDARD.encode([4_u8, 5, 6])),
+                url: None,
+                file_name: None,
+            }],
+            usage: None,
+            cost: None,
+        };
+        let ctx = ToolExecutionContext::new(
+            crate::runtime::ids::SessionId::new("conv-1"),
+            crate::runtime::ids::RunId::new("run-1"),
+            None,
+            "tool-call-1",
+            crate::runtime::cancellation::CancellationToken::new(),
+        )
+        .with_capability(Arc::new(
+            crate::runtime::tools::capability::CapabilityContext {
+                storage: Some(crate::runtime::tools::capability::StorageCapability {
+                    workspace_path: internal_workspace.path().to_path_buf(),
+                    authorized_workspace: Some(AuthorizedWorkspaceRef {
+                        id: "aw-test".to_string(),
+                        root_path: authorized_workspace.path().to_path_buf(),
+                        display_name: "authorized".to_string(),
+                    }),
+                    permission_ctx: Arc::new(
+                        crate::runtime::path_auth::ToolPermissionContext::empty(),
+                    ),
+                }),
+                workspace_id: Some("conv-1".to_string()),
+                file_ops: None,
+                read_file_state: None,
+                file_reading_limits: None,
+                notification_sink: None,
+                tool_progress_sink: None,
+                runtime_resolver: None,
+                is_subagent: false,
+            },
+        ));
+
+        let files = tool
+            .persist_output_assets(&input, &response, Some(&ctx))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read(authorized_workspace.path().join(&files[0].stored_path)).unwrap(),
+            vec![4_u8, 5, 6]
+        );
+        assert!(
+            !internal_workspace.path().join(&files[0].stored_path).exists(),
+            "ImageTask should not fall back to internal workspace when ctx has authorized workspace"
+        );
+        let record = storage
+            .get_generated_file_for_conversation(&files[0].file_id, "conv-1")
+            .unwrap()
+            .expect("registered generated file");
+        assert_eq!(
+            record["storageRoot"]["path"].as_str(),
+            Some(authorized_workspace.path().to_string_lossy().as_ref())
         );
     }
 
@@ -1219,7 +1392,10 @@ mod tests {
             cost: None,
         };
 
-        let files = tool.persist_output_assets(&input, &response).await.unwrap();
+        let files = tool
+            .persist_output_assets(&input, &response, None)
+            .await
+            .unwrap();
 
         assert!(files[0].file_name.ends_with(".jpg"));
         assert_eq!(files[0].file_type, "jpeg");

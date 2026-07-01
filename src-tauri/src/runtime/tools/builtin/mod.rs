@@ -6,7 +6,6 @@ pub mod ask_user_question;
 #[cfg(not(windows))]
 pub mod bash;
 pub mod grep;
-pub mod image_task;
 pub mod load_skill;
 pub mod memory;
 pub mod network;

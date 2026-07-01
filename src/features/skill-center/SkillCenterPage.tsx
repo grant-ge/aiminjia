@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
-import { Switch } from '@/components/common/Switch'
+import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCard } from '@/components/skills/SkillCard'
@@ -38,6 +38,11 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { SkillValidationError, type SkillValidationKind } from '@/stores/skillStore'
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
 import { ChevronDown, FolderOpen, Package } from 'lucide-react'
+
+const TOGGLE_OPTIONS: Array<{ value: 'off' | 'on'; label: string }> = [
+  { value: 'off', label: '关' },
+  { value: 'on', label: '开' },
+]
 
 function getSkillCardIconBg(skillId: string | null | undefined) {
   return getSkillCardAvatarClass(skillId)
@@ -523,9 +528,12 @@ export function SkillCenterPage() {
               <AppDropdown
                 ariaLabel={t('skillCenter.importSkill')}
                 trigger={
-                  <Button size="md" data-aijia-skill-import-trigger>
+                  <Button
+                    size="md"
+                    suffixIcon={<ChevronDown className="h-3.5 w-3.5" />}
+                    data-aijia-skill-import-trigger
+                  >
                     {t('skillCenter.importSkill')}
-                    <ChevronDown className="h-3.5 w-3.5" />
                   </Button>
                 }
                 items={[
@@ -616,26 +624,25 @@ export function SkillCenterPage() {
                       variant="ghost"
                       data-aijia-skill-market-action="added"
                       aria-label={`使用 ${installedSkill ? localizeSkill(installedSkill, i18n.language).name : item.name || item.pluginId}`}
+                      icon={<Check className="h-3.5 w-3.5 group-hover:hidden" aria-hidden />}
+                      suffixIcon={<MessageSquare className="hidden h-3.5 w-3.5 group-hover:block" aria-hidden />}
                       onClick={() => {
                         if (installedSkill) handleUseSkill(installedSkill)
                       }}
                     >
-                      <Check className="h-3.5 w-3.5 group-hover:hidden" aria-hidden />
-                      <MessageSquare className="hidden h-3.5 w-3.5 group-hover:block" aria-hidden />
                       <span className="sr-only">已添加</span>
                     </Button>
                   ) : (
                     <Button
                       size="sm"
                       variant="ghost"
+                      icon={<Plus className="h-4 w-4" />}
                       loading={installingMarketId === item.pluginId}
                       disabled={installingMarketId === item.pluginId}
                       data-aijia-skill-market-action="add"
                       aria-label={`添加 ${item.name || item.pluginId}`}
                       onClick={() => void handleInstallMarketplace(item)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
+                    />
                   )
                 }
               />
@@ -699,13 +706,15 @@ export function SkillCenterPage() {
                 actionsSlot={
                   <div className="flex items-center gap-2">
                     {manageable ? (
-                      <Switch
+                      <SegmentedControl<'off' | 'on'>
                         size="sm"
-                        checked={enabled}
+                        className="w-16 shrink-0"
+                        value={enabled ? 'on' : 'off'}
                         disabled={enablementChangingId === skill.id}
                         data-aijia-skill-toggle={skill.id}
-                        aria-label={`${localized.name} 技能开关`}
-                        onCheckedChange={(next) => void handleSetSkillEnabled(skill, next)}
+                        ariaLabel={`${localized.name} 技能开关`}
+                        onValueChange={(value) => void handleSetSkillEnabled(skill, value === 'on')}
+                        options={TOGGLE_OPTIONS}
                       />
                     ) : null}
                     {menuItems.length > 0 ? (

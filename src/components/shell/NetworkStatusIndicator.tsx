@@ -1,4 +1,4 @@
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -59,7 +59,7 @@ export function NetworkStatusIndicator() {
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 border-b border-border bg-warning/10 px-4 py-2 text-sm text-destructive"
+      className="flex shrink-0 items-center gap-2 border-b border-border bg-[rgba(var(--color-semantic-orange-rgb),0.10)] px-4 py-2 text-sm text-destructive"
     >
       <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
       <span className="flex-1">{bannerText}</span>
@@ -67,10 +67,10 @@ export function NetworkStatusIndicator() {
         type="button"
         size="sm"
         danger
+        loading={retrying}
         disabled={retrying}
         onClick={handleRetry}
       >
-        {retrying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
         {t('network.retryNow')}
       </Button>
     </div>

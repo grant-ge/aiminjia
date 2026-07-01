@@ -209,11 +209,10 @@ export function ExpertTeamsPage() {
               type="button"
               variant="outline"
               size="md"
-              className="gap-1.5"
+              icon={<RefreshCw className={`h-3 w-3 ${syncing || catalogLoading ? 'animate-spin' : ''}`} />}
               disabled={syncing || catalogLoading}
               onClick={() => void handleSync()}
             >
-              <RefreshCw className={`h-3 w-3 ${syncing || catalogLoading ? 'animate-spin' : ''}`} />
               {syncing || catalogLoading ? t('ExpertTeams.syncing') : t('ExpertTeams.syncServer')}
             </Button>
           )}
@@ -223,7 +222,7 @@ export function ExpertTeamsPage() {
       {catalogLoading && teams.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-[154px] animate-pulse rounded-md border border-border/50 bg-card" />
+            <div key={i} className="h-[154px] animate-pulse rounded-md border border-[rgba(var(--border-rgb),0.50)] bg-card" />
           ))}
         </div>
       ) : teams.length === 0 ? (
@@ -240,11 +239,10 @@ export function ExpertTeamsPage() {
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1.5"
+            icon={<RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />}
             disabled={syncing}
             onClick={() => void handleSync()}
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? t('ExpertTeams.syncing') : t('ExpertTeams.syncServer')}
           </Button>
         </div>

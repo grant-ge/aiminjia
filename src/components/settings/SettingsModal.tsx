@@ -33,6 +33,7 @@ export function SettingsModal() {
   const logout = useAuthStore((s) => s.logout)
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
+  const showAccountBilling = tenant?.tenantType !== 'enterprise'
   const [pendingLogout, setPendingLogout] = useState(false)
   const [appVersion, setAppVersion] = useState(t('settings.loadingVersion'))
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -55,6 +56,12 @@ export function SettingsModal() {
       cancelled = true
     }
   }, [settingsModal])
+
+  useEffect(() => {
+    if (settingsModal === 'account-billing' && !showAccountBilling) {
+      openSettings('account')
+    }
+  }, [openSettings, settingsModal, showAccountBilling])
 
   if (!settingsModal) return null
 
@@ -151,6 +158,7 @@ export function SettingsModal() {
           <SettingsMenu
             activeKey={settingsModal}
             onSelect={(k) => openSettings(k)}
+            hiddenKeys={showAccountBilling ? [] : ['account-billing']}
           />
         }
         content={
@@ -158,21 +166,38 @@ export function SettingsModal() {
             <SettingsContentBody>
               {settingsModal === 'account' ? (
                 <GeneralPanel
+                  section="profile"
                   user={{
                     name: user?.name ?? user?.username ?? t('settings.notLoggedIn'),
+                    accountName: user?.username ?? '',
                     tenantName: tenant?.name ?? '',
                     avatarUrl: '',
                   }}
                   onLogout={() => void onLogout()}
                 />
               ) : null}
-              {settingsModal === 'account-billing' ? <AccountBillingPanel /> : null}
-              {settingsModal === 'permissions' ? <PermissionsPanel /> : null}
+              {settingsModal === 'system' ? (
+                <>
+                  <GeneralPanel
+                    section="system"
+                    user={{
+                      name: user?.name ?? user?.username ?? t('settings.notLoggedIn'),
+                      accountName: user?.username ?? '',
+                      tenantName: tenant?.name ?? '',
+                      avatarUrl: '',
+                    }}
+                    onLogout={() => void onLogout()}
+                  />
+                  <PermissionsPanel />
+                </>
+              ) : null}
+              {settingsModal === 'account-billing' && showAccountBilling ? <AccountBillingPanel /> : null}
               {settingsModal === 'about' ? (
                 <AboutPanel
                   appName={productName}
                   version={appVersion}
                   logoUrl={logoUrl}
+                  tenantName={tenant?.name ?? ''}
                   checkingUpdate={checkingUpdate}
                   onCheckUpdate={() => void onCheckUpdate()}
                   onUploadLogs={() => void onUploadLogs()}

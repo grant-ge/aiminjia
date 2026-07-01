@@ -22,9 +22,9 @@ export interface SettingsMenuItem {
 // eslint-disable-next-line react-refresh/only-export-components
 export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', labelKey: 'settings.tabs.general' },
+  { key: 'system', labelKey: 'settings.tabs.system' },
   { key: 'account-billing', labelKey: 'settings.billing.title' },
   { key: 'usage', labelKey: 'settings.tabs.usage', disabled: true },
-  { key: 'permissions', labelKey: 'settings.tabs.permissions' },
   { key: 'mcp', labelKey: 'settings.tabs.mcp', disabled: true },
   { key: 'sso', labelKey: 'settings.tabs.sso', disabled: true },
   { key: 'shortcuts', labelKey: 'settings.tabs.shortcuts', disabled: true },
@@ -36,16 +36,18 @@ export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
 interface SettingsMenuProps {
   activeKey: SettingsModalKey
   onSelect: (key: SettingsModalKey) => void
+  hiddenKeys?: readonly SettingsModalKey[]
 }
 
-export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
+export function SettingsMenu({ activeKey, onSelect, hiddenKeys = [] }: SettingsMenuProps) {
   const { t } = useTranslation()
+  const hidden = new Set(hiddenKeys)
   return (
     <aside className="flex min-h-0 flex-col rounded-l-md bg-secondary px-4 py-6">
       <div className="mb-2 shrink-0 text-lg font-bold text-foreground">{t('settings.tabs.title')}</div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         {SETTINGS_MENU_ITEMS
-          .filter((it) => !it.disabled)
+          .filter((it) => !it.disabled && !hidden.has(it.key))
           .map((it) => {
           const active = it.key === activeKey
           const label = t(it.labelKey)
@@ -62,7 +64,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
                 'flex items-center rounded-md px-3 py-2.5 text-left text-sm',
                 active
                   ? 'bg-card font-semibold text-foreground'
-                  : 'font-medium text-muted-foreground transition-colors hover:bg-card/60',
+                  : 'font-medium text-muted-foreground transition-colors hover:bg-[rgba(var(--card-rgb),0.60)]',
               )}
             >
               <span className="min-w-0 flex-1 truncate">{label}</span>

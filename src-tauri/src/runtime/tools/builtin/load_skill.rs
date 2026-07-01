@@ -10,18 +10,18 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::registry::SkillRegistry;
-use crate::plugin::skill::substitution::{SkillSubstitutionContext, substitute_skill_body};
-use crate::runtime::tools::RuntimeTool;
+use crate::plugin::skill::substitution::{substitute_skill_body, SkillSubstitutionContext};
 use crate::runtime::tools::builtin::refresh_skills::SkillRegistryRefresher;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
+use crate::runtime::tools::RuntimeTool;
 
 /// Format the result of a forked skill execution.
 pub fn format_fork_result(skill_name: &str, result_text: &str) -> String {
@@ -406,12 +406,10 @@ mod tests {
             .unwrap_err();
 
         assert!(format!("{err:?}").contains("Unknown or unavailable skill"));
-        assert!(
-            registry
-                .lock()
-                .unwrap()
-                .get("disabled-after-refresh")
-                .is_some()
-        );
+        assert!(registry
+            .lock()
+            .unwrap()
+            .get("disabled-after-refresh")
+            .is_some());
     }
 }

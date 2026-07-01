@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ChevronDown, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react'
+import { ChevronDown, Plus, RefreshCcw, Trash2 } from 'lucide-react'
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { Input } from '@/components/ui/input'
+import { Spinner } from '@/components/ui/spinner'
 import {
   RegistrationModal,
   type RegistrationPollState,
@@ -179,7 +180,7 @@ function ModeRadio({
       >
         <span
           className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border-2 ${
-            active ? 'border-primary' : 'border-muted-foreground/50'
+            active ? 'border-primary' : 'border-[rgba(var(--muted-foreground-rgb),0.50)]'
           }`}
         >
           {active && <span className="h-2 w-2 rounded-md bg-primary" />}
@@ -526,9 +527,9 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             <Button
               size="sm"
               variant="secondary"
+              icon={<RefreshCcw className="h-3.5 w-3.5" />}
               onClick={handleAddOrRescan}
             >
-              <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
               {t('channel.whatsapp.config.rescan')}
             </Button>
           </div>
@@ -540,7 +541,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
 
             {allowLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner />
                 {t('channel.whatsapp.allowlist.loading')}
               </div>
             ) : (
@@ -587,9 +588,9 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
                       variant="ghost"
                       size="sm"
                       link
+                      icon={<Plus className="h-3.5 w-3.5" />}
                       onClick={addRow}
                     >
-                      <Plus className="mr-1 h-3.5 w-3.5" />
                       {t('channel.actions.addNumber')}
                     </Button>
                   </div>
@@ -606,18 +607,18 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             <Button
               danger
               className="flex-1"
+              loading={removing}
               onClick={() => void handleRemove()}
               disabled={removing || saving}
             >
-              {removing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('channel.actions.removeChannel')}
             </Button>
             <Button
               className="flex-1"
+              loading={saving}
               onClick={() => void handleSave()}
               disabled={saving || removing || allowLoading}
             >
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('channel.actions.save')}
             </Button>
           </>

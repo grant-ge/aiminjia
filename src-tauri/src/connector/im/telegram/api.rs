@@ -4,6 +4,7 @@
 //! - GET  /bot<token>/getMe                          → bot info（save 时验证 token）
 //! - GET  /bot<token>/getUpdates?offset=N&timeout=25 → 长轮询入站
 //! - POST /bot<token>/sendMessage                    → 出站
+//! - POST /bot<token>/editMessageText                → 流式预览更新
 //!
 //! Bot API 不接受 token query string，token 在 URL path 里。MarkdownV2 解析失败
 //! 在 sender 层做 plain text fallback。429 / 401 / 400 错误码映射给调用者。
@@ -188,6 +189,16 @@ pub struct TgMessage {
     pub animation: Option<TgAnimation>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TgCallbackQuery {
+    pub id: String,
+    pub from: TgUser,
+    #[serde(default)]
+    pub message: Option<TgMessage>,
+    #[serde(default)]
+    pub data: Option<String>,
+}
+
 /// `getFile` 响应：包含 `file_path`，用来拼下载 URL
 /// `https://api.telegram.org/file/bot<token>/<file_path>`。
 #[derive(Debug, Clone, Deserialize)]
@@ -208,6 +219,8 @@ pub struct TgUpdate {
     pub update_id: i64,
     #[serde(default)]
     pub message: Option<TgMessage>,
+    #[serde(default)]
+    pub callback_query: Option<TgCallbackQuery>,
 }
 
 #[derive(Debug, Serialize)]
@@ -218,6 +231,73 @@ struct SendMessageBody<'a> {
     parse_mode: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reply_to_message_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReactionEmoji<'a> {
+    #[serde(rename = "type")]
+    reaction_type: &'static str,
+    emoji: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct SetMessageReactionBody<'a> {
+    chat_id: i64,
+    message_id: i64,
+    reaction: Vec<ReactionEmoji<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+struct EditMessageTextBody<'a> {
+    chat_id: i64,
+    message_id: i64,
+    text: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parse_mode: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TgInlineKeyboardButton {
+    pub text: String,
+    pub callback_data: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TgInlineKeyboardMarkup {
+    pub inline_keyboard: Vec<Vec<TgInlineKeyboardButton>>,
+}
+
+#[derive(Debug, Serialize)]
+struct SendMessageWithMarkupBody<'a> {
+    chat_id: i64,
+    text: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parse_mode: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_to_message_id: Option<i64>,
+    reply_markup: TgInlineKeyboardMarkup,
+}
+
+#[derive(Debug, Serialize)]
+struct AnswerCallbackQueryBody<'a> {
+    callback_query_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<&'a str>,
+    show_alert: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct EditMessageReplyMarkupBody {
+    chat_id: i64,
+    message_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_markup: Option<TgInlineKeyboardMarkup>,
+}
+
+#[derive(Debug, Serialize)]
+struct SendChatActionBody<'a> {
+    chat_id: i64,
+    action: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -323,7 +403,7 @@ impl TelegramApi {
         timeout_secs: u64,
     ) -> Result<Vec<TgUpdate>, TelegramApiError> {
         let url = format!(
-            "{}?offset={}&timeout={}&allowed_updates=%5B%22message%22%5D",
+            "{}?offset={}&timeout={}&allowed_updates=%5B%22message%22%2C%22callback_query%22%5D",
             self.url("getUpdates"),
             offset,
             timeout_secs,
@@ -418,6 +498,153 @@ impl TelegramApi {
             .await
             .map_err(classify_reqwest_error)?;
         parse_envelope::<TgMessage>(resp).await
+    }
+
+    /// 给指定入站消息设置或清空 reaction。失败由上层按 best-effort 处理。
+    pub async fn set_message_reaction(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        emoji: Option<&str>,
+    ) -> Result<(), TelegramApiError> {
+        let emoji = emoji.and_then(|e| {
+            let trimmed = e.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        let body = SetMessageReactionBody {
+            chat_id,
+            message_id,
+            reaction: emoji
+                .map(|emoji| {
+                    vec![ReactionEmoji {
+                        reaction_type: "emoji",
+                        emoji,
+                    }]
+                })
+                .unwrap_or_default(),
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("setMessageReaction"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        parse_envelope::<bool>(resp).await.map(|_| ())
+    }
+
+    /// 编辑 bot 自己已发送的文本消息，用于 Telegram 流式预览。
+    pub async fn edit_message_text(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+        parse_mode: Option<&str>,
+    ) -> Result<(), TelegramApiError> {
+        let body = EditMessageTextBody {
+            chat_id,
+            message_id,
+            text,
+            parse_mode,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("editMessageText"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        parse_envelope::<serde_json::Value>(resp).await.map(|_| ())
+    }
+
+    pub async fn send_message_with_inline_keyboard(
+        &self,
+        chat_id: i64,
+        text: &str,
+        parse_mode: Option<&str>,
+        reply_to_message_id: Option<i64>,
+        reply_markup: TgInlineKeyboardMarkup,
+    ) -> Result<TgMessage, TelegramApiError> {
+        let body = SendMessageWithMarkupBody {
+            chat_id,
+            text,
+            parse_mode,
+            reply_to_message_id,
+            reply_markup,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("sendMessage"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        parse_envelope::<TgMessage>(resp).await
+    }
+
+    pub async fn answer_callback_query(
+        &self,
+        callback_query_id: &str,
+        text: Option<&str>,
+        show_alert: bool,
+    ) -> Result<(), TelegramApiError> {
+        let body = AnswerCallbackQueryBody {
+            callback_query_id,
+            text,
+            show_alert,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("answerCallbackQuery"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        let _ = parse_envelope::<bool>(resp).await?;
+        Ok(())
+    }
+
+    pub async fn edit_message_reply_markup(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        reply_markup: Option<TgInlineKeyboardMarkup>,
+    ) -> Result<(), TelegramApiError> {
+        let body = EditMessageReplyMarkupBody {
+            chat_id,
+            message_id,
+            reply_markup,
+        };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("editMessageReplyMarkup"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        let _ = parse_envelope::<serde_json::Value>(resp).await?;
+        Ok(())
+    }
+
+    pub async fn send_chat_action(
+        &self,
+        chat_id: i64,
+        action: &str,
+    ) -> Result<(), TelegramApiError> {
+        let body = SendChatActionBody { chat_id, action };
+        let client = self.http.read().await.clone();
+        let resp = client
+            .post(self.url("sendChatAction"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify_reqwest_error)?;
+        let _ = parse_envelope::<bool>(resp).await?;
+        Ok(())
     }
 
     /// 上传本地文件到 Telegram（sendDocument multipart）。
@@ -660,6 +887,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn set_message_reaction_posts_single_emoji() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/botT/setMessageReaction"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "result": true
+            })))
+            .mount(&server)
+            .await;
+        let api = TelegramApi::new_with_api_base_for_tests("T".into(), server.uri()).unwrap();
+
+        api.set_message_reaction(42, 777, Some("👀")).await.unwrap();
+
+        let calls = server.received_requests().await.unwrap();
+        assert_eq!(calls.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&calls[0].body).unwrap();
+        assert_eq!(body["chat_id"], 42);
+        assert_eq!(body["message_id"], 777);
+        assert_eq!(
+            body["reaction"],
+            serde_json::json!([{ "type": "emoji", "emoji": "👀" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn set_message_reaction_can_clear_reaction() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/botT/setMessageReaction"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "result": true
+            })))
+            .mount(&server)
+            .await;
+        let api = TelegramApi::new_with_api_base_for_tests("T".into(), server.uri()).unwrap();
+
+        api.set_message_reaction(42, 777, None).await.unwrap();
+
+        let calls = server.received_requests().await.unwrap();
+        assert_eq!(calls.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&calls[0].body).unwrap();
+        assert_eq!(body["chat_id"], 42);
+        assert_eq!(body["message_id"], 777);
+        assert_eq!(body["reaction"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
     async fn rebuild_client_does_not_break_subsequent_calls() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -689,7 +963,6 @@ mod tests {
 
     #[tokio::test]
     async fn send_document_uploads_multipart_successfully() {
-        use wiremock::matchers::body_string_contains;
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/botT/sendDocument"))

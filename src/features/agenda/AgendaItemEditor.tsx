@@ -376,10 +376,10 @@ export function AgendaItemEditor({
                 type="button"
                 variant="outline"
                 size="sm"
+                icon={<Folder className="h-4 w-4" />}
                 onClick={handlePickWorkspace}
                 aria-label={t("schedules.editor.fields.pickWorkspaceAria")}
               >
-                <Folder className="h-4 w-4" />
                 {t("schedules.editor.fields.pick")}
               </Button>
             </div>

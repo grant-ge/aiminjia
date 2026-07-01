@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ChatAvatar } from "./ChatAvatar";
 import { ChatRow } from "./ChatRow";
 
@@ -46,6 +46,14 @@ describe("ChatAvatar", () => {
     expect(av).toHaveTextContent("Y");
   });
 
+  it("renders a configured emoji instead of the fallback initial", () => {
+    render(<ChatAvatar name="ybq" emoji="🐱" variant="neutral" />);
+    const av = screen.getByTestId("chat-avatar");
+    expect(av.getAttribute("data-variant")).toBe("emoji");
+    expect(av).toHaveTextContent("🐱");
+    expect(av).not.toHaveTextContent("Y");
+  });
+
   it('explicit src wins over variant="neutral"', () => {
     render(
       <ChatAvatar name="x" src="/brand-avatar-gold.svg" variant="neutral" />,
@@ -55,6 +63,19 @@ describe("ChatAvatar", () => {
     expect(av.querySelector("img")?.getAttribute("src")).toBe(
       "/brand-avatar-gold.svg",
     );
+  });
+
+  it("falls back to the neutral initial when the image cannot load", () => {
+    render(<ChatAvatar name="ybq" src="/missing-avatar.png" variant="neutral" />);
+    const img = screen.getByTestId("chat-avatar").querySelector("img");
+    expect(img).toBeInTheDocument();
+
+    fireEvent.error(img as HTMLImageElement);
+
+    const av = screen.getByTestId("chat-avatar");
+    expect(av).toHaveAttribute("data-variant", "neutral");
+    expect(av).toHaveTextContent("Y");
+    expect(av.querySelector("img")).toBeNull();
   });
 });
 
@@ -124,5 +145,16 @@ describe("ChatRow", () => {
     );
     const img = screen.getByTestId("chat-avatar").querySelector("img");
     expect(img?.getAttribute("src")).toBe("/brand-avatar-gold.svg");
+  });
+
+  it("passes the configured emoji avatar to ChatAvatar", () => {
+    render(
+      <ChatRow role="user" name="me" avatarEmoji="🌈">
+        <div>hi</div>
+      </ChatRow>,
+    );
+    const avatar = screen.getByTestId("chat-avatar");
+    expect(avatar).toHaveAttribute("data-variant", "emoji");
+    expect(avatar).toHaveTextContent("🌈");
   });
 });

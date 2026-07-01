@@ -1,21 +1,19 @@
 /**
  * Billing store — account balance + current-user usage records.
  *
- * Backed by billing and enterprise usage Tauri commands.
+ * Backed by personal billing Tauri commands.
  */
 import { create } from 'zustand'
 
 import {
   billingSummary,
   billingUsageRecords,
-  enterpriseUsageRecords,
   type BillingSummary,
   type UsageRecordSummary,
   type UsageRecord,
 } from '@/lib/tauri'
 
 export type BillingRangePreset = 'today' | 'last7Days' | 'last30Days' | 'thisMonth' | 'lastMonth' | 'custom'
-export type BillingUsageScope = 'personal' | 'enterprise'
 
 export interface BillingUsageFilters {
   preset: BillingRangePreset
@@ -45,11 +43,11 @@ interface BillingState {
   error: string | null
 
   fetchSummary: () => Promise<void>
-  fetchRecords: (page: number, scope?: BillingUsageScope) => Promise<void>
+  fetchRecords: (page: number) => Promise<void>
   setRangePreset: (preset: BillingRangePreset) => void
   setCustomRange: (startDate: string, endDate: string) => void
   setRecordFilters: (filters: Partial<Pick<BillingUsageFilters, 'requestType' | 'modelName'>>) => void
-  refresh: (scope?: BillingUsageScope) => Promise<void>
+  refresh: () => Promise<void>
   reset: () => void
 }
 
@@ -191,12 +189,11 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     }
   },
 
-  fetchRecords: async (page: number, scope = 'personal') => {
+  fetchRecords: async (page: number) => {
     const { pagination, filters } = get()
     set({ loadingRecords: true, recordsError: false, error: null })
     try {
-      const usageRecords = scope === 'enterprise' ? enterpriseUsageRecords : billingUsageRecords
-      const p = await usageRecords(page, pagination.size, requestFilters(filters))
+      const p = await billingUsageRecords(page, pagination.size, requestFilters(filters))
       set({
         records: p.records,
         rangeSummary: p.summary ?? summarizeRecords(p.records),
@@ -248,11 +245,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     }))
   },
 
-  refresh: async (scope = 'personal') => {
-    if (scope === 'enterprise') {
-      await get().fetchRecords(1, 'enterprise')
-      return
-    }
-    await Promise.all([get().fetchSummary(), get().fetchRecords(1, 'personal')])
+  refresh: async () => {
+    await Promise.all([get().fetchSummary(), get().fetchRecords(1)])
   },
 }))

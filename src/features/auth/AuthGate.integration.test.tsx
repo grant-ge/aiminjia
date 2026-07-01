@@ -53,6 +53,7 @@ const tauriMock = vi.hoisted(() => ({
   cloudRegister: vi.fn().mockResolvedValue(undefined),
   cloudResetPassword: vi.fn().mockResolvedValue(undefined),
   syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], updated: [], skipped: [], changed: [] }),
+  listSkills: vi.fn().mockResolvedValue([]),
   onSkillRegistryRefreshed: vi.fn().mockResolvedValue(() => {}),
   onSkillEnablementChanged: vi.fn().mockResolvedValue(() => {}),
   workplaceDirectoryCatalog: vi.fn().mockResolvedValue({ schemaVersion: 1, categories: [], items: [] }),
@@ -76,10 +77,12 @@ vi.mock('@/lib/tauri', () => tauriMock)
 
 import { AuthGate } from '@/components/auth/AuthGate'
 import { useAuthStore } from '@/stores/authStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 describe('AuthGate', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     tauriMock.getCloudAuth.mockResolvedValue({
       loggedIn: false,
       user: null,
@@ -109,6 +112,7 @@ describe('AuthGate', () => {
     tauriMock.cloudRegister.mockResolvedValue(undefined)
     tauriMock.cloudResetPassword.mockResolvedValue(undefined)
     tauriMock.syncBuiltinSkills.mockResolvedValue({ installed: [], updated: [], skipped: [], changed: [] })
+    tauriMock.listSkills.mockResolvedValue([])
     tauriMock.onSkillRegistryRefreshed.mockResolvedValue(() => {})
     tauriMock.onSkillEnablementChanged.mockResolvedValue(() => {})
     tauriMock.workplaceDirectoryCatalog.mockResolvedValue({ schemaVersion: 1, categories: [], items: [] })
@@ -136,6 +140,7 @@ describe('AuthGate', () => {
       isAuthPending: false,
     })
     useUiStore.setState({ route: { kind: 'home' }, settingsModal: null })
+    useSkillStore.setState({ skills: [], recommendedIds: ['write-plan'], isLoading: false })
   })
 
   it('未登录时渲染 LoginPage', async () => {
@@ -333,5 +338,47 @@ describe('AuthGate', () => {
     await waitFor(() => {
       expect(tauriMock.workplaceDirectoryCatalog).toHaveBeenCalled()
     })
+  })
+
+  it('重新登录后内置技能未新增也刷新当前账号技能列表', async () => {
+    tauriMock.syncBuiltinSkills.mockResolvedValue({
+      installed: [],
+      updated: [],
+      skipped: ['find-skills', 'dingtalk-workspace'],
+      changed: [],
+    })
+    tauriMock.listSkills.mockResolvedValue([
+      {
+        id: 'dingtalk-workspace',
+        displayName: '玩转钉钉',
+        displayNameEn: 'DingTalk Workspace',
+        description: 'desc',
+        source: 'global',
+        enabled: true,
+        hasWorkflow: false,
+        icon: 'blocks',
+        shortDescription: 'short',
+        shortDescriptionEn: 'short',
+        triggerText: '/dingtalk-workspace',
+        category: 'office',
+        updatedAt: null,
+      },
+    ])
+
+    render(
+      <AuthGate>
+        <div>APP SHELL</div>
+      </AuthGate>,
+    )
+
+    fireEvent.change(await screen.findByLabelText('账号'), { target: { value: 'demo' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+
+    await waitFor(() => {
+      expect(tauriMock.syncBuiltinSkills).toHaveBeenCalled()
+      expect(tauriMock.listSkills).toHaveBeenCalled()
+    })
+    expect(useSkillStore.getState().skills.map((skill) => skill.id)).toEqual(['dingtalk-workspace'])
   })
 })

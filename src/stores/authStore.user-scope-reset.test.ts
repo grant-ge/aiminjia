@@ -96,4 +96,22 @@ describe('authStore user-scoped reset', () => {
     expect(useAuthStore.getState().user).toBeNull()
     expect(useAuthStore.getState().tenant).toBeNull()
   })
+
+  it('logs restored user role for debugging admin visibility', async () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    tauriMock.getCloudAuth.mockResolvedValueOnce({
+      loggedIn: true,
+      user: { id: 43, name: '孙宏伟', username: 'sunhongwei', role: 'admin' },
+      tenant: { id: 17, name: 'Tenant 17', balance: '0', productName: 'AI小家体验中心' },
+      models: [],
+    })
+    tauriMock.getCloudModels.mockResolvedValueOnce([])
+
+    await useAuthStore.getState().restoreFromStorage()
+
+    expect(useAuthStore.getState().user?.role).toBe('admin')
+    expect(infoSpy).toHaveBeenCalledWith('[auth] user role:', 'admin')
+
+    infoSpy.mockRestore()
+  })
 })

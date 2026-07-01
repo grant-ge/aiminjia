@@ -13,6 +13,8 @@ import type { ReactNode } from "react";
 import { Button } from '@/components/ui/button'
 import { ChatAvatar } from '@/components/chat-scene/ChatAvatar'
 import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 export interface ChatTopBarEmployee {
   avatar: string;
@@ -34,6 +36,8 @@ export type ChatTopBarKind = "user" | "employee" | "expertTeam" | "im";
 interface ChatTopBarProps {
   title: string;
   workspace?: string;
+  workspacePath?: string | null;
+  workspaceAvailable?: boolean | null;
   /** Conversation kind. Drives the source-label chip (expert team / IM channel). */
   kind?: ChatTopBarKind;
   /** 来源副标题: 员工 display name / 团名 / 渠道名. */
@@ -75,6 +79,8 @@ function SourceChip({ kind, label }: { kind: ChatTopBarKind; label: string }) {
 export function ChatTopBar({
   title,
   workspace,
+  workspacePath,
+  workspaceAvailable,
   kind,
   sourceLabel,
   employee,
@@ -84,6 +90,31 @@ export function ChatTopBar({
   onToggleSidebar,
   trailing,
 }: ChatTopBarProps) {
+  const workspaceMissing = workspaceAvailable === false;
+  const workspaceStatus = workspaceMissing
+    ? "missing"
+    : workspaceAvailable === true
+      ? "available"
+      : "unknown";
+  const workspaceTitle = workspaceMissing
+    ? `工作目录不存在：${workspacePath ?? workspace ?? ""}`
+    : workspacePath ?? workspace;
+  const workspaceChip = workspace ? (
+    <span
+      data-testid="chat-topbar-workspace"
+      data-aijia-workspace-status={workspaceStatus}
+      title={workspaceTitle}
+      tabIndex={workspaceTitle ? 0 : undefined}
+      className={cn(
+        "flex items-center gap-1 truncate text-xs",
+        workspaceMissing ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      <Folder className="h-3 w-3 shrink-0" aria-hidden />
+      <span className="truncate">{workspace}</span>
+    </span>
+  ) : null;
+
   return (
     <header
       data-tauri-drag-region
@@ -96,7 +127,7 @@ export function ChatTopBar({
             data-testid="chat-topbar-employee"
             onClick={employee.onClick}
             disabled={!employee.onClick}
-            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
+            className="flex min-w-0 items-center gap-2 rounded px-1.5 py-1 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
           >
             <ChatAvatar
               name={employee.name}
@@ -136,15 +167,19 @@ export function ChatTopBar({
         {/* Meta chips — workspace / source. Each chip
             owns a leading separator so the visual rhythm stays consistent
             even when individual chips are missing. */}
-        {workspace ? (
-          <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-            <Folder className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="truncate">{workspace}</span>
-          </span>
-        ) : null}
+        {workspaceChip && workspaceTitle ? (
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>{workspaceChip}</TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-96 whitespace-normal break-all">
+                {workspaceTitle}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : workspaceChip}
         {kind && kind !== "user" && kind !== "employee" && !expertTeam && sourceLabel ? (
           <>
-            <span aria-hidden className="text-xs text-muted-foreground/40">
+            <span aria-hidden className="text-xs text-[rgba(var(--muted-foreground-rgb),0.40)]">
               ·
             </span>
             <SourceChip kind={kind} label={sourceLabel} />

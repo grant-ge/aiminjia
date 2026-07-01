@@ -91,7 +91,7 @@ describe('Select', () => {
     })
 
     const option = screen.getByRole('option', { name: '每周' })
-    expect(option).toHaveClass('data-[state=checked]:bg-primary/10')
+    expect(option).toHaveClass('data-[state=checked]:bg-[rgba(var(--primary-rgb),0.10)]')
     expect(option.className).not.toContain('#1677ff')
   })
 })

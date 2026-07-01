@@ -109,6 +109,7 @@ function deriveAccentPalette(accent: string) {
   // Safari 13 compat: keep RGB components in sync for rgba(var(--primary-rgb), X) fallbacks
   const [pr, pg, pb] = hexToRgb(accent)
   setVar('--primary-rgb', `${pr}, ${pg}, ${pb}`)
+  setVar('--primary-foreground-rgb', '255, 255, 255')
 
   // === legacy --color-accent-* (53 处旧组件还在消费) ===
   setVar('--color-accent', accent)
@@ -158,6 +159,7 @@ function derivePrimaryPalette(primary: string) {
   // Safari 13 compat
   const [fr, fg2, fb] = hexToRgb(primary)
   setVar('--foreground-rgb', `${fr}, ${fg2}, ${fb}`)
+  setVar('--sidebar-foreground-rgb', `${fr}, ${fg2}, ${fb}`)
 }
 
 /**
@@ -178,10 +180,24 @@ function deriveBackgroundPalette(bg: string, fg: string) {
   setVar('--input', mixColors(bg, fg, 0.88))
 
   // Safari 13 compat: keep RGB companions in sync for rgba(var(--*-rgb), alpha) fallbacks
-  const [cr, cg, cb] = hexToRgb(bg)
-  setVar('--card-rgb', `${cr}, ${cg}, ${cb}`)
-  const [mr, mg, mb] = hexToRgb(mixColors(bg, fg, 0.45))
+  const secondary = mixColors(bg, fg, 0.95)
+  const muted = mixColors(bg, fg, 0.94)
+  const mutedForeground = mixColors(bg, fg, 0.45)
+  const border = mixColors(bg, fg, 0.88)
+  const [br0, bg0, bb0] = hexToRgb(bg)
+  setVar('--background-rgb', `${br0}, ${bg0}, ${bb0}`)
+  setVar('--card-rgb', `${br0}, ${bg0}, ${bb0}`)
+  setVar('--popover-rgb', `${br0}, ${bg0}, ${bb0}`)
+  const [sr, sg, sb] = hexToRgb(secondary)
+  setVar('--secondary-rgb', `${sr}, ${sg}, ${sb}`)
+  setVar('--accent-rgb', `${sr}, ${sg}, ${sb}`)
+  const [mr0, mg0, mb0] = hexToRgb(muted)
+  setVar('--muted-rgb', `${mr0}, ${mg0}, ${mb0}`)
+  const [mr, mg, mb] = hexToRgb(mutedForeground)
   setVar('--muted-foreground-rgb', `${mr}, ${mg}, ${mb}`)
+  const [borR, borG, borB] = hexToRgb(border)
+  setVar('--border-rgb', `${borR}, ${borG}, ${borB}`)
+  setVar('--input-rgb', `${borR}, ${borG}, ${borB}`)
 
   // === legacy ===
   setVar('--color-bg-main', bg)
@@ -210,6 +226,8 @@ function deriveSidebarPalette(sidebarBg: string, fg: string) {
   setVar('--sidebar-accent-foreground', fg)
   setVar('--sidebar-border', mixColors(sidebarBg, fg, 0.9))
   setVar('--sidebar-ring', mixColors(sidebarBg, fg, 0.6))
+  const [sar, sag, sab] = hexToRgb(mixColors(sidebarBg, fg, 0.92))
+  setVar('--sidebar-accent-rgb', `${sar}, ${sag}, ${sab}`)
 
   // === legacy ===
   setVar('--color-bg-sidebar', sidebarBg)
@@ -244,8 +262,18 @@ const ALL_OVERRIDDEN_VARS = [
   '--color-bg-sidebar', '--color-bg-sidebar-hover',
   // Safari 13 compat: RGB companion vars
   '--primary-rgb',
+  '--primary-foreground-rgb',
   '--foreground-rgb',
+  '--background-rgb',
+  '--muted-rgb',
   '--card-rgb',
+  '--popover-rgb',
+  '--secondary-rgb',
+  '--accent-rgb',
+  '--border-rgb',
+  '--input-rgb',
+  '--sidebar-accent-rgb',
+  '--sidebar-foreground-rgb',
   '--muted-foreground-rgb',
   '--primary-on-bg-10',
   '--primary-on-bg-24',

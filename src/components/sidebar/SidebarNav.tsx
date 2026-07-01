@@ -37,7 +37,7 @@ export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNav
             className={
               active
                 ? `flex h-8 w-full items-center gap-2 rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-semibold text-sidebar-foreground`
-                : `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`
+                : `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-[rgba(var(--sidebar-foreground-rgb),0.75)] transition-colors hover:bg-[rgba(var(--sidebar-accent-rgb),0.60)] hover:text-sidebar-foreground`
             }
           >
             <Icon className="h-4 w-4 shrink-0" />

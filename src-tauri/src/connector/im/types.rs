@@ -249,6 +249,9 @@ pub enum AttachmentKind {
 #[derive(Debug, Clone)]
 pub struct ChannelMessage {
     pub msg_id: String,
+    /// Connector-native inbound message id for platform reply anchors. This is
+    /// separate from `msg_id`, which may be normalized for local de-duplication.
+    pub native_message_id: Option<String>,
     pub conversation_type: ConversationType,
     pub conversation_key: String,
     pub sender_id: String,

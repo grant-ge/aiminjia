@@ -366,111 +366,6 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "ImageTask",
-            "创建或编辑图片的产品级工具。用于文生图、基于参考图改图、生成变体；输入使用 AIjia 图片任务协议，不暴露 LLM 或上游模型供应商字段。\
-            \n\n使用规则：\
-            \n- 文生图使用 action=image.create，可不传 input_images。\
-            \n- 图生图、参考图编辑、风格迁移或变体使用 action=image.edit 或 image.variation，并传 input_images。\
-            \n- input_images 可使用用户附件中的 filePath/fileId；不要传 provider 字段如 image、response_format、model。\
-            \n- 本工具不是图片查看、OCR、图表解析或视觉问答工具；它返回生成/编辑后的图片文件，不代表已经理解了输入图内容。\
-            \n- 如果只是需要从图片/视频/页面生成报告、HTML、SVG、代码或数据文件，优先使用查看、OCR、截图、元数据或专用解析工具；没有这些能力但用户已给出明确规格时，直接基于规格创建目标产物并标明未验证细节。\
-            \n- 工具会把生成图片保存为当前会话的 generated file，并返回 fileId。",
-        )
-        .with_kind(ToolKind::Power)
-        .with_destructive(true)
-        .with_default_timeout_secs(180)
-        .with_capability_scope(["network", "workspace:read", "workspace:write"]),
-        json!({
-            "type": "object",
-            "required": ["action", "instruction"],
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["image.create", "image.edit", "image.variation"],
-                    "description": "图片任务类型：文生图、基于输入图编辑、或生成输入图变体"
-                },
-                "instruction": {
-                    "type": "string",
-                    "description": "面向产品能力的图片生成/编辑意图。描述要保留、改变、风格、构图、颜色、文字等要求"
-                },
-                "input_images": {
-                    "type": "array",
-                    "description": "参考图片、源图或蒙版。image.edit/image.variation 必填至少一张",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "图片文件路径。可使用用户附件 files[].filePath，或相对当前授权工作目录的路径"
-                            },
-                            "file_id": {
-                                "type": "string",
-                                "description": "图片文件 ID。可使用用户附件 files[].id 或已生成图片的 fileId"
-                            },
-                            "role": {
-                                "type": "string",
-                                "enum": ["source", "reference", "style_reference", "composition_reference", "mask"],
-                                "description": "图片用途，默认 source"
-                            },
-                            "mime_type": {
-                                "type": "string",
-                                "description": "图片 MIME，如 image/png、image/jpeg、image/webp。通常可由扩展名推断"
-                            },
-                            "weight": {
-                                "type": "number",
-                                "description": "参考权重，按需传递"
-                            }
-                        },
-                        "anyOf": [
-                            { "required": ["file_path"] },
-                            { "required": ["file_id"] }
-                        ]
-                    },
-                    "default": []
-                },
-                "output": {
-                    "type": "object",
-                    "description": "输出要求",
-                    "properties": {
-                        "count": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 10,
-                            "description": "生成图片数量，默认 1"
-                        },
-                        "aspect_ratio": {
-                            "type": "string",
-                            "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"],
-                            "description": "输出比例"
-                        },
-                        "width": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": "输出宽度。通常优先使用 aspect_ratio"
-                        },
-                        "height": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": "输出高度。通常优先使用 aspect_ratio"
-                        },
-                        "format": {
-                            "type": "string",
-                            "enum": ["png", "jpeg", "jpg", "webp"],
-                            "description": "输出格式，默认 png"
-                        },
-                        "quality": {
-                            "type": "string",
-                            "enum": ["standard", "high"],
-                            "description": "输出质量"
-                        }
-                    }
-                }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new(
             "Agent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型或不同模型。`subagent_type` 取值范围在每轮 turn 的工具描述动态列表中给出，包含 builtin 类型、用户自定义 agent、以及当前用户已雇佣的数字员工 ID（`emp-...`）。\
@@ -1024,9 +919,9 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "RefreshSkills",
-            "通知 AIjia 重新扫描用户技能目录，让新装的技能立刻在对话和技能中心可见。\
-             用法：刚通过 lotus_skill.py install 或别的方式装完技能后调用一次。\
-             无参数。返回成功后下一 turn 的 catalog 含新技能。",
+            "通知 AIjia 重新扫描用户技能目录，让新增、覆盖或修改后的技能立刻在对话和技能中心可见。\
+             用法：刚通过 lotus_skill.py install、覆盖技能目录、编辑 SKILL.md 或别的方式更改技能文件后调用一次。\
+             无参数。返回成功后下一 turn 的 catalog 和 Skill 加载内容会使用最新磁盘版本。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(false),
@@ -1125,7 +1020,6 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "WriteMemory",
     "SearchMemory",
     "WebSearch",
-    "ImageTask",
     "Agent",
     "TaskOutput",
     "Skill",
@@ -1197,6 +1091,14 @@ mod tests {
 
         assert!(allowed.contains(&"SkillMarketSearch"));
         assert!(allowed.contains(&"SkillMarketInstall"));
+    }
+
+    #[test]
+    fn image_task_is_not_registered_as_runtime_tool() {
+        let allowed: Vec<&str> = daily_allowed_tools_for_current_platform().collect();
+
+        assert!(!allowed.contains(&"ImageTask"));
+        assert!(TOOL_CATALOG.get_entry("ImageTask").is_none());
     }
 
     #[test]

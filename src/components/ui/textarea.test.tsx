@@ -17,7 +17,7 @@ describe('Textarea', () => {
     expect(textarea).toHaveClass('resize-none')
     expect(textarea).toHaveClass('hover:border-primary')
     expect(textarea).toHaveClass('focus-visible:border-primary')
-    expect(textarea).toHaveClass('focus-visible:ring-primary/15')
+    expect(textarea).toHaveClass('focus-visible:ring-[rgba(var(--primary-rgb),0.15)]')
     expect(textarea).not.toHaveClass('shadow-sm')
     expect(textarea.className).not.toContain('#1677ff')
   })
@@ -27,7 +27,7 @@ describe('Textarea', () => {
 
     const textarea = screen.getByLabelText('到点要做什么？')
     expect(textarea).toHaveClass('aria-invalid:border-destructive')
-    expect(textarea).toHaveClass('aria-invalid:focus-visible:ring-destructive/15')
+    expect(textarea).toHaveClass('aria-invalid:focus-visible:ring-[rgba(var(--destructive-rgb),0.15)]')
   })
 
   it('merges custom className and forwards refs', () => {

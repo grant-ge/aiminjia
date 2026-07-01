@@ -33,6 +33,7 @@ import {
   onAuthExpired,
   onConversationCreated,
   onConversationTitleUpdated,
+  setImChannelKeepAwake,
 } from '@/lib/tauri'
 import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
@@ -150,6 +151,9 @@ function App() {
     getSettings()
       .then((settings) => {
         useSettingsStore.getState().setSettings(settings)
+        void setImChannelKeepAwake(Boolean(settings.imChannelKeepAwakeEnabled)).catch((err) =>
+          console.error('Failed to apply IM channel keep-awake setting:', err),
+        )
       })
       .catch((err) => console.error('Failed to load settings:', err))
   }, [])

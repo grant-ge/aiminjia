@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { useTranslation } from 'react-i18next'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
-import { CheckCircle2, ExternalLink, HelpCircle, Loader2, RefreshCw } from 'lucide-react'
+import { CheckCircle2, ExternalLink, HelpCircle, RefreshCw } from 'lucide-react'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { Input } from '@/components/ui/input'
 import {
@@ -15,6 +15,7 @@ import {
 import { useChannelStore } from '@/stores/channelStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 interface WecomChannelConfigProps {
   onSaved?: () => void
@@ -75,8 +76,8 @@ function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading:
         </div>
       )}
       {loading && (
-        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-[rgba(var(--background-rgb),0.75)] backdrop-blur-[1px]">
+          <Spinner size="lg" className="text-primary" />
         </div>
       )}
     </div>
@@ -111,7 +112,7 @@ function HelpPanel() {
   ]
 
   return (
-    <details className="w-full rounded-md border border-border bg-muted/30 px-4 py-3 text-sm">
+    <details className="w-full rounded-md border border-border bg-[rgba(var(--muted-rgb),0.30)] px-4 py-3 text-sm">
       <summary className="flex cursor-pointer items-center gap-2 font-semibold text-foreground">
         <HelpCircle className="h-4 w-4 text-primary" />
         {t('channel.wecom.help.summary')}

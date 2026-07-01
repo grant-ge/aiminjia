@@ -19,6 +19,7 @@ pub mod updater;
 
 use commands::chat;
 use commands::file;
+use commands::power;
 use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
@@ -141,6 +142,7 @@ fn build_localized_app_menu<R: tauri::Runtime>(
     language: &str,
 ) -> tauri::Result<Menu<R>> {
     let labels = app_menu_labels(language);
+    #[cfg(target_os = "macos")]
     let pkg_info = app_handle.package_info();
     let about_metadata = app_about_metadata(app_handle);
 
@@ -1207,6 +1209,7 @@ pub fn run() {
             // ensure_channel_manager_registered() either now (if logged in at boot)
             // or later via cloud_login.
             app.manage(Arc::new(connector::im::ChannelManagerSlot::new()));
+            app.manage(Arc::new(power::PowerAssertionManager::new()));
             app.manage(channel_session_ids);
 
             // Boot-time bring-up: only effective when current_user_storage already
@@ -1380,6 +1383,7 @@ pub fn run() {
             file::reveal_file_in_folder,
             file::is_generated_file_available,
             file::is_local_file_available,
+            file::is_local_directory_available,
             file::save_generated_file_as,
             file::get_file_preview,
             file::get_local_file_preview,
@@ -1394,6 +1398,8 @@ pub fn run() {
             // Settings commands
             settings::get_settings,
             settings::update_settings,
+            settings::save_profile_avatar_image,
+            power::set_im_channel_keep_awake,
             settings::validate_api_key,
             settings::get_configured_providers,
             settings::switch_provider,
@@ -1501,7 +1507,6 @@ pub fn run() {
             // Billing/account usage commands
             crate::transport::tauri_commands::billing::billing_summary,
             crate::transport::tauri_commands::billing::billing_usage_records,
-            crate::transport::tauri_commands::billing::enterprise_usage_records,
             commands::auth::save_last_brand,
             // Skill management commands
             commands::skill_management::list_custom_skills,
@@ -1914,6 +1919,11 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
             output_binding_registry,
         ),
     );
+    let ask_output_router = Arc::new(connector::im::ask_coordinator::IMAskOutputRouter::new());
+    ask_output_router.register_sink(
+        connector::im::ask_coordinator::DINGTALK_ASK_ROUTE,
+        reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::ImAskSink>,
+    );
     im_app_feedback.set_sink(
         reply_manager.clone() as Arc<dyn connector::im::shared::app_feedback::AppFeedbackSink>
     );
@@ -1950,7 +1960,7 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
         connector::im::ask_coordinator::IMAskCoordinator::new_with_judge(
             channel_session_ids.clone()
                 as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
-            reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
+            ask_output_router.clone() as Arc<dyn connector::im::ask_coordinator::ImAskSink>,
             chat_adapter_ref.permission_control_plane(),
             chat_adapter_ref.interaction_control_plane(),
             reply_judge,
@@ -1974,6 +1984,7 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
             .clone(),
         paths.channels_dir(),
         Some(ask_coordinator),
+        Some(ask_output_router),
         reply_manager,
         channel_session_ids,
         app.state::<Arc<crate::runtime::pending::PendingQueueManager>>()

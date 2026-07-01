@@ -46,6 +46,16 @@ describe('tauri diagnostics helpers', () => {
     })
   })
 
+  it('does not record routine diagnostics for high-frequency event handlers', async () => {
+    const callback = vi.fn()
+    const handler = createInstrumentedEventHandler('turn:heartbeat', callback)
+
+    await handler({ payload: { conversationId: 'conv_1', runId: 'run_1' } })
+
+    expect(callback).toHaveBeenCalledWith({ payload: { conversationId: 'conv_1', runId: 'run_1' } })
+    expect(useDiagnosticsStore.getState().events).toEqual([])
+  })
+
   it('records event handler failure before rethrowing', async () => {
     const handler = createInstrumentedEventHandler('streaming:error', () => {
       throw new Error('boom')

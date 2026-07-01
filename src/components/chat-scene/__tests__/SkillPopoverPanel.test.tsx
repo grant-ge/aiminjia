@@ -28,6 +28,33 @@ describe('SkillPopoverPanel', () => {
     expect(screen.getByText('起草邮件 / 日报')).toBeInTheDocument()
   })
 
+  it('uses the same known skill avatar image as the skill center', () => {
+    render(
+      <SkillPopoverPanel
+        items={[{ id: 'dingtalk-workspace', title: '玩转钉钉', subtitle: '钉钉工作台助手' }]}
+        onPick={() => {}}
+        onClose={() => {}}
+      />,
+    )
+
+    const option = screen.getByRole('option', { name: /玩转钉钉/ })
+    expect(option.querySelector('img')).toHaveAttribute('src', '/logos/dingtalk.png')
+  })
+
+  it('falls back to the title initial when the skill center has no avatar image', () => {
+    render(
+      <SkillPopoverPanel
+        items={[{ id: 'custom-report', title: '报告助手', subtitle: '生成报告' }]}
+        onPick={() => {}}
+        onClose={() => {}}
+      />,
+    )
+
+    const option = screen.getByRole('option', { name: /报告助手/ })
+    expect(option.querySelector('img')).toBeNull()
+    expect(screen.getByTestId('skill-popover-fallback-avatar')).toHaveTextContent('报')
+  })
+
   it('fires onPick with id when an item clicked', () => {
     const onPick = vi.fn()
     render(<SkillPopoverPanel items={ITEMS} onPick={onPick} onClose={() => {}} />)

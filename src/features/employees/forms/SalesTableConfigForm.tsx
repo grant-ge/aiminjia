@@ -191,7 +191,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
 
       {/* Manual override — collapsed by default unless parse failed */}
       {showParseHint && !parsed && (
-        <div className="flex flex-col gap-3 rounded-md border border-border/60 bg-accent/20 p-3">
+        <div className="flex flex-col gap-3 rounded-md border border-[rgba(var(--border-rgb),0.60)] bg-[rgba(var(--accent-rgb),0.20)] p-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">
               {t('employee.config.salesTable.baseIdLabel')}
@@ -268,7 +268,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
               placeholder={DEFAULT_FIELD_MAPPING_TEMPLATE}
               className="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed"
             />
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-[rgba(var(--muted-foreground-rgb),0.70)]">
               {t('employee.config.salesTable.fieldMappingHint')}
             </p>
             {!fieldMappingResult.ok && (

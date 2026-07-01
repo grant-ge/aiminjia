@@ -1,10 +1,11 @@
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { ToolTraceIO } from './ToolTraceIO'
 import type { RenderToolStep } from '@/hooks/useTurnRenderModel'
 import { useDevSettingsStore } from '@/stores/devSettingsStore'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 interface ToolStepRowProps {
   step: RenderToolStep
@@ -27,7 +28,7 @@ export function ToolStepRow({ step }: ToolStepRowProps) {
   // 水平 stub 上，视觉上"连线穿过 icon 中心"。
   const statusIcon: ReactNode =
     step.status === 'running' ? (
-      <Loader2 className="h-3 w-3 -translate-y-px animate-spin text-primary" />
+      <Spinner size="xs" className="-translate-y-px text-primary" />
     ) : step.status === 'error' && showToolErrorIcon ? (
       <AlertCircle data-testid="tool-step-row-error-icon" className="h-3 w-3 -translate-y-px text-destructive" />
     ) : step.status === 'error' ? (
@@ -46,7 +47,7 @@ export function ToolStepRow({ step }: ToolStepRowProps) {
     // `last:after`：最后一行用 bg-background 盖掉 stub 下面那段父级 border-l
     // 的延伸（border-l 是从父容器顶到底贯通的，最后一行 stub 在 row 中段，
     // stub 下面还会延伸 ~12px 到容器底），这样最后一行视觉上自然收成"└"。
-    <div className="relative before:absolute before:left-[-12px] before:top-3 before:h-px before:w-3 before:bg-border/60 last:after:absolute last:after:left-[-13px] last:after:top-3 last:after:bottom-0 last:after:w-px last:after:bg-background last:after:content-['']">
+    <div className="relative before:absolute before:left-[-12px] before:top-3 before:h-px before:w-3 before:bg-[rgba(var(--border-rgb),0.60)] last:after:absolute last:after:left-[-13px] last:after:top-3 last:after:bottom-0 last:after:w-px last:after:bg-background last:after:content-['']">
       <Button unstyled
         type="button"
         onClick={() => setManualOpen(open ? false : true)}

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import * as React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,6 +29,7 @@ const uiState = vi.hoisted(() => ({
       localStorage.setItem("aijia-sidebar-tab", tab);
     uiState.listeners.forEach((l) => l());
   }),
+  openSettings: vi.fn(),
 }));
 
 const chatState = vi.hoisted(() => ({
@@ -113,7 +114,7 @@ vi.mock("@/stores/uiStore", () => {
   const snapshot = () => ({
     route: uiState.route,
     setRoute: uiState.setRoute,
-    openSettings: vi.fn(),
+    openSettings: uiState.openSettings,
     sidebarTab: uiState.sidebarTabOverride ?? loadTab(),
     setSidebarTab: uiState.setSidebarTab,
     consumePendingSkill: () => null,
@@ -150,7 +151,7 @@ vi.mock("@/stores/uiStore", () => {
 
 vi.mock("@/stores/authStore", () => ({
   useAuthStore: (sel: (s: unknown) => unknown) =>
-    sel({ user: null, tenant: null }),
+    sel({ user: { id: 26, name: "oay xg", username: "oay@example.com" }, tenant: null }),
 }));
 
 vi.mock("@/stores/channelStore", () => ({
@@ -219,6 +220,7 @@ describe("AppSidebar", () => {
   beforeEach(async () => {
     uiState.route = { kind: "home" };
     uiState.setRoute.mockClear();
+    uiState.openSettings.mockClear();
     uiState.sidebarTabOverride = null;
     if (typeof localStorage !== "undefined")
       localStorage.removeItem("aijia-sidebar-tab");
@@ -293,16 +295,25 @@ describe("AppSidebar", () => {
     expect(homeNavButton.closest("nav")).toHaveClass("px-2");
     expect(homeNavButton.className).toMatch(/px-2\.5/);
     expect(screen.getByText("置顶").parentElement).toHaveClass("px-2");
-    const sidebarTab = screen.getByRole("button", { name: "项目" }).parentElement;
-    expect(sidebarTab).toHaveClass("px-1");
+    const sidebarTab = screen.getByRole("radio", { name: "项目" }).parentElement;
+    expect(sidebarTab).toHaveAttribute("data-testid", "sidebar-body-tabs");
+    expect(sidebarTab).toHaveClass("p-1");
     expect(sidebarTab).toHaveClass("h-8");
     expect(sidebarTab?.className).not.toContain("30px");
+    const activeSidebarTab = screen.getByRole("radio", { name: "项目" });
+    expect(activeSidebarTab).toHaveClass("rounded", "text-foreground");
+    expect(activeSidebarTab).not.toHaveClass("rounded-md");
+    expect(screen.getByTestId("sidebar-body-tabs-indicator")).toHaveClass(
+      "bg-card",
+      "transition-transform",
+    );
     expect(sidebarTab?.parentElement).toHaveClass("px-2");
     expect(screen.getByText("默认项目").closest(".overflow-auto")).toHaveClass("px-2");
   });
 
-  it("renders TenantHeader name", () => {
+  it("renders the sidebar account footer identity", () => {
     render(<AppSidebar />);
+    expect(screen.getByText("oay xg")).toBeInTheDocument();
     expect(screen.getByText("仁励家网络科技(杭州)")).toBeInTheDocument();
   });
 
@@ -321,6 +332,8 @@ describe("AppSidebar", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "重命名聊天" }),
     );
+    expect(screen.getByTestId("conversation-rename-dialog-body")).toHaveClass("px-6");
+    expect(screen.getByTestId("conversation-rename-dialog-footer")).toHaveClass("px-6", "pb-6");
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "新的标题" },
     });
@@ -334,7 +347,7 @@ describe("AppSidebar", () => {
     });
   });
 
-  it("does not render TenantHeader in the sidebar on Windows", () => {
+  it("keeps the account footer on Windows without the old tenant header", () => {
     Object.defineProperty(navigator, "userAgent", {
       value: "Mozilla/5.0 (Windows NT 10.0)",
       configurable: true,
@@ -342,92 +355,45 @@ describe("AppSidebar", () => {
 
     render(<AppSidebar />);
 
-    expect(screen.queryByText("仁励家网络科技(杭州)")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tenant-logo")).not.toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-account-avatar")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /账户与设置/ })).toBeInTheDocument();
   });
 
-  it("opens the dev panel after seven tenant header clicks and persists the tool error diagnostics switch", async () => {
+  it("does not open the dev panel from repeated account footer clicks", async () => {
     const user = userEvent.setup();
 
     render(<AppSidebar />);
 
-    const tenantHeader = screen.getByRole("button", { name: /仁励家网络科技/ });
+    const accountFooter = screen.getByRole("button", { name: /账户与设置/ });
     for (let i = 0; i < 7; i += 1) {
-      await user.click(tenantHeader);
+      await user.click(accountFooter);
     }
 
     expect(
-      screen.getByRole("dialog", { name: "控制面板" }),
-    ).toBeInTheDocument();
-    const dialog = screen.getByRole("dialog", { name: "控制面板" });
-    expect(dialog).toHaveClass("w-[560px]", "max-w-[calc(100vw-32px)]");
-    expect(dialog).not.toHaveClass("w-[90vh]", "h-[90vh]");
-    expect(
-      screen.getByText("隐藏功能和高级操作入口，不会出现在常规设置中。"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/开发调试|仅影响当前设备/),
+      screen.queryByRole("dialog", { name: "控制面板" }),
     ).not.toBeInTheDocument();
-    const displayGroup = screen.getByRole("region", { name: "显示" });
-    expect(
-      within(displayGroup).getByRole("heading", { name: "显示" }),
-    ).toBeInTheDocument();
-    const switchControl = screen.getByRole("switch", {
-      name: "显示工具失败图标",
-    });
-    expect(
-      within(displayGroup).getByRole("switch", { name: "显示工具失败图标" }),
-    ).toBe(switchControl);
-    expect(switchControl).not.toBeChecked();
-
-    await user.click(switchControl);
-
-    expect(switchControl).toBeChecked();
-    expect(
-      JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
-    ).toMatchObject({
-      showToolErrorIcon: true,
-    });
-
-    const rawSkillSwitch = screen.getByRole("switch", {
-      name: "显示技能原始内容",
-    });
-    expect(rawSkillSwitch).not.toBeChecked();
-
-    await user.click(rawSkillSwitch);
-
-    expect(rawSkillSwitch).toBeChecked();
-    expect(
-      JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
-    ).toMatchObject({
-      showToolErrorIcon: true,
-      showRawSkillContent: true,
-    });
   });
 
-  it("keeps the dev panel open when clicking the modal overlay", async () => {
+  it("keeps the account menu open when clicking its trigger repeatedly", async () => {
     const user = userEvent.setup();
 
     render(<AppSidebar />);
 
-    const tenantHeader = screen.getByRole("button", { name: /仁励家网络科技/ });
+    const accountFooter = screen.getByRole("button", { name: /账户与设置/ });
     for (let i = 0; i < 7; i += 1) {
-      await user.click(tenantHeader);
+      await user.click(accountFooter);
     }
 
     expect(
-      screen.getByRole("dialog", { name: "控制面板" }),
-    ).toBeInTheDocument();
-    await user.click(
-      document.querySelector('[data-slot="dialog-overlay"]') as HTMLElement,
-    );
-
+      screen.queryByRole("dialog", { name: "控制面板" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("dialog", { name: "控制面板" }),
+      screen.getByRole("menu", { name: "账户与设置" }),
     ).toBeInTheDocument();
   });
 
-  it("renders the main nav items, the project tab, and footer 设置", () => {
+  it("renders the main nav items, the project tab, and account settings trigger", () => {
     render(<AppSidebar />);
     expect(screen.getByRole("button", { name: "新任务" })).toBeInTheDocument();
     expect(
@@ -441,8 +407,8 @@ describe("AppSidebar", () => {
       screen.getByRole("button", { name: "定时任务" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "IM 频道" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "项目" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "项目" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /账户与设置/ })).toBeInTheDocument();
   });
 
   it("places IM 频道 directly after 定时任务 in the main sidebar nav", () => {
@@ -621,11 +587,11 @@ describe("AppSidebar", () => {
 
     // "专家团" is a top-level nav item; the sidebar body tab is labelled "专家".
     expect(screen.getByRole("button", { name: "专家团" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "专家" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "专家" })).toBeInTheDocument();
     expect(screen.getByText("普通项目对话")).toBeInTheDocument();
     expect(screen.queryByText("市场方案专家讨论")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "专家" }));
+    await userEvent.click(screen.getByRole("radio", { name: "专家" }));
 
     expect(screen.getByText("市场方案专家讨论")).toBeInTheDocument();
     expect(screen.queryByText("普通项目对话")).not.toBeInTheDocument();
@@ -636,12 +602,12 @@ describe("AppSidebar", () => {
     render(<AppSidebar />);
 
     expect(
-      screen.getAllByRole("button", { name: "项目" }).length,
+      screen.getAllByRole("radio", { name: "项目" }).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole("button", { name: "频道" }).length,
+      screen.getAllByRole("radio", { name: "频道" }).length,
     ).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole("button", { name: "频道" }));
+    await userEvent.click(screen.getByRole("radio", { name: "频道" }));
     // Tab switching is local UI state — must not affect route.
     expect(uiState.setRoute).not.toHaveBeenCalled();
     // The channel tab lists every platform section; the dingtalk private

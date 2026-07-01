@@ -11,9 +11,9 @@
  * or `AiBubble`); this wrapper just gives it a header strip with sender
  * identity. Used by `MessageList`.
  *
- * The DispatchBanner (派活提示) and team progress / generated-file cards
- * are full-width centered system messages and should NOT be wrapped —
- * the caller decides whether to render <ChatRow> at all.
+ * Team progress / generated-file cards are full-width centered system
+ * messages and should NOT be wrapped — the caller decides whether to render
+ * <ChatRow> at all.
  */
 import type { ReactNode } from "react";
 import { ChatAvatar } from "./ChatAvatar";
@@ -23,6 +23,7 @@ interface ChatRowProps {
   role: "user" | "assistant";
   name: string;
   avatarUrl?: string | null;
+  avatarEmoji?: string | null;
   /**
    * Fallback variant when `avatarUrl` is null. `'neutral'` paints the
    * gender-free brand-tinted silhouette (default for the current user),
@@ -50,6 +51,7 @@ export function ChatRow({
   role,
   name,
   avatarUrl,
+  avatarEmoji,
   avatarVariant,
   colorSeed,
   timestamp,
@@ -80,6 +82,7 @@ export function ChatRow({
           <ChatAvatar
             name={name}
             src={avatarUrl ?? null}
+            emoji={avatarEmoji ?? null}
             variant={avatarVariant}
             colorSeed={colorSeed}
           />
@@ -102,7 +105,7 @@ export function ChatRow({
                 data-testid="chat-row-time"
                 dateTime={timestamp}
                 title={formatFullDateTime(timestamp)}
-                className="font-normal text-muted-foreground/70 tabular-nums"
+                className="font-normal text-[rgba(var(--muted-foreground-rgb),0.70)] tabular-nums"
               >
                 {formatChatTime(timestamp)}
               </time>

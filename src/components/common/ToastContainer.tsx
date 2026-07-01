@@ -68,7 +68,7 @@ function Toast({ notification }: { notification: Notification }) {
       {/* Dismiss */}
       {notification.dismissible && (
         <Button unstyled
-          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-transparent transition-colors hover:bg-muted"
+          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent transition-colors hover:bg-muted"
           style={{ color: 'var(--color-text-muted)' }}
           onClick={() => dismiss(notification.id)}
         >

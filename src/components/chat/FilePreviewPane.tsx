@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
-import { Download, ExternalLink, FileText, Loader2, X } from 'lucide-react'
+import { Download, ExternalLink, FileText, X } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { getFilePreview, getLocalFilePreview, openLocalFile, type FilePreview } from '@/lib/tauri'
 import type { PreviewTarget } from './generatedFileActions'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 interface FilePreviewPaneProps {
   target: PreviewTarget | null
@@ -91,7 +92,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
 
   if (!target) {
     return (
-      <div className="flex h-full flex-1 items-center justify-center bg-muted/20 px-6 text-center">
+      <div className="flex h-full flex-1 items-center justify-center bg-[rgba(var(--muted-rgb),0.20)] px-6 text-center">
         <p className="text-sm text-muted-foreground">{t('filePreview.selectArtifact')}</p>
       </div>
     )
@@ -112,10 +113,9 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
               type="button"
               variant="outline"
               size="sm"
-              className="gap-1.5"
+              icon={<Download className="h-3.5 w-3.5" />}
               onClick={handleDownload}
             >
-              <Download className="h-3.5 w-3.5" />
               {t('filePreview.download')}
             </Button>
           )}
@@ -123,10 +123,9 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1.5"
+            icon={<ExternalLink className="h-3.5 w-3.5" />}
             onClick={handleOpenExternal}
           >
-            <ExternalLink className="h-3.5 w-3.5" />
             {t('filePreview.openWithDefault')}
           </Button>
           {onClosePreview && (
@@ -136,9 +135,8 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
               size="icon"
               aria-label="Close preview"
               onClick={onClosePreview}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+              icon={<X className="h-4 w-4" />}
+            />
           )}
         </div>
       </div>
@@ -148,11 +146,11 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
       >
         {!isCurrentPreviewState ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Spinner className="mr-2" />
             {t('filePreview.loadingPreview')}
           </div>
         ) : previewState.status === 'error' ? (
-          <div className="space-y-3 rounded-md border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+          <div className="space-y-3 rounded-md border border-[rgba(var(--destructive-rgb),0.20)] bg-[rgba(var(--destructive-rgb),0.05)] p-4 text-sm text-destructive">
             <p>{previewState.error}</p>
             <Button type="button" variant="outline" size="sm" onClick={retryPreview}>
               {t('filePreview.retry')}
@@ -193,7 +191,7 @@ function PreviewContent({
       )
     case 'image': {
       const imagePreview = (
-        <div className="flex h-full min-h-[520px] items-center justify-center rounded-md bg-muted/30 p-4">
+        <div className="flex h-full min-h-[520px] items-center justify-center rounded-md bg-[rgba(var(--muted-rgb),0.30)] p-4">
           <img
             src={preview.dataUrl}
             alt={preview.fileName}
@@ -229,7 +227,7 @@ function PreviewContent({
       )
     case 'unsupported':
       return (
-        <div className="rounded-md border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+        <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.40)] p-4 text-sm text-muted-foreground">
           {preview.reason}
         </div>
       )

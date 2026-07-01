@@ -10,6 +10,9 @@ import {
   isPreviewActionEnabledForFile,
   isPreviewableFileType,
 } from "@/components/chat/generatedFileActions";
+import {
+  collectArtifactMarkdownPaths,
+} from "@/components/chat-scene/markdown/artifactMarkdown";
 import { useChatStore } from "@/stores/chatStore";
 import type { ToolExecution } from "@/stores/streamingStore";
 import type {
@@ -151,6 +154,8 @@ export interface RenderTurn {
   generatedFiles: RenderGeneratedFile[];
   suggestions: string[];
   peerBanners: RenderPeerBanner[];
+  completedFinalAnswer?: RenderAiSegment;
+  shouldCollapseCompletedProcess: boolean;
   /**
    * Set when this turn contains a TeamCreate. Tells MessageList to render
    * an in-line TeamProgressBlock (anchor to the team chat drawer) here
@@ -194,59 +199,6 @@ function toolExecStatusToStep(
   s: ToolExecution["status"],
 ): RenderToolStep["status"] {
   return s === "executing" ? "running" : s === "error" ? "error" : "done";
-}
-
-// ── Artifact mark parsing ─────────────────────────────────────────────────
-
-const ARTIFACT_RE = /!\[artifact\]\((.+?)\)/g;
-
-const ARTIFACT_EXT_TO_TYPE: Record<string, GeneratedFile["fileType"]> = {
-  md: "markdown",
-  markdown: "markdown",
-  html: "html",
-  json: "json",
-  csv: "csv",
-  txt: "txt",
-  text: "txt",
-  png: "image",
-  jpg: "image",
-  jpeg: "image",
-  gif: "image",
-  webp: "image",
-  bmp: "image",
-  svg: "image",
-  xlsx: "excel",
-  xls: "excel",
-  docx: "word",
-  doc: "word",
-  pptx: "ppt",
-  ppt: "ppt",
-  pdf: "pdf",
-};
-
-interface ParsedArtifactFile {
-  filePath: string;
-  fileName: string;
-  fileType: GeneratedFile["fileType"];
-}
-
-function parseArtifactMarks(text: string): {
-  cleanedText: string;
-  files: ParsedArtifactFile[];
-} {
-  const files: ParsedArtifactFile[] = [];
-  for (const m of text.matchAll(ARTIFACT_RE)) {
-    const filePath = m[1].trim();
-    const fileName = filePath.split(/[\\/]/).pop() || filePath;
-    const ext = fileName.includes(".")
-      ? fileName.split(".").pop()?.toLowerCase()
-      : undefined;
-    const fileType: GeneratedFile["fileType"] =
-      (ext ? ARTIFACT_EXT_TO_TYPE[ext] : undefined) ?? "file";
-    files.push({ filePath, fileName, fileType });
-  }
-  const cleanedText = text.replace(ARTIFACT_RE, "");
-  return { cleanedText, files };
 }
 
 // ── File size & metadata formatting ──────────────────────────────────────
@@ -662,6 +614,7 @@ export function buildTurnsFromMessages(
 
   const turns: RenderTurn[] = [];
   let current: RenderTurn | null = null;
+  let pendingInternalEventFollowup = false;
 
   for (const m of messages) {
     if (isCompactBoundaryMessage(m)) {
@@ -675,9 +628,12 @@ export function buildTurnsFromMessages(
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        completedFinalAnswer: undefined,
+        shouldCollapseCompletedProcess: false,
         isComplete: true,
       });
       current = null;
+      pendingInternalEventFollowup = false;
       continue;
     }
 
@@ -689,8 +645,13 @@ export function buildTurnsFromMessages(
       // Runtime XML is injected as user-role context for the LLM, but it is
       // not user-authored chat content and should not render a visible row.
       if (isInternalEventMessage(text)) {
+        if (current) {
+          current.isComplete = true;
+          pendingInternalEventFollowup = true;
+        }
         continue;
       }
+      pendingInternalEventFollowup = false;
       // Normal user message — original logic.
       current = {
         userMessage: normalizeUserMessageForRender(m),
@@ -701,6 +662,8 @@ export function buildTurnsFromMessages(
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        completedFinalAnswer: undefined,
+        shouldCollapseCompletedProcess: false,
         isComplete: false,
       };
       turns.push(current);
@@ -717,6 +680,8 @@ export function buildTurnsFromMessages(
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        completedFinalAnswer: undefined,
+        shouldCollapseCompletedProcess: false,
         isComplete: false,
       };
       turns.push(current);
@@ -726,16 +691,26 @@ export function buildTurnsFromMessages(
       // Order in blocks: assistant text first (matches natural narration flow),
       // then tool calls below it.
       const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
+      const isInternalEventFollowup =
+        pendingInternalEventFollowup && !hasToolCalls;
       // 一旦遇到 toolCalls 为空的 assistant message，即说明本 turn 已收到
-      // chat_turn_driver Step 8 emit 的最终消息——MessageList 据此把交错模式
-      // 下已完成的 turn 折叠成聚合视图，只保留这段最终文字。
+      // chat_turn_driver Step 8 emit 的最终消息候选。若后面又出现工具调用，
+      // 说明它只是过程性回复，最终候选会被清掉并等待后续普通回复覆盖。
       if (!hasToolCalls) {
         current.isComplete = true;
+      } else {
+        current.completedFinalAnswer = undefined;
       }
+      const artifactPaths = m.content.text
+        ? collectArtifactMarkdownPaths(m.content.text)
+        : [];
+      const remainingStructuredFiles =
+        artifactPaths.length > 0
+          ? []
+          : (m.content.generatedFiles ?? [])
+              .map((file) => normalizeGeneratedFile(file, m.conversationId));
       if (m.content.text) {
-        const { cleanedText, files } = parseArtifactMarks(m.content.text);
-        const artifactFiles = m.content.generatedFiles?.length ? [] : files;
-        const displayText = cleanedText.trim();
+        const displayText = m.content.text.trim();
         if (displayText) {
           const segment: RenderAiSegment = {
             id: m.id,
@@ -746,27 +721,14 @@ export function buildTurnsFromMessages(
                 : { ...m, content: { ...m.content, text: displayText } },
           };
           current.aiSegments.push(segment);
-          current.blocks.push({ kind: "assistantText", id: m.id, segment });
-        }
-        for (const f of artifactFiles) {
-          const file = normalizeGeneratedFile(
-            {
-              id: `artifact-${m.id}-${f.fileName}`,
-              fileName: f.fileName,
-              filePath: f.filePath,
-              fileType: f.fileType,
-              fileSize: 0,
-              category: "report",
-              version: 1,
-              isLatest: true,
-              createdAt: m.createdAt || new Date().toISOString(),
-              description: "",
-              actions: [],
-            },
-            m.conversationId,
-          );
-          current.generatedFiles.push(file);
-          current.blocks.push({ kind: "generatedFile", id: file.id, file });
+          current.blocks.push({
+            kind: "assistantText",
+            id: m.id,
+            segment,
+          });
+          if (!hasToolCalls && !m.error && !isInternalEventFollowup) {
+            current.completedFinalAnswer = segment;
+          }
         }
       }
       if (m.toolCalls?.length) {
@@ -860,13 +822,13 @@ export function buildTurnsFromMessages(
           }
         }
       }
-      if (m.content.generatedFiles?.length) {
-        for (const f of m.content.generatedFiles) {
-          const file = normalizeGeneratedFile(f, m.conversationId);
+      if (remainingStructuredFiles.length) {
+        for (const file of remainingStructuredFiles) {
           current.generatedFiles.push(file);
           current.blocks.push({ kind: "generatedFile", id: file.id, file });
         }
       }
+      pendingInternalEventFollowup = false;
       continue;
     }
 
@@ -959,6 +921,21 @@ export function buildTurnsFromMessages(
     if (turn.toolGroup) {
       recalcToolGroup(turn.toolGroup);
     }
+    const finalAnswerId = turn.completedFinalAnswer?.id;
+    const finalAnswerIndex = finalAnswerId
+      ? turn.blocks.findIndex(
+          (block) =>
+            block.kind === "assistantText" && block.id === finalAnswerId,
+        )
+      : -1;
+    const foldableBlocks =
+      finalAnswerIndex >= 0 ? turn.blocks.slice(0, finalAnswerIndex) : turn.blocks;
+    const hasFoldableProcess =
+      Boolean(finalAnswerId) &&
+      foldableBlocks.some((block) => block.kind !== "generatedFile");
+    turn.shouldCollapseCompletedProcess = Boolean(
+      turn.isComplete && turn.completedFinalAnswer && hasFoldableProcess,
+    );
   }
 
   return turns;

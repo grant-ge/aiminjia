@@ -79,6 +79,7 @@ describe("UserMessageBubble", () => {
     const text = screen.getByText("你可以做什么");
     expect(bubble).toContainElement(token);
     expect(bubble).toContainElement(text);
+    expect(token).toHaveClass("h-5", "rounded", "bg-[rgba(var(--foreground-rgb),0.10)]");
     expect(token).toHaveTextContent("salary-query");
     expect(token).toHaveAttribute("title", "/salary-query");
     expect(

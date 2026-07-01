@@ -249,13 +249,13 @@ export function SkillDetailDialog({
 
             <div
               data-testid="skill-detail-dialog-meta"
-              className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md bg-muted/40 px-4 py-3 text-xs text-muted-foreground"
+              className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md bg-[rgba(var(--muted-rgb),0.40)] px-4 py-3 text-xs text-muted-foreground"
             >
               {metaItems.map(([label, value]) => (
                 <span key={label} className="min-w-0">
-                  <span className="text-muted-foreground/80">{label}</span>
-                  <span className="mx-1 text-muted-foreground/50">/</span>
-                  <span className="text-foreground/80">{value}</span>
+                  <span className="text-[rgba(var(--muted-foreground-rgb),0.80)]">{label}</span>
+                  <span className="mx-1 text-[rgba(var(--muted-foreground-rgb),0.50)]">/</span>
+                  <span className="text-[rgba(var(--foreground-rgb),0.80)]">{value}</span>
                 </span>
               ))}
             </div>
@@ -290,7 +290,7 @@ export function SkillDetailDialog({
                 {loadingDetail ? (
                   <div className="py-4 text-center text-sm text-muted-foreground">正在加载技能详情...</div>
                 ) : rawContent ? (
-                  <div className="min-w-0 max-w-full overflow-x-auto rounded-md bg-muted/35 p-3 [&_.assistant-markdown]:min-w-max [&_.assistant-markdown]:text-xs [&_.assistant-markdown]:leading-5">
+                  <div className="min-w-0 max-w-full overflow-x-auto rounded-md bg-[rgba(var(--muted-rgb),0.35)] p-3 [&_.assistant-markdown]:min-w-max [&_.assistant-markdown]:text-xs [&_.assistant-markdown]:leading-5">
                     <AssistantMarkdown text={normalizeRawSkillMarkdown(rawContent)} disableCodeHighlight />
                   </div>
                 ) : (

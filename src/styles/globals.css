@@ -4,12 +4,24 @@
   /* === design.pen Light + Neutral + Default 单一皮肤 === */
   --primary: #d4a843;
   --primary-foreground: #ffffff;
-  /* Safari 13 compat: rgba() fallbacks for color-mix() */
+  /* Safari 13 compat: RGB companions for rgba(var(--*-rgb), alpha). */
   --primary-rgb: 212, 168, 67;
+  --primary-foreground-rgb: 255, 255, 255;
   --foreground-rgb: 13, 13, 13;
+  --background-rgb: 255, 255, 255;
+  --muted-rgb: 240, 240, 240;
   --color-bg-base-rgb: 245, 245, 245;
   --muted-foreground-rgb: 99, 99, 99;
   --card-rgb: 255, 255, 255;
+  --popover-rgb: 255, 255, 255;
+  --secondary-rgb: 243, 243, 243;
+  --accent-rgb: 243, 243, 243;
+  --border-rgb: 226, 226, 226;
+  --input-rgb: 226, 226, 226;
+  --sidebar-accent-rgb: 235, 235, 235;
+  --sidebar-foreground-rgb: 13, 13, 13;
+  --destructive-rgb: 231, 0, 11;
+  --destructive-foreground-rgb: 255, 255, 255;
   /* Cross-palette defaults: accent=#D4A843, bg=#FFFFFF (matches brandingStore DEFAULTS).
      Overwritten by applyBranding() at runtime; these only cover cold-start/pre-brand renders. */
   --primary-on-bg-10: #fbf6ec;
@@ -107,16 +119,22 @@
   --color-bg-code: var(--muted);
   --color-bg-code-header: var(--background);
   --color-semantic-green: #34c759;
+  --color-semantic-green-rgb: 52, 199, 89;
   --color-semantic-green-bg: rgba(52, 199, 89, 0.12);
   --color-semantic-orange: #f5a623;
+  --color-semantic-orange-rgb: 245, 166, 35;
   --color-semantic-orange-bg: rgba(245, 166, 35, 0.12);
   --color-semantic-red: #ef4444;
+  --color-semantic-red-rgb: 239, 68, 68;
   --color-semantic-red-bg: rgba(239, 68, 68, 0.12);
   --color-semantic-blue: #5b9bd5;
+  --color-semantic-blue-rgb: 91, 155, 213;
   --color-semantic-blue-bg: rgba(91, 155, 213, 0.12);
   --color-semantic-purple: #9b7ed8;
+  --color-semantic-purple-rgb: 155, 126, 216;
   --color-semantic-purple-bg: rgba(155, 126, 216, 0.12);
   --color-semantic-yellow: #e8c86a;
+  --color-semantic-yellow-rgb: 232, 200, 106;
   --color-semantic-yellow-bg: rgba(232, 200, 106, 0.12);
   --color-semantic-red-bg-light: rgba(239, 68, 68, 0.04);
   --color-semantic-red-border: rgba(239, 68, 68, 0.18);
@@ -376,14 +394,21 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
+[role="button"][aria-label^="账户与设置"],
+[role="button"][aria-label^="账户与设置"] *,
+[role="button"][aria-label^="Account and settings"],
+[role="button"][aria-label^="Account and settings"] * {
+  cursor: pointer !important;
+}
+
 .titlebar-window-button {
   width: 44px;
   height: 28px;
-  color: color-mix(in srgb, var(--sidebar-foreground) 70%, transparent);
+  color: rgba(var(--sidebar-foreground-rgb), 0.7);
 }
 
 .titlebar-window-button:hover {
-  background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
+  background: rgba(var(--sidebar-accent-rgb), 0.7);
   color: var(--sidebar-foreground);
 }
 
@@ -396,11 +421,11 @@ button:not(:disabled) {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  color: color-mix(in srgb, var(--sidebar-foreground) 70%, transparent);
+  color: rgba(var(--sidebar-foreground-rgb), 0.7);
 }
 
 .titlebar-sidebar-toggle:hover {
-  background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
+  background: rgba(var(--sidebar-accent-rgb), 0.7);
   color: var(--sidebar-foreground);
 }
 
@@ -408,12 +433,12 @@ button:not(:disabled) {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  color: color-mix(in srgb, var(--sidebar-foreground) 46%, transparent);
+  color: rgba(var(--sidebar-foreground-rgb), 0.46);
 }
 
 .titlebar-navigation-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
-  color: color-mix(in srgb, var(--sidebar-foreground) 70%, transparent);
+  background: rgba(var(--sidebar-accent-rgb), 0.7);
+  color: rgba(var(--sidebar-foreground-rgb), 0.7);
 }
 
 .titlebar-navigation-button:disabled {

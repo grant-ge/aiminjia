@@ -13,6 +13,7 @@ import type {
   LlmProvider,
   FontScale,
   ChatWidthMode,
+  ProfileAvatarMode,
   DefaultPermissionMode,
   CloudGatewayMode,
 } from '@/types/settings'
@@ -32,6 +33,12 @@ interface SettingsState extends Settings {
   setAppLanguage: (language: AppLanguage) => void
   setFontScale: (scale: FontScale) => void
   setChatWidthMode: (mode: ChatWidthMode) => void
+  setProfileAvatar: (avatar: {
+    mode: ProfileAvatarMode
+    emoji?: string
+    imagePath?: string
+  }) => void
+  setImChannelKeepAwakeEnabled: (enabled: boolean) => void
   setDefaultPermissionMode: (mode: DefaultPermissionMode) => void
   setCloudGatewayMode: (mode: CloudGatewayMode) => void
   markLoaded: () => void
@@ -79,6 +86,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ fontScale: normalized })
   },
   setChatWidthMode: (chatWidthMode) => set({ chatWidthMode }),
+  setProfileAvatar: ({ mode, emoji, imagePath }) =>
+    set((state) => ({
+      profileAvatarMode: mode,
+      profileAvatarEmoji: emoji ?? state.profileAvatarEmoji ?? '',
+      profileAvatarImagePath: imagePath ?? state.profileAvatarImagePath ?? '',
+    })),
+  setImChannelKeepAwakeEnabled: (imChannelKeepAwakeEnabled) => set({ imChannelKeepAwakeEnabled }),
   setDefaultPermissionMode: (defaultPermissionMode) => set({ defaultPermissionMode }),
   setCloudGatewayMode: (cloudGatewayMode) => set({ cloudGatewayMode }),
   markLoaded: () => set({ isLoaded: true }),

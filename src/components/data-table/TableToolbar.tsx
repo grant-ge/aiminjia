@@ -58,12 +58,11 @@ export function TableToolbar({ enableCopy, columns, rows }: Props) {
       title={tooltip}
       className="gap-1 text-[var(--color-text-muted)]"
       data-testid="table-copy-button"
+      icon={copied === 'ok'
+        ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+        : <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+      }
     >
-      {copied === 'ok' ? (
-        <Check className="h-3.5 w-3.5" aria-hidden="true" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-      )}
       <span>
         {copied === 'ok'
           ? t('common.copied', 'Copied')

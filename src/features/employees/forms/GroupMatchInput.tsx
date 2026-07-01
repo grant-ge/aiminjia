@@ -152,7 +152,7 @@ export function GroupMatchInput({
           onRemove={(i) => update({ keywords: value.keywords.filter((_, idx) => idx !== i) })}
           placeholder={keywordsPlaceholder}
         />
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-xs text-[rgba(var(--muted-foreground-rgb),0.70)]">
           {t('employee.config.groupMatch.includeHintSimple')}
         </p>
       </div>

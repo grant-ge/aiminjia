@@ -104,6 +104,7 @@ const STALE_STREAM_TIMEOUT_MS = 90_000
 /** How often (ms) the watchdog checks for stale streams.  Tightened from 10s
  *  to 5s now that the watchdog wakes within 90s of true silence (vs 200s). */
 const WATCHDOG_INTERVAL_MS = 5_000
+const HEARTBEAT_STORE_UPDATE_INTERVAL_MS = 10_000
 
 const autoUploadedFailedToolCalls = new Set<string>()
 
@@ -378,14 +379,14 @@ export function useStreaming() {
         t = { firstDeltaAt: now, lastFlushAt: 0, deltaCount: 0, totalBytes: 0, flushCount: 0 }
         streamTimingRef.current[conversationId] = t
         console.log('[stream-timing] FIRST delta conv=%s len=%d', conversationId, delta.length)
+        recordDiagnostic({
+          event: 'streaming.delta.first_received',
+          conversationId,
+          payload: { deltaLength: delta.length },
+        })
       }
       t.deltaCount += 1
       t.totalBytes += delta.length
-      recordDiagnostic({
-        event: 'streaming.delta.received',
-        conversationId,
-        payload: { deltaLength: delta.length },
-      })
       // Buffer the delta instead of immediately updating the store
       deltaBufferRef.current[conversationId] =
         (deltaBufferRef.current[conversationId] ?? '') + delta
@@ -971,11 +972,17 @@ export function useStreaming() {
   // sub-stages (tool execution between events, model cold start, etc).
   useTauriEvent(() =>
     onTurnHeartbeat(({ conversationId }: TurnHeartbeatPayload) => {
+      const now = Date.now()
       touchActivity(conversationId)
       // Heartbeat arrived — leave the stalled set so the next 30s-silent spell
       // is recorded as a fresh stalled event (not coalesced with old one).
       stalledConversationsRef.current.delete(conversationId)
-      useChatStore.getState().touchConversationHeartbeat(conversationId, Date.now())
+      const store = useChatStore.getState()
+      const lastStoreUpdate =
+        store.streamStates[conversationId]?.lastHeartbeatAt ?? 0
+      if (now - lastStoreUpdate >= HEARTBEAT_STORE_UPDATE_INTERVAL_MS) {
+        store.touchConversationHeartbeat(conversationId, now)
+      }
     }),
   )
 

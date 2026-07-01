@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
 import { type ChannelConfigView, type ChannelRegistrationBeginResult } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 
 interface FeishuChannelConfigProps {
   onSaved?: () => void
@@ -25,7 +26,7 @@ function sleep(ms: number) {
 
 function CredentialRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
+    <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.25)] px-4 py-3">
       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
@@ -78,8 +79,8 @@ function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading:
         </div>
       )}
       {loading && (
-        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-[rgba(var(--background-rgb),0.75)] backdrop-blur-[1px]">
+          <Spinner size="lg" className="text-primary" />
         </div>
       )}
     </div>

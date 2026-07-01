@@ -344,13 +344,13 @@ describe('EmployeesPage', () => {
     const card = await screen.findByRole('button', { name: '查看 林知远 详情' })
     expect(card).toHaveClass('w-full')
     expect(card).toHaveClass('h-[154px]')
-    expect(card).toHaveClass('border-border/50')
+    expect(card).toHaveClass('border-[rgba(var(--border-rgb),0.50)]')
     expect(card).toHaveClass('shadow-[0_1px_3px_rgba(0,0,0,0.035)]')
-    expect(card).toHaveClass('hover:border-border/70')
-    expect(card).toHaveClass('hover:bg-muted/20')
+    expect(card).toHaveClass('hover:border-[rgba(var(--border-rgb),0.70)]')
+    expect(card).toHaveClass('hover:bg-[rgba(var(--muted-rgb),0.20)]')
     expect(card).not.toHaveClass('border-border')
     expect(card).not.toHaveClass('shadow-[var(--shadow-card)]')
-    expect(card).not.toHaveClass('hover:border-primary/50')
+    expect(card).not.toHaveClass('hover:border-[rgba(var(--primary-rgb),0.50)]')
     expect(card).not.toHaveClass('hover:shadow-[var(--shadow-card-hover)]')
     expect(card.closest('.grid')).toHaveClass('xl:grid-cols-4')
     expect(card.querySelector('.h-9.w-9')).toBeInTheDocument()
@@ -397,7 +397,7 @@ describe('EmployeesPage', () => {
     expect(screen.queryByText('⚙️ 自动巡检')).not.toBeInTheDocument()
   })
 
-  it('renders employee template chips with a unified muted style', async () => {
+  it('renders employee template tags with the shared muted xs style', async () => {
     render(<EmployeesPage />)
 
     const chips = [
@@ -407,10 +407,10 @@ describe('EmployeesPage', () => {
     ]
 
     for (const chip of chips) {
-      expect(chip).toHaveClass('rounded-[2px]')
-      expect(chip).not.toHaveClass('rounded-md')
+      expect(chip).toHaveClass('rounded')
       expect(chip).toHaveClass('bg-muted')
-      expect(chip).toHaveClass('text-2xs')
+      expect(chip).toHaveClass('h-[18px]')
+      expect(chip).toHaveClass('text-[10px]')
       expect(chip).toHaveClass('text-muted-foreground')
       expect(chip).not.toHaveClass('text-xs')
       expect(chip).not.toHaveClass('bg-accent')

@@ -52,7 +52,7 @@ export function SkillCreatedCard({ payload }: SkillCreatedCardProps) {
           type="button"
           aria-label={t('resultCards.skill.view')}
           onClick={() => openSkillDetailDialog(payload.skillId)}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 group-hover:opacity-100"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 group-hover:opacity-100"
           data-testid="skill-created-card-view"
         >
           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -81,7 +81,7 @@ function SkillField({
           prominent
             ? 'min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-foreground'
             : mono
-              ? 'min-w-0 flex-1 truncate font-mono text-sm leading-5 text-foreground/82'
+              ? 'min-w-0 flex-1 truncate font-mono text-sm leading-5 text-[rgba(var(--foreground-rgb),0.82)]'
               : 'min-w-0 flex-1 line-clamp-2 text-sm leading-5 text-muted-foreground'
         }
       >

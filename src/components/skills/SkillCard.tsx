@@ -47,7 +47,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(
       }
     : {}
   const interactiveClass = onClick
-    ? 'cursor-pointer hover:border-primary/40 hover:bg-card/95 hover:shadow-[var(--shadow-skill-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+    ? 'cursor-pointer hover:border-[rgba(var(--primary-rgb),0.40)] hover:bg-[rgba(var(--card-rgb),0.95)] hover:shadow-[var(--shadow-skill-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
     : ''
 
   return (
@@ -63,7 +63,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[rgba(var(
       data-aijia-skill-description={desc}
       {...interactiveProps}
       data-aijia-skill-card-layout={layout}
-      className={`group relative flex rounded-md border border-border/65 bg-card shadow-[var(--shadow-skill-card)] transition-[border-color,background-color,box-shadow] duration-150 ${isRow ? 'min-h-20 flex-row items-center gap-3 px-3 py-3' : `${height} flex-col p-3`} ${interactiveClass}`}
+      className={`group relative flex rounded-md border border-[rgba(var(--border-rgb),0.65)] bg-card shadow-[var(--shadow-skill-card)] transition-[border-color,background-color,box-shadow] duration-150 ${isRow ? 'min-h-20 flex-row items-center gap-3 px-3 py-3' : `${height} flex-col p-3`} ${interactiveClass}`}
     >
       <div className={isRow ? 'flex min-w-0 flex-1 items-center gap-2.5' : 'flex items-center gap-2.5'}>
         <div

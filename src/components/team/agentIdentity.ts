@@ -72,7 +72,7 @@ const PALETTE: Array<Omit<AgentIdentityStyle, 'initials'>> = [
 
 const LEAD_STYLE: Omit<AgentIdentityStyle, 'initials'> = {
   avatarClass: 'bg-primary text-primary-foreground',
-  bubbleClass: 'bg-primary/10 border border-primary/25',
+  bubbleClass: 'bg-[rgba(var(--primary-rgb),0.10)] border border-[rgba(var(--primary-rgb),0.25)]',
   accentClass: 'bg-primary',
 }
 

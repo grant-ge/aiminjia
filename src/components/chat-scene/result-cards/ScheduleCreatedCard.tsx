@@ -53,7 +53,7 @@ export function ScheduleCreatedCard({ payload }: ScheduleCreatedCardProps) {
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-muted-foreground">
             <ScheduleMeta label={t('resultCards.schedule.frequency')} value={scheduleLabel} />
-            <span className="text-muted-foreground/45" aria-hidden>
+            <span className="text-[rgba(var(--muted-foreground-rgb),0.45)]" aria-hidden>
               /
             </span>
             <ScheduleMeta label={t('resultCards.schedule.nextFire')} value={nextFireLabel} />
@@ -70,7 +70,7 @@ export function ScheduleCreatedCard({ payload }: ScheduleCreatedCardProps) {
           aria-label={t('resultCards.schedule.edit')}
           onClick={() => setEditorOpen(true)}
           disabled={!item}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 disabled:pointer-events-none disabled:opacity-45 group-hover:opacity-100"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 disabled:pointer-events-none disabled:opacity-45 group-hover:opacity-100"
           data-testid="schedule-created-card-edit"
         >
           <Pencil className="h-3.5 w-3.5" aria-hidden />
@@ -92,7 +92,7 @@ function ScheduleMeta({ label, value }: { label: string; value: string }) {
   return (
     <span className="inline-flex max-w-full items-baseline gap-1.5">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate font-medium tabular-nums text-foreground/88">{value}</span>
+      <span className="min-w-0 truncate font-medium tabular-nums text-[rgba(var(--foreground-rgb),0.88)]">{value}</span>
     </span>
   )
 }

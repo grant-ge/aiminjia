@@ -3,10 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const authMock = vi.hoisted(() => ({
-  tenantType: 'personal',
-}))
-
 vi.mock('@/lib/tauri', () => ({
   billingSummary: vi.fn().mockResolvedValue({
     balance: '9.85',
@@ -15,14 +11,6 @@ vi.mock('@/lib/tauri', () => ({
     signup_bonus: { granted: true, amount: '10.00', granted_at: '2026-05-19T10:00:00+08:00' },
   }),
   billingUsageRecords: vi.fn().mockResolvedValue({ page: 1, size: 20, total: 0, records: [] }),
-  enterpriseUsageRecords: vi.fn().mockResolvedValue({ page: 1, size: 20, total: 0, records: [] }),
-}))
-
-vi.mock('@/stores/authStore', () => ({
-  useAuthStore: (sel: (s: unknown) => unknown) =>
-    sel({
-      tenant: { tenantType: authMock.tenantType },
-    }),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -31,11 +19,10 @@ vi.mock('react-i18next', () => ({
 
 import { AccountBillingPanel } from './AccountBillingPanel'
 import { useBillingStore } from '@/stores/billingStore'
-import { billingSummary, billingUsageRecords, enterpriseUsageRecords } from '@/lib/tauri'
+import { billingSummary, billingUsageRecords } from '@/lib/tauri'
 
 describe('AccountBillingPanel', () => {
   beforeEach(() => {
-    authMock.tenantType = 'personal'
     ;(billingSummary as any).mockResolvedValue({
       balance: '9.85',
       currency: 'CNY',
@@ -43,7 +30,6 @@ describe('AccountBillingPanel', () => {
       signup_bonus: { granted: true, amount: '10.00', granted_at: '2026-05-19T10:00:00+08:00' },
     })
     ;(billingUsageRecords as any).mockResolvedValue({ page: 1, size: 20, total: 0, records: [] })
-    ;(enterpriseUsageRecords as any).mockResolvedValue({ page: 1, size: 20, total: 0, records: [] })
     useBillingStore.setState({
       summary: null,
       records: [],
@@ -136,7 +122,7 @@ describe('AccountBillingPanel', () => {
 
     render(<AccountBillingPanel />)
 
-    await screen.findByText('deepseek-reasoner')
+    await screen.findByRole('button', { name: 'settings.billing.nextPage' })
     vi.clearAllMocks()
 
     await user.click(screen.getByRole('button', { name: 'settings.billing.nextPage' }))
@@ -147,7 +133,7 @@ describe('AccountBillingPanel', () => {
     }))
   })
 
-  it('formats large token counts with readable units and hides the type column', async () => {
+  it('formats large token counts with readable units and hides type and model columns', async () => {
     ;(billingUsageRecords as any).mockResolvedValue({
       page: 1,
       size: 20,
@@ -176,7 +162,9 @@ describe('AccountBillingPanel', () => {
 
     expect(await screen.findAllByText('129.99 百万 Tokens')).not.toHaveLength(0)
     expect(screen.queryByText('settings.billing.cols.type')).not.toBeInTheDocument()
+    expect(screen.queryByText('settings.billing.cols.model')).not.toBeInTheDocument()
     expect(screen.queryByText('chat')).not.toBeInTheDocument()
+    expect(screen.queryByText('deepseek-v4-flash')).not.toBeInTheDocument()
   })
 
   it('uses neutral copy instead of raw disabled-account errors', async () => {
@@ -186,21 +174,5 @@ describe('AccountBillingPanel', () => {
 
     expect(await screen.findByText('settings.billing.recordsUnavailable')).toBeInTheDocument()
     expect(screen.queryByText('账户已被禁用')).not.toBeInTheDocument()
-  })
-
-  it('does not call personal balance summary for enterprise tenants', async () => {
-    authMock.tenantType = 'enterprise'
-
-    render(<AccountBillingPanel />)
-
-    await screen.findByText('settings.billing.empty')
-    expect(enterpriseUsageRecords).toHaveBeenCalledTimes(1)
-    expect(enterpriseUsageRecords).toHaveBeenCalledWith(1, 20, expect.objectContaining({
-      requestType: null,
-      modelName: null,
-    }))
-    expect(billingUsageRecords).not.toHaveBeenCalled()
-    expect(billingSummary).not.toHaveBeenCalled()
-    expect(screen.queryByText('settings.billing.balance')).not.toBeInTheDocument()
   })
 })

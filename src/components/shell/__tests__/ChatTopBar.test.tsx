@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ChatTopBar } from '../ChatTopBar'
@@ -16,6 +17,26 @@ describe('ChatTopBar', () => {
       screen.getByText('打开 BI 看板导出绩效分析数据并总结'),
     ).toBeInTheDocument()
     expect(screen.getByText('Desktop')).toBeInTheDocument()
+  })
+
+  it('marks the workspace chip as destructive when the directory is missing', async () => {
+    render(
+      <ChatTopBar
+        title="新对话"
+        workspace="aijia-test"
+        workspaceAvailable={false}
+        workspacePath="/Users/me/Desktop/aijia-test"
+      />,
+    )
+
+    const chip = screen.getByTestId('chat-topbar-workspace')
+    expect(chip).toHaveClass('text-destructive')
+    expect(chip).toHaveAttribute('data-aijia-workspace-status', 'missing')
+    expect(chip).toHaveAttribute('title', '工作目录不存在：/Users/me/Desktop/aijia-test')
+
+    await userEvent.hover(chip)
+    expect(await screen.findByRole('tooltip'))
+      .toHaveTextContent('工作目录不存在：/Users/me/Desktop/aijia-test')
   })
 
   it('does not render updated-at metadata in the header', () => {

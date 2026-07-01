@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, MessageCircleQuestion } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { AiBubble } from "@/components/chat/AiBubble";
 import { CompactBoundaryBar } from "@/components/chat/CompactBoundaryBar";
@@ -13,8 +14,6 @@ import { savePreviewTargetToDisk } from "@/components/chat/fileDownload";
 import { ChatRow } from "@/components/chat-scene/ChatRow";
 import { GeneratedFileCard } from "@/components/chat-scene/GeneratedFileCard";
 import { PeerMessageBanner } from "@/components/chat-scene/PeerMessageBanner";
-import { parseDispatchHeader } from "@/components/chat-scene/parseDispatchHeader";
-import { SuggestChipGroup } from "@/components/chat-scene/SuggestChipGroup";
 import { ToolStepGroupBlock } from "@/components/chat-scene/ToolStepGroupBlock";
 import { ToolTraceIO } from "@/components/chat-scene/ToolTraceIO";
 import { UserMessageBubble } from "@/components/chat-scene/UserMessageBubble";
@@ -29,18 +28,19 @@ import { useChannelStore } from "@/stores/channelStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useGeneratedFilePreviewStore } from "@/stores/generatedFilePreviewStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useChat } from "@/hooks/useChat";
 import { useTeamOverview } from "@/hooks/useTeamOverview";
 import {
   useTurnRenderModel,
+  type RenderAiSegment,
   type RenderGeneratedFile,
+  type RenderToolGroup,
   type RenderToolReceipt,
   type RenderToolStep,
   type RenderTurnBlock,
 } from "@/hooks/useTurnRenderModel";
 import {
-  isGeneratedFileAvailable,
-  isLocalFileAvailable,
   openGeneratedFile,
   openLocalFile,
   revealFileInFolder,
@@ -53,36 +53,47 @@ type FileActionKind = "preview" | "open" | "download" | "reveal";
 type GeneratedFileCardProps = Parameters<typeof GeneratedFileCard>[0];
 
 function AvailableGeneratedFileCard({
-  file,
   ...cardProps
 }: GeneratedFileCardProps & { file: RenderGeneratedFile }) {
-  const [isAvailable, setIsAvailable] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setIsAvailable(false);
-    const availability = file.id.startsWith("artifact-")
-      ? (file.filePath ? isLocalFileAvailable(file.filePath) : Promise.resolve(false))
-      : (
-          file.conversationId
-            ? isGeneratedFileAvailable(file.id, file.conversationId)
-            : Promise.resolve(false)
-        );
-
-    void availability
-      .then((available) => {
-        if (!cancelled) setIsAvailable(available);
-      })
-      .catch(() => {
-        if (!cancelled) setIsAvailable(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [file.id, file.conversationId, file.filePath]);
-
-  if (!isAvailable) return null;
   return <GeneratedFileCard {...cardProps} />;
+}
+
+function CompletedProcessCollapse({
+  children,
+  toolGroup,
+}: {
+  children: ReactNode;
+  toolGroup?: RenderToolGroup;
+}) {
+  const [open, setOpen] = useState(false);
+  const stepLabel = toolGroup?.steps.length
+    ? `${toolGroup.steps.length} 步`
+    : null;
+  const summaryLabel = ["已完成", stepLabel].filter(Boolean).join(" · ");
+
+  return (
+    <div>
+      <Button
+        unstyled
+        type="button"
+        aria-label={summaryLabel}
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex w-fit max-w-full min-w-0 items-center gap-1.5 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+      >
+        <span className="min-w-0 break-words">{summaryLabel}</span>
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        )}
+      </Button>
+      {open ? (
+        <div data-testid="completed-process-body" className="mt-1 flex flex-col gap-1">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 // Display name for IM platforms when the inbound conversation's sender is
@@ -209,7 +220,7 @@ function ToolReceiptBlock({
   })();
 
   return (
-    <div className="flex max-w-full flex-col gap-1 overflow-hidden rounded-md bg-muted/45 px-3 py-2 text-sm text-muted-foreground">
+    <div className="flex max-w-full flex-col gap-1 overflow-hidden rounded-md bg-[rgba(var(--muted-rgb),0.45)] px-3 py-2 text-sm text-muted-foreground">
       <div className="text-foreground">{title}</div>
       {receipt.summary ? (
         <div className="line-clamp-2 min-w-0 break-words text-foreground">
@@ -288,12 +299,20 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   // Sender identity for the chat row headers (avatar + name).
   // AI side follows the tenant brand (logoUrl + productName), so a custom
   // tenant logo / name automatically propagates into every chat. User side
-  // falls back to the colored-initial ChatAvatar when no profile image is
-  // configured (none of the current users have one).
+  // follows the local profile avatar settings for in-app conversations.
   const assistantName = useBrandingStore((s) => s.productName);
   const assistantLogo = useBrandingStore((s) => s.logoUrl);
   const authUserName = useAuthStore(
     (s) => s.user?.name ?? s.user?.username ?? "我",
+  );
+  const profileAvatarMode = useSettingsStore(
+    (s) => s.profileAvatarMode ?? "initial",
+  );
+  const profileAvatarEmoji = useSettingsStore(
+    (s) => s.profileAvatarEmoji ?? "",
+  );
+  const profileAvatarImagePath = useSettingsStore(
+    (s) => s.profileAvatarImagePath ?? "",
   );
   // In channel chats (WhatsApp/Telegram/dingtalk/...), the "user" role
   // bubbles come from the **external contact**, not the local AIjia operator.
@@ -304,7 +323,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   //     messages don't carry a stable real name (feishu/wecom/wechat only
   //     give user_id). To stay visually consistent across IM tabs, render the
   //     platform display name + platform logo as the "from" side identity.
-  //   - In-app (no channel binding): local auth user + neutral silhouette.
+  //   - In-app (no channel binding): local auth user + profile avatar setting.
   const channelConversation = useChannelStore((s) => {
     if (!activeConversationId) return null;
     return (
@@ -312,11 +331,20 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       null
     );
   });
-  const { userName, userAvatarUrl, userAvatarVariant } = (() => {
+  const { userName, userAvatarUrl, userAvatarEmoji, userAvatarVariant } = (() => {
     if (!channelConversation) {
+      const trimmedImagePath = profileAvatarImagePath.trim();
+      const trimmedEmoji = profileAvatarEmoji.trim();
       return {
         userName: authUserName,
-        userAvatarUrl: null as string | null,
+        userAvatarUrl:
+          profileAvatarMode === "image" && trimmedImagePath.length > 0
+            ? convertFileSrc(trimmedImagePath)
+            : null,
+        userAvatarEmoji:
+          profileAvatarMode === "emoji" && trimmedEmoji.length > 0
+            ? trimmedEmoji
+            : null,
         userAvatarVariant: "neutral" as "initial" | "neutral",
       };
     }
@@ -325,6 +353,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       return {
         userName: trimmed && trimmed.length > 0 ? trimmed : "WhatsApp 私聊",
         userAvatarUrl: null as string | null,
+        userAvatarEmoji: null as string | null,
         userAvatarVariant: "initial" as "initial" | "neutral",
       };
     }
@@ -333,6 +362,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         CHANNEL_PLATFORM_DISPLAY[channelConversation.platform] ??
         channelConversation.platform,
       userAvatarUrl: `/logos/${channelConversation.platform}.png`,
+      userAvatarEmoji: null as string | null,
       userAvatarVariant: "initial" as "initial" | "neutral",
     };
   })();
@@ -512,12 +542,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           );
         }
         const teamSession = teamSessionForTurnIdx[i];
-        // Employee dispatch prompts are represented by the chat top bar now
-        // (employee avatar + identity + default skill), so the synthetic
-        // user-message banner should not take space in the message stream.
-        const isDispatchTurn = !!(
-          t.userMessage && parseDispatchHeader(t.userMessage.text)
-        );
         const aiAnchorIso = t.aiSegments[0]?.message.createdAt ?? null;
         return (
           <div key={i} className="flex flex-col gap-5">
@@ -525,26 +549,43 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}
             {t.userMessage ? (
-              isDispatchTurn ? null : (
-                <ChatRow
-                  role="user"
-                  name={userName}
-                  avatarUrl={userAvatarUrl}
-                  avatarVariant={userAvatarVariant}
-                  timestamp={t.userMessage.createdAt}
-                >
-                  <UserMessageBubble
-                    text={t.userMessage.text}
-                    commandText={t.userMessage.commandText}
-                    skillCommand={t.userMessage.skillCommand}
-                    reasoningMode={t.userMessage.reasoningMode}
-                    files={t.userMessage.files}
-                    conversationId={activeConversationId ?? undefined}
-                  />
-                </ChatRow>
-              )
+              <ChatRow
+                role="user"
+                name={userName}
+                avatarUrl={userAvatarUrl}
+                avatarEmoji={userAvatarEmoji}
+                avatarVariant={userAvatarVariant}
+                timestamp={t.userMessage.createdAt}
+              >
+                <UserMessageBubble
+                  text={t.userMessage.text}
+                  commandText={t.userMessage.commandText}
+                  skillCommand={t.userMessage.skillCommand}
+                  reasoningMode={t.userMessage.reasoningMode}
+                  files={t.userMessage.files}
+                  conversationId={activeConversationId ?? undefined}
+                />
+              </ChatRow>
             ) : null}
-            {t.blocks && t.blocks.length > 0 ? (
+            {t.shouldCollapseCompletedProcess && t.completedFinalAnswer ? (
+              renderCompletedFinalAnswerTurn(t.blocks, {
+                assistantName,
+                assistantLogo,
+                aiAnchorIso,
+                teamSession,
+                expertTeam: expertTeam ?? null,
+                onOpenTeamDrawer: handleOpenTeamDrawer,
+                onPreview: handlePreview,
+                onOpenExternal: handleOpenExternal,
+                onDownload: handleDownload,
+                onReveal: handleReveal,
+                inlineStreamingContent: null,
+                persistedBlockCount: t.persistedBlockCount ?? t.blocks.length,
+                showFinalThinkingIndicator: false,
+                finalAnswer: t.completedFinalAnswer,
+                toolGroup: t.toolGroup,
+              })
+            ) : t.blocks && t.blocks.length > 0 ? (
               renderInterleavedBlocks(t.blocks, {
                 assistantName,
                 assistantLogo,
@@ -577,7 +618,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
               })
             ) : (
               // 兜底：turn 没有 blocks（罕见——测试 mock 或异常会话）。
-              // 直接渲染 aiSegments / generatedFiles / suggestions / teamSession，
+              // 直接渲染 aiSegments / generatedFiles / teamSession，
               // 不再尝试展示工具卡（没 blocks 时本来就没工具调用数据可显示）。
               <>
                 {teamSession ? (
@@ -589,8 +630,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                   </TeamVisualProvider>
                 ) : null}
                 {t.aiSegments.length > 0 ||
-                t.generatedFiles.length > 0 ||
-                t.suggestions.length > 0 ? (
+                t.generatedFiles.length > 0 ? (
                   <ChatRow
                     role="assistant"
                     name={assistantName}
@@ -621,14 +661,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                         onReveal={() => void handleReveal(f)}
                       />
                     ))}
-                    {t.suggestions.length > 0 ? (
-                      <SuggestChipGroup
-                        items={t.suggestions.map((s) => ({
-                          label: s,
-                          onClick: () => {},
-                        }))}
-                      />
-                    ) : null}
                   </ChatRow>
                 ) : null}
               </>
@@ -679,29 +711,154 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
    */
   function renderInterleavedBlocks(
     blocks: RenderTurnBlock[],
-    ctx: {
-      assistantName: string;
-      assistantLogo: string | null | undefined;
-      aiAnchorIso: string | null;
-      teamSession: NonNullable<typeof teamSessionForTurnIdx>[number];
-      expertTeam: ReturnType<typeof getExpertTeam> | null;
-      onOpenTeamDrawer: typeof handleOpenTeamDrawer;
-      onPreview: (file: RenderGeneratedFile) => void | Promise<void>;
-      onOpenExternal: (file: RenderGeneratedFile) => Promise<void>;
-      onDownload: (file: RenderGeneratedFile) => Promise<void>;
-      onReveal: (file: RenderGeneratedFile) => Promise<void>;
-      /** Live text being streamed for the current iter (the next assistantText
-       *  block that will be persisted). Rendered between persisted blocks
-       *  and live tool blocks so the natural "text → tool" order is preserved. */
-      inlineStreamingContent: string | null;
-      /** Number of blocks at the start of `blocks` that come from persisted
-       *  messages.jsonl. Blocks at >= this index are live toolExecutions. */
-      persistedBlockCount: number;
-      /** 流式期间在 children 末尾追加一个 indicator-only StreamingBubble
-       *  （content=""），用 absolute 渲染 typing 占位，不占 layout 高度。 */
-      showFinalThinkingIndicator: boolean;
+    ctx: InterleavedRenderCtx,
+  ) {
+    const { children, firstTextIso } = buildInterleavedBlockNodes(blocks, ctx);
+
+    // TeamProgressBlock 现在通过 'teamMarker' block 在 children 内联渲染（按
+    // TeamCreate 在消息序列中的自然位置）。聚合模式下仍由 ChatRow 之前的
+    // 独立分支渲染，与历史行为一致。
+    return (
+      <ChatRow
+        role="assistant"
+        name={ctx.assistantName}
+        avatarUrl={ctx.assistantLogo}
+        timestamp={firstTextIso ?? undefined}
+      >
+        {children}
+      </ChatRow>
+    );
+  }
+
+  type InterleavedRenderCtx = {
+    assistantName: string;
+    assistantLogo: string | null | undefined;
+    aiAnchorIso: string | null;
+    teamSession: NonNullable<typeof teamSessionForTurnIdx>[number];
+    expertTeam: ReturnType<typeof getExpertTeam> | null;
+    onOpenTeamDrawer: typeof handleOpenTeamDrawer;
+    onPreview: (file: RenderGeneratedFile) => void | Promise<void>;
+    onOpenExternal: (file: RenderGeneratedFile) => Promise<void>;
+    onDownload: (file: RenderGeneratedFile) => Promise<void>;
+    onReveal: (file: RenderGeneratedFile) => Promise<void>;
+    /** Live text being streamed for the current iter (the next assistantText
+     *  block that will be persisted). Rendered between persisted blocks
+     *  and live tool blocks so the natural "text → tool" order is preserved. */
+    inlineStreamingContent: string | null;
+    /** Number of blocks at the start of `blocks` that come from persisted
+     *  messages.jsonl. Blocks at >= this index are live toolExecutions. */
+    persistedBlockCount: number;
+    /** 流式期间在 children 末尾追加一个 indicator-only StreamingBubble
+     *  （content=""），用 absolute 渲染 typing 占位，不占 layout 高度。 */
+    showFinalThinkingIndicator: boolean;
+  };
+
+  function renderCompletedFinalAnswerTurn(
+    blocks: RenderTurnBlock[],
+    ctx: InterleavedRenderCtx & {
+      finalAnswer: RenderAiSegment;
+      toolGroup?: RenderToolGroup;
     },
   ) {
+    const finalMessageId = ctx.finalAnswer.message.id;
+    const finalAnswerIndex = blocks.findIndex(
+      (block) =>
+        block.kind === "assistantText" &&
+        block.segment.message.id === finalMessageId,
+    );
+    const postFinalIndex =
+      finalAnswerIndex >= 0
+        ? blocks.findIndex(
+            (block, index) =>
+              index > finalAnswerIndex &&
+              block.kind === "assistantText" &&
+              block.segment.message.id !== finalMessageId,
+          )
+        : -1;
+    const finalBlocks =
+      finalAnswerIndex >= 0
+        ? blocks.slice(
+            finalAnswerIndex,
+            postFinalIndex >= 0 ? postFinalIndex : blocks.length,
+          )
+        : [
+            {
+              kind: "assistantText" as const,
+              id: ctx.finalAnswer.id,
+              segment: ctx.finalAnswer,
+            },
+          ];
+    const blocksBeforeFinal =
+      finalAnswerIndex >= 0 ? blocks.slice(0, finalAnswerIndex) : blocks;
+    const blocksAfterFinal =
+      postFinalIndex >= 0 ? blocks.slice(postFinalIndex) : [];
+    const visibleProcessSurfaceBlocks = blocksBeforeFinal.filter(
+      (block) => block.kind === "teamMarker",
+    );
+    const processBlocks = blocksBeforeFinal.filter(
+      (block) => block.kind !== "teamMarker",
+    );
+    const postFinalBlocks = blocksAfterFinal;
+    const { children: processChildren, firstTextIso } =
+      buildInterleavedBlockNodes(processBlocks, {
+        ...ctx,
+        inlineStreamingContent: null,
+        persistedBlockCount: processBlocks.length,
+        showFinalThinkingIndicator: false,
+      });
+    const { children: processSurfaceChildren } = buildInterleavedBlockNodes(
+      visibleProcessSurfaceBlocks,
+      {
+        ...ctx,
+        inlineStreamingContent: null,
+        persistedBlockCount: visibleProcessSurfaceBlocks.length,
+        showFinalThinkingIndicator: false,
+      },
+    );
+    const { children: finalChildren } = buildInterleavedBlockNodes(finalBlocks, {
+      ...ctx,
+      inlineStreamingContent: null,
+      persistedBlockCount: finalBlocks.length,
+      showFinalThinkingIndicator: false,
+    });
+    const { children: postFinalChildren } = buildInterleavedBlockNodes(
+      postFinalBlocks,
+      {
+        ...ctx,
+        inlineStreamingContent: null,
+        persistedBlockCount: postFinalBlocks.length,
+        showFinalThinkingIndicator: false,
+      },
+    );
+    const visibleProcessChildren = processChildren.filter(Boolean);
+    const visibleProcessSurfaceChildren =
+      processSurfaceChildren.filter(Boolean);
+    const visibleFinalChildren = finalChildren.filter(Boolean);
+    const visiblePostFinalChildren = postFinalChildren.filter(Boolean);
+
+    return (
+      <ChatRow
+        role="assistant"
+        name={ctx.assistantName}
+        avatarUrl={ctx.assistantLogo}
+        timestamp={firstTextIso ?? ctx.aiAnchorIso ?? undefined}
+      >
+        {visibleProcessChildren.length > 0 ? (
+          <CompletedProcessCollapse toolGroup={ctx.toolGroup}>
+            {visibleProcessChildren}
+          </CompletedProcessCollapse>
+        ) : null}
+        {visibleProcessSurfaceChildren}
+        {visibleFinalChildren}
+        {visiblePostFinalChildren}
+      </ChatRow>
+    );
+  }
+
+  function buildInterleavedBlockNodes(
+    blocks: RenderTurnBlock[],
+    ctx: InterleavedRenderCtx,
+  ): { children: ReactNode[]; firstTextIso: string | null } {
     const firstTextIso =
       blocks.find(
         (b): b is Extract<RenderTurnBlock, { kind: "assistantText" }> =>
@@ -739,14 +896,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           <ToolReceiptBlock key={b.id} receipt={b.receipt} step={b.step} />
         );
       }
-      if (b.kind === "suggestions") {
-        return (
-          <SuggestChipGroup
-            key={`sug-${idx}`}
-            items={b.suggestions.map((s) => ({ label: s, onClick: () => {} }))}
-          />
-        );
-      }
+      if (b.kind === "suggestions") return null;
       if (b.kind === "teamMarker") {
         if (!ctx.teamSession) return null;
         return (
@@ -799,7 +949,9 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
 
     const splitAt = Math.min(ctx.persistedBlockCount, blocks.length);
 
-    // 不再按 turn 完成与否折叠"过程"——所有 blocks 按时序统一展开渲染：
+    // 默认不按 turn 完成与否折叠"过程"——所有 blocks 按时序统一展开渲染。
+    // 完成态折叠会把最终普通回复之前的过程 nodes 放进 CompletedProcessCollapse，
+    // 并把最终普通回复单独展示在折叠过程之后。
     // - persisted 段（已落盘）走 walkAndGroup（连续 toolStep 合并）
     // - inline StreamingBubble 紧贴 persisted 渲染流式 text（suppressIndicator
     //   关掉自带 typing，避免和末尾 placeholder 重复）
@@ -830,19 +982,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         />
       ) : null,
     ];
-
-    // TeamProgressBlock 现在通过 'teamMarker' block 在 children 内联渲染（按
-    // TeamCreate 在消息序列中的自然位置）。聚合模式下仍由 ChatRow 之前的
-    // 独立分支渲染，与历史行为一致。
-    return (
-      <ChatRow
-        role="assistant"
-        name={ctx.assistantName}
-        avatarUrl={ctx.assistantLogo}
-        timestamp={firstTextIso ?? undefined}
-      >
-        {children}
-      </ChatRow>
-    );
+    return { children, firstTextIso };
   }
 }

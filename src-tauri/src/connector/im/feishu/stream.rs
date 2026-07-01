@@ -530,6 +530,7 @@ pub(crate) fn parse_im_message(event: &serde_json::Value) -> Option<ChannelMessa
 
     Some(ChannelMessage {
         msg_id,
+        native_message_id: None,
         conversation_type,
         // For both group and private chats, downstream code expects the
         // conversation_key (= router external_id) to identify the target chat.

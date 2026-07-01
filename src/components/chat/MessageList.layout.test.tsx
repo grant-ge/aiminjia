@@ -1,9 +1,9 @@
 import '@testing-library/jest-dom'
-import { render } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/hooks/useTurnRenderModel', () => ({
-  useTurnRenderModel: () => [
+const turnsMock = vi.hoisted(() => ({
+  value: [
     {
       peerBanners: [],
       userMessage: null,
@@ -13,7 +13,11 @@ vi.mock('@/hooks/useTurnRenderModel', () => ({
       generatedFiles: [],
       suggestions: [],
     },
-  ],
+  ] as Array<Record<string, unknown>>,
+}))
+
+vi.mock('@/hooks/useTurnRenderModel', () => ({
+  useTurnRenderModel: () => turnsMock.value,
 }))
 
 vi.mock('@/hooks/useTeamOverview', () => ({
@@ -51,6 +55,20 @@ vi.mock('@/stores/chatStore', () => ({
 import { MessageList } from './MessageList'
 
 describe('MessageList layout', () => {
+  beforeEach(() => {
+    turnsMock.value = [
+      {
+        peerBanners: [],
+        userMessage: null,
+        teamMarker: { kind: 'create', toolCallId: 'tool-team' },
+        toolGroup: null,
+        aiSegments: [],
+        generatedFiles: [],
+        suggestions: [],
+      },
+    ]
+  })
+
   it('does not add horizontal padding inside the shared chat width container', () => {
     const { container } = render(<MessageList />)
     const root = container.firstElementChild
@@ -80,5 +98,41 @@ describe('MessageList layout', () => {
     const { container } = render(<MessageList expertTeamId="marketing" />)
 
     expect(container.querySelector('img[src="/expert-avatars/marketing/品牌负责人.svg"]')).toBeInTheDocument()
+  })
+
+  it('renders employee dispatch prompts as ordinary user bubble content', () => {
+    turnsMock.value = [
+      {
+        peerBanners: [],
+        userMessage: {
+          id: 'dispatch-user',
+          text: [
+            '你现在是「小工」（技术支持）。',
+            '负责处理技术支持请求。',
+            '',
+            '[按需派活]',
+            '帮我看一下集成问题',
+            '',
+            '【本次工作配置】',
+            '- 默认技能：tech-support',
+            '',
+            '请立即开始按职责执行，不要等待用户额外指示。',
+          ].join('\n'),
+          createdAt: '2026-06-25T00:00:00.000Z',
+        },
+        teamMarker: null,
+        toolGroup: null,
+        aiSegments: [],
+        generatedFiles: [],
+        suggestions: [],
+      },
+    ]
+
+    render(<MessageList />)
+
+    expect(screen.getByTestId('user-bubble')).toBeInTheDocument()
+    expect(screen.getByText(/你现在是「小工」（技术支持）。/)).toBeInTheDocument()
+    expect(screen.getByText(/请立即开始按职责执行/)).toBeInTheDocument()
+    expect(screen.queryByText(/派活给 小工/)).not.toBeInTheDocument()
   })
 })

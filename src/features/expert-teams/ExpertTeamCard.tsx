@@ -35,7 +35,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
       data-aijia-expert-team-name={team.name}
       onClick={() => onStart(team.id)}
       aria-label={t('ExpertTeams.openTeamDetail', { name: team.name })}
-      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-border/50 bg-card p-3 text-left text-card-foreground shadow-[0_1px_3px_rgba(0,0,0,0.035)] transition-all hover:border-border/70 hover:bg-muted/20"
+      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-[rgba(var(--border-rgb),0.50)] bg-card p-3 text-left text-card-foreground shadow-[0_1px_3px_rgba(0,0,0,0.035)] transition-all hover:border-[rgba(var(--border-rgb),0.70)] hover:bg-[rgba(var(--muted-rgb),0.20)]"
     >
       <div className="flex min-w-0 items-start gap-3">
         <ExpertTeamAvatarStack team={team} />

@@ -61,11 +61,11 @@ export function ExpertTeamDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(86vh,calc(100vh-32px))] w-[calc(100vw-32px)] max-w-[680px] gap-0 overflow-hidden rounded-md border-border/70 p-0 shadow-[0_18px_52px_rgba(15,23,42,0.18)]" data-aijia-expert-team-detail>
+      <DialogContent className="max-h-[min(86vh,calc(100vh-32px))] w-[calc(100vw-32px)] max-w-[680px] gap-0 overflow-hidden rounded-md border-[rgba(var(--border-rgb),0.70)] p-0 shadow-[0_18px_52px_rgba(15,23,42,0.18)]" data-aijia-expert-team-detail>
         <DialogTitle className="sr-only">{team.name}</DialogTitle>
         <DialogDescription className="sr-only">{description}</DialogDescription>
         <div className="flex max-h-[min(86vh,calc(100vh-32px))] flex-col overflow-hidden">
-          <div className="flex items-start gap-4 border-b border-border/70 bg-card px-5 py-5 pr-14" data-aijia-expert-team-detail-chrome>
+          <div className="flex items-start gap-4 border-b border-[rgba(var(--border-rgb),0.70)] bg-card px-5 py-5 pr-14" data-aijia-expert-team-detail-chrome>
             <ExpertTeamAvatarStack team={team} size="lg" />
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -98,7 +98,7 @@ export function ExpertTeamDetailDialog({
               <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('ExpertTeams.detail.overview')}</h3>
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {meta.map((item) => (
-                  <div key={item.label} className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2">
+                  <div key={item.label} className="rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-[rgba(var(--muted-rgb),0.20)] px-2.5 py-2">
                     <span className="block text-xs leading-4 text-muted-foreground">{item.label}</span>
                     <span className="mt-1 block truncate text-xs font-semibold leading-5 text-foreground">{item.value}</span>
                   </div>
@@ -113,8 +113,8 @@ export function ExpertTeamDetailDialog({
                   {team.experts.map((expert) => {
                     const avatarVisual = getExpertAvatarVisual(team.id, expert)
                     return (
-                      <div key={expert.name} className="flex items-start gap-3 rounded-md border border-border/70 bg-card px-2.5 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/40">
+                      <div key={expert.name} className="flex items-start gap-3 rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card px-2.5 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[rgba(var(--muted-rgb),0.40)]">
                           <ExpertAvatarView
                             visual={avatarVisual}
                             fallback={expert.emoji || Array.from(expert.name)[0]}
@@ -132,7 +132,7 @@ export function ExpertTeamDetailDialog({
                   })}
                 </div>
               ) : (
-                <div className="mt-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+                <div className="mt-2 rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-[rgba(var(--muted-rgb),0.20)] px-3 py-2.5 text-xs leading-5 text-muted-foreground">
                   {t('ExpertTeams.directorInvites')}
                 </div>
               )}
@@ -142,14 +142,14 @@ export function ExpertTeamDetailDialog({
               <h3 className="text-xs font-semibold leading-4 text-muted-foreground">{t('ExpertTeams.detail.examples')}</h3>
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {team.examples.map((example) => (
-                  <div key={example} className="rounded-md border border-border/70 bg-card px-3 py-2.5 text-xs leading-5 text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                  <div key={example} className="rounded-md border border-[rgba(var(--border-rgb),0.70)] bg-card px-3 py-2.5 text-xs leading-5 text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
                     {example}
                   </div>
                 ))}
               </div>
             </section>
           </div>
-          <div className="flex shrink-0 justify-end gap-2 border-t border-border/70 bg-card px-5 py-3">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-[rgba(var(--border-rgb),0.70)] bg-card px-5 py-3">
             <Button
               type="button"
               loading={busy}

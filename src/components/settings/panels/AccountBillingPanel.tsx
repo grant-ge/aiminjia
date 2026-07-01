@@ -4,7 +4,6 @@ import { Wallet, RefreshCw, Search, X } from 'lucide-react'
 
 import { useBillingStore } from '@/stores/billingStore'
 import type { BillingRangePreset } from '@/stores/billingStore'
-import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatTokenCount } from '@/lib/format'
@@ -39,10 +38,6 @@ const RANGE_PRESETS: BillingRangePreset[] = [
 
 export function AccountBillingPanel() {
   const { t } = useTranslation()
-  const tenant = useAuthStore((s) => s.tenant)
-  const isEnterpriseTenant = tenant?.tenantType === 'enterprise'
-  const isPersonalTenant = !isEnterpriseTenant
-  const usageScope = isEnterpriseTenant ? 'enterprise' : 'personal'
   const summary = useBillingStore((s) => s.summary)
   const records = useBillingStore((s) => s.records)
   const rangeSummary = useBillingStore((s) => s.rangeSummary)
@@ -67,12 +62,8 @@ export function AccountBillingPanel() {
   }, [filters.requestType, setRecordFilters])
 
   useEffect(() => {
-    if (isPersonalTenant) {
-      void refresh()
-    } else {
-      void fetchRecords(1, usageScope)
-    }
-  }, [fetchRecords, isPersonalTenant, refresh, usageScope])
+    void refresh()
+  }, [refresh])
 
   useEffect(() => {
     setModelNameDraft(filters.modelName ?? '')
@@ -88,17 +79,17 @@ export function AccountBillingPanel() {
 
   const handleRangePreset = (preset: BillingRangePreset) => {
     setRangePreset(preset)
-    void fetchRecords(1, usageScope)
+    void fetchRecords(1)
   }
 
   const handleStartDateChange = (startDate: string) => {
     setCustomRange(startDate, filters.endDate)
-    void fetchRecords(1, usageScope)
+    void fetchRecords(1)
   }
 
   const handleEndDateChange = (endDate: string) => {
     setCustomRange(filters.startDate, endDate)
-    void fetchRecords(1, usageScope)
+    void fetchRecords(1)
   }
 
   const handleSearch = () => {
@@ -106,21 +97,17 @@ export function AccountBillingPanel() {
       requestType: null,
       modelName: modelNameDraft.trim() || null,
     })
-    void fetchRecords(1, usageScope)
+    void fetchRecords(1)
   }
 
   const handleClearSearch = () => {
     setModelNameDraft('')
     setRecordFilters({ requestType: null, modelName: null })
-    void fetchRecords(1, usageScope)
+    void fetchRecords(1)
   }
 
   const handleRefresh = () => {
-    if (isPersonalTenant) {
-      void refresh()
-    } else {
-      void fetchRecords(pagination.page, usageScope)
-    }
+    void refresh()
   }
 
   return (
@@ -135,36 +122,33 @@ export function AccountBillingPanel() {
           onClick={handleRefresh}
           disabled={loadingSummary || loadingRecords}
           aria-label="refresh"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+          icon={<RefreshCw className="h-4 w-4" />}
+        />
       </div>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-        {isPersonalTenant && (
-          <div className="rounded-md border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">
-              {t('settings.billing.balance')}
-            </div>
-            <div
-              className={`mt-1 text-2xl font-semibold ${
-                balanceNum < 0 ? 'text-destructive' : 'text-foreground'
-              }`}
-            >
-              {summary ? formatCurrency(summary.balance) : t('settings.billing.unavailableValue')}
-            </div>
-            {showBonus && (
-              <div className="mt-1 text-xs text-muted-foreground">
-                {t('settings.billing.bonusHint')}
-              </div>
-            )}
-            {summaryError && (
-              <div className="mt-1 text-xs text-muted-foreground">
-                {t('settings.billing.summaryUnavailable')}
-              </div>
-            )}
+        <div className="rounded-md border border-border bg-card p-4">
+          <div className="text-xs text-muted-foreground">
+            {t('settings.billing.balance')}
           </div>
-        )}
+          <div
+            className={`mt-1 text-2xl font-semibold ${
+              balanceNum < 0 ? 'text-destructive' : 'text-foreground'
+            }`}
+          >
+            {summary ? formatCurrency(summary.balance) : t('settings.billing.unavailableValue')}
+          </div>
+          {showBonus && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              {t('settings.billing.bonusHint')}
+            </div>
+          )}
+          {summaryError && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              {t('settings.billing.summaryUnavailable')}
+            </div>
+          )}
+        </div>
         <div className="rounded-md border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground">
             {t('settings.billing.rangeCost')}
@@ -281,9 +265,9 @@ export function AccountBillingPanel() {
           </div>
         </div>
         {recordsError && !loadingRecords ? (
-          <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground flex items-center justify-between gap-3">
+          <div className="rounded-md border border-border bg-[rgba(var(--muted-rgb),0.30)] px-3 py-2 text-sm text-muted-foreground flex items-center justify-between gap-3">
             <span>{t('settings.billing.recordsUnavailable')}</span>
-            <Button variant="ghost" size="sm" onClick={() => void fetchRecords(pagination.page, usageScope)}>
+            <Button variant="ghost" size="sm" onClick={() => void fetchRecords(pagination.page)}>
               {t('settings.billing.retry')}
             </Button>
           </div>
@@ -299,9 +283,6 @@ export function AccountBillingPanel() {
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-normal">
                     {t('settings.billing.cols.time')}
-                  </th>
-                  <th className="py-2 pr-3 font-normal">
-                    {t('settings.billing.cols.model')}
                   </th>
                   <th className="py-2 pr-3 text-right font-normal">
                     {t('settings.billing.cols.inputTokens')}
@@ -324,12 +305,9 @@ export function AccountBillingPanel() {
                 {records.map((r) => {
                   const recordTokens = r.input_tokens + r.output_tokens + r.cached_tokens
                   return (
-                    <tr key={r.id} className="border-b border-border/50">
+                    <tr key={r.id} className="border-b border-[rgba(var(--border-rgb),0.50)]">
                       <td className="py-2 pr-3 text-foreground">
                         {formatDate(r.created_at)}
-                      </td>
-                      <td className="max-w-[180px] truncate py-2 pr-3 text-muted-foreground" title={r.model_name}>
-                        {r.model_name || '-'}
                       </td>
                       <td className="py-2 pr-3 text-right text-muted-foreground" title={formatCount(r.input_tokens)}>
                         {formatTokenCount(r.input_tokens)}
@@ -359,7 +337,7 @@ export function AccountBillingPanel() {
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => void fetchRecords(Math.max(1, pagination.page - 1), usageScope)}
+              onClick={() => void fetchRecords(Math.max(1, pagination.page - 1))}
               disabled={loadingRecords || pagination.page <= 1}
             >
               {t('settings.billing.prevPage')}
@@ -373,7 +351,7 @@ export function AccountBillingPanel() {
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => void fetchRecords(Math.min(totalPages, pagination.page + 1), usageScope)}
+              onClick={() => void fetchRecords(Math.min(totalPages, pagination.page + 1))}
               disabled={loadingRecords || pagination.page >= totalPages}
             >
               {t('settings.billing.nextPage')}

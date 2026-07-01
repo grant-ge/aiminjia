@@ -10,12 +10,12 @@ $TauriDir = Join-Path $RepoRoot "src-tauri"
 
 Push-Location $TauriDir
 try {
-    cargo build --release --bin aijia-cli
+    cargo build --release --example aijia-cli
 } finally {
     Pop-Location
 }
 
-$ExePath = Join-Path $TauriDir "target\release\aijia-cli.exe"
+$ExePath = Join-Path $TauriDir "target\release\examples\aijia-cli.exe"
 $ShortExePath = Join-Path $InstallDir "aijia.exe"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $runningCliProcesses = Get-Process -Name aijia -ErrorAction SilentlyContinue | Where-Object {

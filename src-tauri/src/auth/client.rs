@@ -16,7 +16,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::state::{CloudModelInfo, TenantInfo, UserInfo};
+use super::state::{default_user_role, CloudModelInfo, TenantInfo, UserInfo};
 
 /// Gateway origin for all auth/billing endpoints. Resolves to the production
 /// host in release builds; in debug builds it honors the dev environment
@@ -45,6 +45,8 @@ pub struct AuthUserInfo {
     pub name: String,
     #[serde(default)]
     pub username: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 /// Tenant info as returned by the login/refresh API (snake_case, superset of fields).
@@ -78,6 +80,10 @@ impl From<AuthUserInfo> for UserInfo {
             id: u.id,
             name: u.name,
             username: u.username.unwrap_or_default(),
+            role: u
+                .role
+                .filter(|role| !role.trim().is_empty())
+                .unwrap_or_else(default_user_role),
         }
     }
 }
@@ -638,5 +644,39 @@ fn localize_error(msg: &str) -> &str {
         "invalid email format" | "Invalid email format" => "邮箱格式不正确",
         "Personal account not registered" => "该手机号/邮箱尚未注册个人账号，请先注册",
         _ => msg,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_user_info_preserves_role_for_persisted_user() {
+        let raw = serde_json::json!({
+            "id": 26,
+            "name": "Admin User",
+            "username": "admin@example.com",
+            "role": "admin"
+        });
+
+        let auth_user: AuthUserInfo = serde_json::from_value(raw).expect("valid auth user");
+        let user: UserInfo = auth_user.into();
+
+        assert_eq!(user.role, "admin");
+    }
+
+    #[test]
+    fn auth_user_info_defaults_missing_role_to_member() {
+        let raw = serde_json::json!({
+            "id": 27,
+            "name": "Member User",
+            "username": "member@example.com"
+        });
+
+        let auth_user: AuthUserInfo = serde_json::from_value(raw).expect("valid auth user");
+        let user: UserInfo = auth_user.into();
+
+        assert_eq!(user.role, "member");
     }
 }

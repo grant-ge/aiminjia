@@ -100,7 +100,13 @@ function safeAuthRedirect(route?: Route): Route | null {
   return route
 }
 
+function logUserRole(info: CloudAuthInfo) {
+  if (!info.user) return
+  console.info('[auth] user role:', info.user.role ?? 'member')
+}
+
 function mapAuthState(info: CloudAuthInfo, models: CloudModel[]) {
+  logUserRole(info)
   const selectedCloudModel = models[0]?.id ?? info.models[0]?.id ?? null
   return {
     isLoggedIn: info.loggedIn,

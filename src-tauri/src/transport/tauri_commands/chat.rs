@@ -4770,7 +4770,10 @@ impl TauriChatCommandAdapter {
                 .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
                 .map(|store| store.inner().clone()),
             skill_market_install_roots: None,
-            authorized_workspace: None,
+            authorized_workspace: chat_runtime_impl::load_authorized_workspace(
+                &self.services.app,
+                &conversation_id,
+            ),
             read_file_state: None,
             cancellation: None,
             permission_mode: request.permission_mode,
@@ -5468,8 +5471,8 @@ impl TauriChatCommandAdapter {
         Ok(out)
     }
 
-    /// Fire-and-forget: 触发对话标题自动生成。先尝试 LLM 总结 user 首句，
-    /// 失败则兜底到 user 首句字面截断。idempotent guard 由 should_auto_title
+    /// Fire-and-forget: 触发对话标题自动生成。先尝试 LLM 总结第一条 user 消息，
+    /// 失败或返回不合规则保持默认标题。idempotent guard 由 should_auto_title
     /// + generate_and_set_title 内部 title=="新对话" 双重检查保证。
     async fn spawn_auto_title(&self, conversation_id: String, delay_ms: u64) {
         if !try_mark_auto_title_inflight(&conversation_id) {
