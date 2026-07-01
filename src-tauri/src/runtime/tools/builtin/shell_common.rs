@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
@@ -18,6 +19,8 @@ use crate::telemetry::{
 };
 
 pub const MAX_OUTPUT_BYTES: usize = 512 * 1024;
+pub const FOREGROUND_READER_DRAIN_TIMEOUT: Duration = Duration::from_millis(1500);
+pub const TERMINATED_READER_DRAIN_TIMEOUT: Duration = Duration::from_millis(750);
 
 pub struct OptionalTranscriptTarget {
     path: PathBuf,
@@ -67,6 +70,38 @@ pub enum ExitKind {
     Completed(std::process::ExitStatus),
     TimedOut,
     Cancelled(Option<CancellationReason>),
+}
+
+#[derive(Debug, Clone)]
+pub struct ReaderCollection {
+    pub output: String,
+    pub truncated: bool,
+    pub stream_timed_out: bool,
+    pub reader_aborted: bool,
+}
+
+#[derive(Clone, Default)]
+pub struct ReaderSnapshot(Arc<Mutex<Vec<u8>>>);
+
+impl ReaderSnapshot {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, bytes: &[u8]) {
+        *self.0.lock().expect("reader snapshot poisoned") = bytes.to_vec();
+    }
+
+    pub fn get(&self) -> Vec<u8> {
+        self.0.lock().expect("reader snapshot poisoned").clone()
+    }
+}
+
+pub fn reader_drain_timeout(exit_kind: &ExitKind) -> Duration {
+    match exit_kind {
+        ExitKind::Completed(_) => FOREGROUND_READER_DRAIN_TIMEOUT,
+        ExitKind::TimedOut | ExitKind::Cancelled(_) => TERMINATED_READER_DRAIN_TIMEOUT,
+    }
 }
 
 pub fn base_command(command: &str) -> &str {
@@ -156,6 +191,24 @@ pub fn content_from_output(output: &str, semantic_message: Option<&str>) -> Stri
         semantic_message.unwrap_or("").to_string()
     } else {
         output.to_string()
+    }
+}
+
+pub fn append_reader_fallback_notice(content: String, reader: &ReaderCollection) -> String {
+    if !reader.stream_timed_out && !reader.reader_aborted {
+        return content;
+    }
+
+    let notice = "[系统提示] 命令主进程已结束，但 stdout/stderr 输出管道在短时间内没有关闭。\
+常见原因是命令启动的子进程继承了输出管道，例如浏览器、登录进程或后台 helper。\
+系统已停止等待后续输出，以避免当前对话卡住；上面的输出可能不完整。\
+当前没有注册后台 task_id，因此无法用 TaskOutput 继续追踪。\
+如果你需要持续追踪后续输出，请重新用 run_in_background=true 启动命令。";
+
+    if content.trim().is_empty() {
+        notice.to_string()
+    } else {
+        format!("{content}\n\n{notice}")
     }
 }
 
@@ -355,6 +408,37 @@ pub async fn collect_reader(
         crate::storage::console_decode::decode_console_bytes(&bytes),
         truncated,
     ))
+}
+
+pub async fn collect_reader_bounded(
+    handle: JoinHandle<std::io::Result<(Vec<u8>, bool)>>,
+    snapshot: ReaderSnapshot,
+    timeout: Duration,
+) -> Result<ReaderCollection, ToolError> {
+    let mut handle = handle;
+    match tokio::time::timeout(timeout, &mut handle).await {
+        Ok(joined) => {
+            let (bytes, truncated) = joined
+                .map_err(|e| ToolError::ExecutionFailed(format!("reader task failed: {e}")))?
+                .map_err(|e| ToolError::ExecutionFailed(format!("stream read failed: {e}")))?;
+            Ok(ReaderCollection {
+                output: crate::storage::console_decode::decode_console_bytes(&bytes),
+                truncated,
+                stream_timed_out: false,
+                reader_aborted: false,
+            })
+        }
+        Err(_) => {
+            handle.abort();
+            let bytes = snapshot.get();
+            Ok(ReaderCollection {
+                output: crate::storage::console_decode::decode_console_bytes(&bytes),
+                truncated: bytes.len() >= MAX_OUTPUT_BYTES,
+                stream_timed_out: true,
+                reader_aborted: true,
+            })
+        }
+    }
 }
 
 /// Inject the managed runtime env patch into a child shell so bare
@@ -566,8 +650,11 @@ pub async fn kill_child_process_tree(child: &mut Child) {
 
 #[cfg(test)]
 mod progress_helpers_tests {
-    use super::{read_merged_streams_with_progress, tail_n_lines};
+    use super::{
+        collect_reader_bounded, read_merged_streams_with_progress, tail_n_lines, ReaderSnapshot,
+    };
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     #[test]
     fn tail_n_lines_returns_full_string_when_under_limit() {
@@ -618,5 +705,23 @@ mod progress_helpers_tests {
         }
         // Final total ≥ sum of input lengths (6 + 6 = 12).
         assert!(prev_total >= 12);
+    }
+
+    #[tokio::test]
+    async fn collect_reader_bounded_returns_snapshot_on_timeout() {
+        let snapshot = ReaderSnapshot::new();
+        snapshot.set(b"partial-output");
+        let handle = tokio::spawn(async {
+            std::future::pending::<std::io::Result<(Vec<u8>, bool)>>().await
+        });
+
+        let result = collect_reader_bounded(handle, snapshot, Duration::from_millis(10))
+            .await
+            .unwrap();
+
+        assert_eq!(result.output, "partial-output");
+        assert!(!result.truncated);
+        assert!(result.stream_timed_out);
+        assert!(result.reader_aborted);
     }
 }

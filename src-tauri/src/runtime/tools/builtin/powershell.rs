@@ -8,7 +8,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
@@ -24,11 +24,12 @@ use crate::storage::process_ext::NoWindowExt;
 
 use super::powershell_detect::{detect, PowerShellEdition, PowerShellLocation};
 use super::shell_common::{
-    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, inject_managed_runtime_env, inject_trace_env, interpret_command_result,
+    append_reader_fallback_notice, collect_reader_bounded, content_from_output,
+    emit_shell_failure_diagnostic, format_cancel_message, format_command_failure,
+    inject_managed_runtime_env, inject_trace_env, interpret_command_result,
     kill_child_process_tree, optional_transcript_path,
-    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes, ExitKind,
-    MAX_OUTPUT_BYTES,
+    read_merged_streams_with_progress_and_optional_transcript, reader_drain_timeout,
+    truncated_to_max_bytes, ExitKind, ReaderSnapshot, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -622,16 +623,14 @@ impl RuntimeTool for PowerShellTool {
         }
         let transcript_switch = optional_transcript_path();
         let transcript_switch_for_reader = transcript_switch.clone();
-        let captured_snapshot = Arc::new(Mutex::new(Vec::new()));
+        let captured_snapshot = ReaderSnapshot::new();
         let captured_snapshot_for_reader = captured_snapshot.clone();
         let merged_handle =
             tokio::spawn(read_merged_streams_with_progress_and_optional_transcript(
                 stdout,
                 stderr,
                 move |captured, _| {
-                    *captured_snapshot_for_reader
-                        .lock()
-                        .expect("powershell captured snapshot poisoned") = captured.to_vec();
+                    captured_snapshot_for_reader.set(captured);
                 },
                 Some(transcript_switch_for_reader),
             ));
@@ -676,10 +675,7 @@ impl RuntimeTool for PowerShellTool {
                 let remaining_timeout_secs = timeout_secs
                     .saturating_sub(auto_background_after_secs.unwrap_or(timeout_secs))
                     .max(1);
-                let pre_background_output = captured_snapshot
-                    .lock()
-                    .expect("powershell captured snapshot poisoned")
-                    .clone();
+                let pre_background_output = captured_snapshot.get();
                 return super::shell_task::launch_auto_backgrounded_shell_task(
                     "PowerShell",
                     "powershell",
@@ -690,6 +686,7 @@ impl RuntimeTool for PowerShellTool {
                     background,
                     child,
                     merged_handle,
+                    captured_snapshot,
                     transcript_switch,
                     pre_background_output,
                 );
@@ -697,10 +694,15 @@ impl RuntimeTool for PowerShellTool {
             ForegroundControl::Exit(exit_kind) => exit_kind,
         };
 
-        let (combined_output, stream_truncated) = collect_reader(merged_handle).await?;
+        let reader = collect_reader_bounded(
+            merged_handle,
+            captured_snapshot,
+            reader_drain_timeout(&exit_kind),
+        )
+        .await?;
         let (combined_output, combined_truncated) =
-            truncated_to_max_bytes(&combined_output, MAX_OUTPUT_BYTES);
-        let truncated = stream_truncated || combined_truncated;
+            truncated_to_max_bytes(&reader.output, MAX_OUTPUT_BYTES);
+        let truncated = reader.truncated || combined_truncated;
 
         match exit_kind {
             ExitKind::Completed(status) => {
@@ -723,7 +725,10 @@ impl RuntimeTool for PowerShellTool {
                     )));
                 }
 
-                let content = content_from_output(&combined_output, semantics.message);
+                let content = append_reader_fallback_notice(
+                    content_from_output(&combined_output, semantics.message),
+                    &reader,
+                );
                 Ok(tool_result_powershell(
                     content,
                     json!({
@@ -731,6 +736,8 @@ impl RuntimeTool for PowerShellTool {
                         "exit_code": exit_code,
                         "stdout_stderr": combined_output,
                         "truncated": truncated,
+                        "stream_timed_out": reader.stream_timed_out,
+                        "reader_aborted": reader.reader_aborted,
                         "semantic_message": semantics.message,
                         "shell_path": location.path.display().to_string(),
                         "edition": format!("{:?}", location.edition),

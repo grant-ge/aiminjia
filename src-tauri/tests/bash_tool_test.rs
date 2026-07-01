@@ -215,6 +215,39 @@ async fn bash_returns_error_on_timeout() {
 }
 
 #[tokio::test]
+async fn bash_does_not_wait_for_inherited_pipe_after_parent_exits() {
+    let tmp = TempDir::new().unwrap();
+    let ctx = make_ctx(&tmp);
+
+    let tool = BashTool::default();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_millis(2500),
+        tool.execute(
+            json!({
+                "command": "(sh -c 'sleep 5' &); printf 'aijia-inherited-pipe-parent\\n'",
+                "timeout": 1000
+            }),
+            ctx,
+        ),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "BashTool should not wait for inherited stdout/stderr handles after the parent exits"
+    );
+    let result = result.unwrap().unwrap();
+    assert!(
+        result.content.contains("aijia-inherited-pipe-parent"),
+        "parent output should be preserved: {}",
+        result.content
+    );
+    let data = result.data.expect("Bash result should include data");
+    assert_eq!(data["stream_timed_out"], json!(true));
+    assert_eq!(data["reader_aborted"], json!(true));
+}
+
+#[tokio::test]
 async fn bash_timeout_kills_descendant_processes() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);

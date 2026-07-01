@@ -21,11 +21,12 @@ use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
 
 use super::shell_common::{
-    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, inject_managed_runtime_env, inject_trace_env, interpret_command_result,
+    append_reader_fallback_notice, collect_reader_bounded, content_from_output,
+    emit_shell_failure_diagnostic, format_cancel_message, format_command_failure,
+    inject_managed_runtime_env, inject_trace_env, interpret_command_result,
     kill_child_process_tree, optional_transcript_path,
-    read_merged_streams_with_progress_and_optional_transcript, tail_n_lines,
-    truncated_to_max_bytes, ExitKind, MAX_OUTPUT_BYTES,
+    read_merged_streams_with_progress_and_optional_transcript, reader_drain_timeout, tail_n_lines,
+    truncated_to_max_bytes, ExitKind, ReaderSnapshot, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -857,6 +858,8 @@ impl RuntimeTool for BashTool {
         // the throttler to stop (Err on `changed()`).
         let transcript_switch = optional_transcript_path();
         let transcript_switch_for_reader = transcript_switch.clone();
+        let reader_snapshot = ReaderSnapshot::new();
+        let reader_snapshot_for_reader = reader_snapshot.clone();
         let merged_handle = tokio::spawn(async move {
             read_merged_streams_with_progress_and_optional_transcript(
                 stdout,
@@ -866,6 +869,7 @@ impl RuntimeTool for BashTool {
                     // see the latest value on their next poll. We clone the buffer
                     // because the read loop owns it — keeping a borrow alive across
                     // an await point is not possible inside the callback.
+                    reader_snapshot_for_reader.set(captured);
                     let _ = progress_tx.send((captured.to_vec(), total));
                 },
                 Some(transcript_switch_for_reader),
@@ -927,6 +931,7 @@ impl RuntimeTool for BashTool {
                     background,
                     child,
                     merged_handle,
+                    reader_snapshot,
                     transcript_switch,
                     pre_background_output,
                 );
@@ -934,10 +939,15 @@ impl RuntimeTool for BashTool {
             ForegroundControl::Exit(exit_kind) => exit_kind,
         };
 
-        let (combined_output, stream_truncated) = collect_reader(merged_handle).await?;
+        let reader = collect_reader_bounded(
+            merged_handle,
+            reader_snapshot,
+            reader_drain_timeout(&exit_kind),
+        )
+        .await?;
         let (combined_output, combined_truncated) =
-            truncated_to_max_bytes(&combined_output, MAX_OUTPUT_BYTES);
-        let truncated = stream_truncated || combined_truncated;
+            truncated_to_max_bytes(&reader.output, MAX_OUTPUT_BYTES);
+        let truncated = reader.truncated || combined_truncated;
 
         // The merged_handle has finished — the watch sender it owned is now
         // dropped, so the throttler task will exit on its next `changed()`
@@ -973,7 +983,10 @@ impl RuntimeTool for BashTool {
                     )));
                 }
 
-                let content = content_from_output(&combined_output, semantics.message);
+                let content = append_reader_fallback_notice(
+                    content_from_output(&combined_output, semantics.message),
+                    &reader,
+                );
                 Ok(tool_result_bash(
                     content,
                     json!({
@@ -981,6 +994,8 @@ impl RuntimeTool for BashTool {
                         "exit_code": exit_code,
                         "stdout_stderr": combined_output,
                         "truncated": truncated,
+                        "stream_timed_out": reader.stream_timed_out,
+                        "reader_aborted": reader.reader_aborted,
                         "semantic_message": semantics.message,
                     }),
                 ))

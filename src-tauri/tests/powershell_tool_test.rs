@@ -12,6 +12,7 @@ use app_lib::runtime::tools::permission::PermissionDecision;
 use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Duration;
 use tempfile::TempDir;
 
 fn make_ctx(tmp: &TempDir) -> ToolExecutionContext {
@@ -114,6 +115,42 @@ async fn powershell_returns_error_on_timeout() {
         err.contains("timed out") || err.contains("timeout"),
         "should indicate timeout: {err}"
     );
+}
+
+#[tokio::test]
+async fn powershell_does_not_wait_for_inherited_pipe_after_parent_exits() {
+    let tmp = TempDir::new().unwrap();
+    let ctx = make_ctx(&tmp);
+    let command = r#"
+$exe = (Get-Process -Id $PID).Path
+$psi = [System.Diagnostics.ProcessStartInfo]::new($exe)
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $false
+$psi.RedirectStandardError = $false
+$psi.Arguments = '-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 5"'
+[System.Diagnostics.Process]::Start($psi) | Out-Null
+Write-Output 'aijia-inherited-pipe-parent'
+"#;
+
+    let result = tokio::time::timeout(
+        Duration::from_millis(2500),
+        PowerShellTool::default().execute(json!({ "command": command, "timeout": 1000 }), ctx),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "PowerShellTool should not wait for inherited stdout/stderr handles after the parent exits"
+    );
+    let result = result.unwrap().unwrap();
+    assert!(
+        result.content.contains("aijia-inherited-pipe-parent"),
+        "parent output should be preserved: {}",
+        result.content
+    );
+    let data = result.data.expect("PowerShell result should include data");
+    assert_eq!(data["stream_timed_out"], json!(true));
+    assert_eq!(data["reader_aborted"], json!(true));
 }
 
 #[tokio::test]

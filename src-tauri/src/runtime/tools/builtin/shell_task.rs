@@ -22,10 +22,11 @@ use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 
 use super::shell_common::{
-    append_transcript_bytes, collect_reader, content_from_output, emit_shell_failure_diagnostic,
-    enable_optional_transcript_path, format_cancel_message, format_command_failure,
-    interpret_command_result, kill_child_process_tree, truncated_to_max_bytes, ExitKind,
-    OptionalTranscriptPath, MAX_OUTPUT_BYTES,
+    append_transcript_bytes, collect_reader_bounded, content_from_output,
+    emit_shell_failure_diagnostic, enable_optional_transcript_path, format_cancel_message,
+    format_command_failure, interpret_command_result, kill_child_process_tree,
+    reader_drain_timeout, truncated_to_max_bytes, ExitKind, OptionalTranscriptPath, ReaderSnapshot,
+    MAX_OUTPUT_BYTES,
 };
 
 pub const LOCAL_SHELL_TASK_TYPE: &str = "local_bash";
@@ -108,12 +109,15 @@ pub fn launch_background_shell_task(
     let transcript_for_task = transcript_path.clone();
     let ctx_for_task = ctx.clone();
     let task_id_for_task = task_agent_id.clone();
+    let reader_snapshot = ReaderSnapshot::new();
+    let reader_snapshot_for_task = reader_snapshot.clone();
 
     tokio::spawn(async move {
         let reader = tokio::spawn(read_merged_streams_to_transcript(
             stdout,
             stderr,
             transcript_for_task.clone(),
+            reader_snapshot_for_task,
         ));
 
         let exit_kind = tokio::select! {
@@ -149,29 +153,32 @@ pub fn launch_background_shell_task(
             }
         };
 
-        let (combined_output, stream_truncated) = match collect_reader(reader).await {
-            Ok(value) => value,
-            Err(e) => {
-                let message = e.to_string();
-                finish_shell_task(
-                    &store,
-                    &notifications,
-                    &task_id_for_task,
-                    &transcript_for_task,
-                    &parent_session_id,
-                    parent_run_id.clone(),
-                    &parent_tool_use_id,
-                    "failed",
-                    &format!("Background command \"{description_for_task}\" failed"),
-                    Some(&message),
-                    true,
-                );
-                return;
-            }
-        };
+        let reader =
+            match collect_reader_bounded(reader, reader_snapshot, reader_drain_timeout(&exit_kind))
+                .await
+            {
+                Ok(value) => value,
+                Err(e) => {
+                    let message = e.to_string();
+                    finish_shell_task(
+                        &store,
+                        &notifications,
+                        &task_id_for_task,
+                        &transcript_for_task,
+                        &parent_session_id,
+                        parent_run_id.clone(),
+                        &parent_tool_use_id,
+                        "failed",
+                        &format!("Background command \"{description_for_task}\" failed"),
+                        Some(&message),
+                        true,
+                    );
+                    return;
+                }
+            };
         let (combined_output, combined_truncated) =
-            truncated_to_max_bytes(&combined_output, MAX_OUTPUT_BYTES);
-        let truncated = stream_truncated || combined_truncated;
+            truncated_to_max_bytes(&reader.output, MAX_OUTPUT_BYTES);
+        let truncated = reader.truncated || combined_truncated;
 
         match exit_kind {
             ExitKind::Completed(status) => {
@@ -295,6 +302,7 @@ pub fn launch_auto_backgrounded_shell_task(
     deps: ShellBackgroundDeps,
     mut child: Child,
     reader: JoinHandle<std::io::Result<(Vec<u8>, bool)>>,
+    reader_snapshot: ReaderSnapshot,
     transcript_switch: OptionalTranscriptPath,
     pre_background_output: Vec<u8>,
 ) -> Result<ToolResult, ToolError> {
@@ -391,29 +399,32 @@ pub fn launch_auto_backgrounded_shell_task(
             }
         };
 
-        let (combined_output, stream_truncated) = match collect_reader(reader).await {
-            Ok(value) => value,
-            Err(e) => {
-                let message = e.to_string();
-                finish_shell_task(
-                    &store,
-                    &notifications,
-                    &task_id_for_task,
-                    &transcript_for_task,
-                    &parent_session_id,
-                    parent_run_id.clone(),
-                    &parent_tool_use_id,
-                    "failed",
-                    &format!("Background command \"{description_for_task}\" failed"),
-                    Some(&message),
-                    true,
-                );
-                return;
-            }
-        };
+        let reader =
+            match collect_reader_bounded(reader, reader_snapshot, reader_drain_timeout(&exit_kind))
+                .await
+            {
+                Ok(value) => value,
+                Err(e) => {
+                    let message = e.to_string();
+                    finish_shell_task(
+                        &store,
+                        &notifications,
+                        &task_id_for_task,
+                        &transcript_for_task,
+                        &parent_session_id,
+                        parent_run_id.clone(),
+                        &parent_tool_use_id,
+                        "failed",
+                        &format!("Background command \"{description_for_task}\" failed"),
+                        Some(&message),
+                        true,
+                    );
+                    return;
+                }
+            };
         let (combined_output, combined_truncated) =
-            truncated_to_max_bytes(&combined_output, MAX_OUTPUT_BYTES);
-        let truncated = stream_truncated || combined_truncated;
+            truncated_to_max_bytes(&reader.output, MAX_OUTPUT_BYTES);
+        let truncated = reader.truncated || combined_truncated;
 
         match exit_kind {
             ExitKind::Completed(status) => {
@@ -585,6 +596,7 @@ async fn read_merged_streams_to_transcript<R1, R2>(
     mut stdout: R1,
     mut stderr: R2,
     transcript_path: PathBuf,
+    reader_snapshot: ReaderSnapshot,
 ) -> std::io::Result<(Vec<u8>, bool)>
 where
     R1: tokio::io::AsyncRead + Unpin,
@@ -605,6 +617,7 @@ where
                     stdout_open = false;
                 } else {
                     append_chunk(&mut captured, &stdout_buf[..read], &mut truncated, &transcript_path);
+                    reader_snapshot.set(&captured);
                 }
             }
             read = stderr.read(&mut stderr_buf), if stderr_open => {
@@ -613,6 +626,7 @@ where
                     stderr_open = false;
                 } else {
                     append_chunk(&mut captured, &stderr_buf[..read], &mut truncated, &transcript_path);
+                    reader_snapshot.set(&captured);
                 }
             }
         }

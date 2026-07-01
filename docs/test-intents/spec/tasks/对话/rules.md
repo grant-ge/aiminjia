@@ -1594,3 +1594,118 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - 当前对话截图中，最终可见 assistant 区域不显示额外的「查看执行过程」入口
 - 点击「执行过程」折叠入口后，当前对话 UI 按原穿插顺序出现本轮过程性 assistant 文本和工具详情入口
 - 点击「执行过程」折叠入口前，当前对话 UI 不直接展开显示本轮过程性 assistant 文本或工具详情
+
+## 意图-对话-038: 长命令未结束，对话仍能回复
+
+### 场景
+
+用户让 AI 运行一个会打开子进程的本地命令。父命令很快结束，但子进程继续持有 stdout / stderr 句柄一段时间。用户期望 AIjia 不会因为等待输出管道 EOF 而把当前对话轮次卡死；本轮能在短时间内回复，且用户随后发送的下一条消息能被同一个对话继续处理。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 打开新对话：`tauri-pilot aijia new-task`
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
+4. 发送以下消息：
+   ```text
+   请严格使用当前平台的本地命令执行工具运行一个前台命令，不要设置 run_in_background，工具 timeout 设置为 1000ms。
+
+   这个命令用于模拟“父命令很快结束，但子进程继续占住 stdout/stderr 句柄”的场景。
+
+   如果当前是 Windows，请使用 PowerShell 命令：
+   $exe = (Get-Process -Id $PID).Path
+   $psi = [System.Diagnostics.ProcessStartInfo]::new($exe)
+   $psi.UseShellExecute = $false
+   $psi.RedirectStandardOutput = $false
+   $psi.RedirectStandardError = $false
+   $psi.Arguments = '-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 45"'
+   [System.Diagnostics.Process]::Start($psi) | Out-Null
+   Write-Output 'aijia-inherited-pipe-038-parent'
+
+   如果当前是 macOS/Linux，请使用 Bash 命令：
+   (sh -c 'sleep 45' &); printf 'aijia-inherited-pipe-038-parent\n'
+
+   命令工具返回后，只用一句中文回复：aijia-inherited-pipe-038-done
+   不要调用 Agent，不要调用 TaskOutput，不要等待 45 秒。
+   ```
+5. 等待当前轮次进入空闲：`tauri-pilot aijia wait-agent-idle --timeout 15`，记录返回 JSON 为 `{idleResult}`
+6. 发送消息：`请只回复固定文本：aijia-inherited-pipe-038-followup`
+7. 等 agent 回复完成：`tauri-pilot aijia wait-agent-idle --timeout 30`
+8. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`
+
+### 验收标准
+
+- 步骤 5 的 `{idleResult}.ok == true`
+- 步骤 5 的 `{idleResult}.idle == true`
+- 对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 存在
+- `messages.jsonl` 中至少一条 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "Bash"` 或 `name == "PowerShell"`
+- 该 Bash 或 PowerShell tool call 的 `arguments.command` 包含字面值 `aijia-inherited-pipe-038-parent`
+- 该 Bash 或 PowerShell tool call 的 `arguments.timeout == 1000`
+- 该 Bash 或 PowerShell tool call 的 `arguments.run_in_background` 不为 `true`
+- Bash 或 PowerShell 工具结果中包含字面值 `aijia-inherited-pipe-038-parent`
+- `~/.renlijia/logs/metrics.jsonl` 中该 `{conversationId}` 对应的 `tool:completed` 事件存在，且 `toolResult.name == "Bash"` 或 `"PowerShell"`
+- 该 `tool:completed` 事件的 `toolResult.durationMs < 15000`，证明系统没有等 45 秒子进程结束才返回
+- 步骤 4 对应轮次之后出现一条 assistant 记录，且 `content.text` 包含字面值 `aijia-inherited-pipe-038-done`
+- 步骤 6 的 user 记录出现在 `aijia-inherited-pipe-038-done` assistant 记录之后
+- 步骤 6 对应轮次之后出现一条 assistant 记录，且 `content.text` 包含字面值 `aijia-inherited-pipe-038-followup`
+- `messages.jsonl` 中不存在 `name == "TaskOutput"` 的 tool call
+- `messages.jsonl` 中不存在 `name == "Agent"` 的 tool call
+
+## 意图-对话-039: 管道兜底提示后，改用后台运行
+
+### 场景
+
+用户先运行一个父进程很快结束、子进程继续持有 stdout / stderr 句柄的本地命令。系统返回输出管道兜底提示后，用户希望 agent 能理解“输出可能不完整、后续需要可追踪任务”，并在下一轮自我修复为后台运行和 TaskOutput 读取。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 打开新对话：`tauri-pilot aijia new-task`
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
+4. 发送以下消息：
+   ```text
+   请严格使用当前平台的本地命令执行工具运行一个前台命令，不要设置 run_in_background，工具 timeout 设置为 1000ms。
+
+   这个命令用于模拟“父命令很快结束，但子进程继续占住 stdout/stderr 句柄”的场景。
+
+   如果当前是 Windows，请使用 PowerShell 命令：
+   $exe = (Get-Process -Id $PID).Path
+   $psi = [System.Diagnostics.ProcessStartInfo]::new($exe)
+   $psi.UseShellExecute = $false
+   $psi.RedirectStandardOutput = $false
+   $psi.RedirectStandardError = $false
+   $sleepCmd = 'Start' + '-Sleep' + ' ' + '-' + 'Seconds 45'
+   $psi.Arguments = ('-' + 'NoProfile ') + ('-' + 'NonInteractive ') + ('-' + 'Command ') + $sleepCmd
+   [System.Diagnostics.Process]::Start($psi) | Out-Null
+   Write-Output 'aijia-inherited-pipe-039-parent'
+
+   如果当前是 macOS/Linux，请使用 Bash 命令：
+   (sleep 45 &); printf 'aijia-inherited-pipe-039-parent\n'
+
+   命令工具返回后，只用一句中文回复：aijia-inherited-pipe-039-first-done
+   不要调用 Agent，不要调用 TaskOutput，不要等待 45 秒。
+   ```
+5. 等待当前轮次进入空闲：`tauri-pilot aijia wait-agent-idle --timeout 20`
+6. 发送消息：
+   ```text
+   请根据上一步工具结果里的系统提示自我修复：重新运行一个可持续追踪的本地任务，任务等待 2 秒后输出 aijia-self-repair-039-bg；启动后读取这个任务输出；最后只回复 aijia-self-repair-039-done。不要调用 Agent。
+   ```
+7. 等 agent 回复完成：`tauri-pilot aijia wait-agent-idle --timeout 60`
+8. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`
+
+### 验收标准
+
+- 对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 存在
+- 第一次 Bash 或 PowerShell tool call 的 `arguments.command` 包含字面值 `aijia-inherited-pipe-039-parent`
+- 第一次 Bash 或 PowerShell tool call 的 `arguments.run_in_background` 不为 `true`
+- 第一次 Bash 或 PowerShell 工具结果中包含字面值 `aijia-inherited-pipe-039-parent`
+- 第一次 Bash 或 PowerShell 工具结果中包含字面值 `命令主进程已结束`
+- 第一次 Bash 或 PowerShell 工具结果中包含字面值 `stdout/stderr 输出管道在短时间内没有关闭`
+- 第一次 Bash 或 PowerShell 工具结果中包含字面值 `run_in_background=true`
+- 第一次回复之后出现一条 assistant 记录，且 `content.text` 包含字面值 `aijia-inherited-pipe-039-first-done`
+- 第二次 Bash 或 PowerShell tool call 的 `arguments.command` 包含字面值 `aijia-self-repair-039-bg`
+- 第二次 Bash 或 PowerShell tool call 的 `arguments.run_in_background == true`
+- `messages.jsonl` 中存在 `name == "TaskOutput"` 的 tool call
+- TaskOutput 工具结果中包含字面值 `aijia-self-repair-039-bg`
+- 最后一条 assistant 记录的 `content.text` 包含字面值 `aijia-self-repair-039-done`
+- `messages.jsonl` 中不存在 `name == "Agent"` 的 tool call
