@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import {
@@ -22,6 +22,7 @@ import {
 } from '@/lib/skillAvailability'
 import { localizeSkill } from '@/lib/skillLocalization'
 import { getSkillDetail, previewMarketplaceSkill, type MarketplaceSkillItem, type SkillInfo } from '@/lib/tauri'
+import { useProductName } from '@/hooks/useProductName'
 import { useDevSettingsStore } from '@/stores/devSettingsStore'
 
 import { formatSkillUpdatedAt } from './formatSkillUpdatedAt'
@@ -83,7 +84,7 @@ function getSkillUpdatedAt(skill: SkillInfo | null | undefined, item: Marketplac
   return formatSkillUpdatedAt(skill?.updatedAt || item?.createdAt || null)
 }
 
-function getUsageSteps(trigger: string | null, installed: boolean) {
+function getUsageSteps(trigger: string | null, installed: boolean, productName: string) {
   if (!installed) {
     return [
       '点击“安装”后，技能会进入已安装列表。',
@@ -95,7 +96,7 @@ function getUsageSteps(trigger: string | null, installed: boolean) {
   return [
     '点击“使用”后，会回到对话首页并把技能 chip 放入输入框。',
     '按需要补充上下文，可以继续输入任务要求或添加文件作为附件。',
-    '发送后，AI 小家会按该技能的规则处理本轮请求。',
+    `发送后，${productName}会按该技能的规则处理本轮请求。`,
     trigger ? `也可以在任意对话输入框手动输入 ${trigger} 加具体要求来触发。` : null,
   ].filter(Boolean) as string[]
 }
@@ -137,7 +138,7 @@ function SkillDialogAvatar({
     >
       {avatarNode ?? (
         iconName ? (
-          <Icon className="h-6 w-6 text-inherit" aria-hidden />
+          createElement(Icon, { className: 'h-6 w-6 text-inherit', 'aria-hidden': true })
         ) : (
           <span className="text-lg font-semibold leading-none text-inherit" aria-hidden>
             {fallbackText}
@@ -157,6 +158,7 @@ export function SkillDetailDialog({
   onInstall,
   onUse,
 }: SkillDetailDialogProps) {
+  const productName = useProductName()
   const showRawSkillContent = useDevSettingsStore((s) => s.showRawSkillContent)
   const [rawContent, setRawContent] = useState<string | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -164,14 +166,19 @@ export function SkillDetailDialog({
   useEffect(() => {
     let cancelled = false
     if (!open || !showRawSkillContent || (!skill && !marketplaceItem)) {
-      setRawContent(null)
-      setLoadingDetail(false)
+      queueMicrotask(() => {
+        if (cancelled) return
+        setRawContent(null)
+        setLoadingDetail(false)
+      })
       return () => {
         cancelled = true
       }
     }
 
-    setLoadingDetail(true)
+    queueMicrotask(() => {
+      if (!cancelled) setLoadingDetail(true)
+    })
     const request = skill
       ? getSkillDetail(skill.id).then((next) => next?.rawContent ?? null)
       : marketplaceItem
@@ -214,7 +221,7 @@ export function SkillDetailDialog({
   const description = getSkillDescription(skill, marketplaceItem)
   const trigger = getSkillTrigger(skill, marketplaceItem)
   const sourceLabel = getSourceLabel(skill, marketplaceItem)
-  const usageSteps = getUsageSteps(trigger, Boolean(skill))
+  const usageSteps = getUsageSteps(trigger, Boolean(skill), productName)
   const usageNotes = getUsageNotes(sourceLabel, Boolean(skill))
   const canUse = Boolean(skill && onUse)
   const canInstall = Boolean(!skill && marketplaceItem && onInstall)

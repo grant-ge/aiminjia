@@ -430,12 +430,12 @@
     },
     "runtime": {
       "title": "运行时",
-      "description": "AIjia 托管 Node、Python、uv 运行时，可通过 OSS 下载和更新。",
+      "description": "{{productName}} 托管 Node、Python、uv 运行时，可通过 OSS 下载和更新。",
       "installed": "本机托管",
       "unavailable": "不可用",
       "source": "来源",
-      "managedRuntime": "优先使用 AIjia 托管运行时",
-      "managedRuntimeDesc": "开启后，本地命令、技能内联命令和 MCP 子进程会优先使用 AIjia 托管的 Node、Python、uv；关闭后只使用系统环境。",
+      "managedRuntime": "优先使用 {{productName}} 托管运行时",
+      "managedRuntimeDesc": "开启后，本地命令、技能内联命令和 MCP 子进程会优先使用 {{productName}} 托管的 Node、Python、uv；关闭后只使用系统环境。",
       "installedVersion": "已安装版本",
       "checking": "检测中...",
       "recheck": "重新检测",
@@ -1670,7 +1670,7 @@
         "titleNew": "配置 WhatsApp",
         "subtitleConnected": "设置哪些联系人发来的消息会触发 AI 回复",
         "subtitleDisconnected": "管理允许列表；会话失效时可重新扫码",
-        "subtitleNew": "通过手机 WhatsApp 扫码登录，AIjia 将作为已链接设备接入",
+        "subtitleNew": "通过手机 WhatsApp 扫码登录，{{productName}} 将作为已链接设备接入",
         "addAccount": "添加 WhatsApp 账号",
         "sessionExpired": "会话已失效",
         "sessionExpiredHint": "手机端可能退出了登录或长时间离线，需要重新扫码配对。",
@@ -1717,11 +1717,11 @@
         "+33": "法国 (+33)"
       },
       "risk": {
-        "dialogTitle": "关于 AIjia 接入 WhatsApp 的说明",
-        "intro": "AIjia 接入 WhatsApp 当前采用与开源项目",
+        "dialogTitle": "关于 {{productName}} 接入 WhatsApp 的说明",
+        "intro": "{{productName}} 接入 WhatsApp 当前采用与开源项目",
         "openClawLink": "OpenClaw",
         "introProtocol": "WhatsApp Web 多设备协议",
-        "introDesc": "相同的方案：通过{{protocol}}把 AIjia 作为一台“已链接设备”接入你的 WhatsApp 账号（与你手机上的“已链接的设备 → 链接设备”是同一套机制）。",
+        "introDesc": "相同的方案：通过{{protocol}}把 {{productName}} 作为一台“已链接设备”接入你的 WhatsApp 账号（与你手机上的“已链接的设备 → 链接设备”是同一套机制）。",
         "introMigration": "我们正在申请 WhatsApp Business 官方接入资质，待批复后会迁移到官方 API；在此之前先用 OpenClaw 的方式保证可用。",
         "risksHeading": "这个方案的风险（与 OpenClaw 完全相同）",
         "riskUnauthorized": "WhatsApp 官方未授权",
@@ -1737,7 +1737,7 @@
         "suggestRealPhone": "真实手机号",
         "suggestRealPhoneDesc": "使用{{phone}}，不要用虚拟号",
         "suggestNoBroadcast": "群发",
-        "suggestNoBroadcastDesc": "不在 AIjia 中{{broadcast}}或频繁主动外呼",
+        "suggestNoBroadcastDesc": "不在 {{productName}} 中{{broadcast}}或频繁主动外呼",
         "suggestAiOnly": "用于 AI 辅助对话场景，不用于营销 / 推广",
         "suggestWorkPhone": "专门的工作号",
         "suggestWorkPhoneDesc": "重要号码请勿接入，建议用{{phone}}",
@@ -1987,10 +1987,10 @@
   },
   "legal": {
     "terms": {
-      "title": "AI小家软件许可及服务协议"
+      "title": "{{productName}}软件许可及服务协议"
     },
     "privacy": {
-      "title": "AI小家隐私政策"
+      "title": "{{productName}}隐私政策"
     },
     "dialogTitleFallback": "协议文档"
   }

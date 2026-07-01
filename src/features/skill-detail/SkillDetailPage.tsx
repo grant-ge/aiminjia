@@ -18,6 +18,7 @@ import {
   isSkillEnabled,
 } from '@/lib/skillAvailability'
 import { getSkillDetail, type SkillDetailInfo } from '@/lib/tauri'
+import { useProductName } from '@/hooks/useProductName'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -194,6 +195,7 @@ function SkillSpecificDetails({ detail }: { detail: SkillDetailInfo | null }) {
 }
 
 export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
+  const productName = useProductName()
   const skill = useSkillStore((s) => s.getById(skillId))
   const setSkillEnabled = useSkillStore((s) => s.setSkillEnabled)
   const pushNotification = useNotificationStore((s) => s.push)
@@ -365,7 +367,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
         items={[
           {
             label: '来源',
-            value: market ? '市场' : builtin ? 'AI 小家内置' : '已安装',
+            value: market ? '市场' : builtin ? `${productName}内置` : '已安装',
           },
           ...(skill.version ? [{ label: '版本', value: skill.version }] : []),
           ...(skill.category ? [{ label: '分类', value: skill.category }] : []),
@@ -381,7 +383,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
         usageSteps={[
           `点击右上角“${primaryLabel}”后，会回到对话首页并把技能 chip 放入输入框。`,
           '按需要补充上下文，可以继续输入任务要求或添加文件作为附件。',
-          '发送后，AI 小家会按该技能的规则处理本轮请求。',
+          `发送后，${productName}会按该技能的规则处理本轮请求。`,
           enabled || !manageable
             ? `也可以在任意对话输入框手动输入 ${trigger} 加具体要求来触发。`
             : '当前技能关闭时不会出现在输入框技能选择或 slash 快捷入口中。',

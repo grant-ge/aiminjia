@@ -47,12 +47,7 @@ pub struct PromptAssembler;
 impl PromptAssembler {
     pub fn build_system_prompt(&self, ctx: PromptBuildContext<'_>) -> PromptAssembly {
         let fragments = prompts::get_prompt_fragment_snapshot();
-        let base = match ctx.product_name {
-            Some(name) if !name.is_empty() && name != "AI小家" => {
-                fragments.base.replace("AI小家", name)
-            }
-            _ => fragments.base,
-        };
+        let base = apply_product_name(fragments.base, ctx.product_name);
 
         let mut blocks = vec![
             PromptBlock::static_block(PromptSectionId::new("base"), base),
@@ -76,7 +71,7 @@ impl PromptAssembler {
             }
         }
 
-        let daily = fragments.daily;
+        let daily = apply_product_name(fragments.daily, ctx.product_name);
         if !daily.trim().is_empty() {
             let has_persona_memory = ctx.persona.is_some_and(|p| !p.memory_hints.is_empty());
             let daily = if has_persona_memory {
@@ -93,6 +88,13 @@ impl PromptAssembler {
         }
 
         PromptAssembly::new(blocks)
+    }
+}
+
+fn apply_product_name(text: String, product_name: Option<&str>) -> String {
+    match product_name {
+        Some(name) if !name.is_empty() && name != "AI小家" => text.replace("AI小家", name),
+        _ => text,
     }
 }
 
@@ -138,4 +140,28 @@ fn strip_memory_section(prompt: &str) -> String {
     }
 
     result.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_product_name;
+
+    #[test]
+    fn product_name_replacement_covers_base_and_daily_prompt_text() {
+        let text = "你是 AI小家 base\n\nAI小家 daily".to_string();
+
+        let replaced = apply_product_name(text, Some("小新助手"));
+
+        assert!(replaced.contains("你是 小新助手 base"));
+        assert!(replaced.contains("小新助手 daily"));
+        assert!(!replaced.contains("AI小家"));
+    }
+
+    #[test]
+    fn product_name_replacement_keeps_default_brand_text() {
+        let text = "你是 AI小家".to_string();
+
+        assert_eq!(apply_product_name(text.clone(), None), text);
+        assert_eq!(apply_product_name(text.clone(), Some("AI小家")), text);
+    }
 }

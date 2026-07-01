@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
 import { useDevSettingsStore } from '@/stores/devSettingsStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -43,6 +44,7 @@ describe('SkillDetailPage', () => {
     createConversationFromSkillMock.mockClear()
     getSkillDetailMock.mockReset()
     getSkillDetailMock.mockResolvedValue(null)
+    useBrandingStore.getState().reset()
     useDevSettingsStore.setState({
       showToolErrorIcon: false,
       showRawSkillContent: false,
@@ -107,6 +109,19 @@ describe('SkillDetailPage', () => {
     expect(screen.getAllByText('Business Proposal').length).toBeGreaterThan(0)
     expect(screen.getByText('Business proposal writing')).toBeInTheDocument()
     expect(screen.queryByText('商业方案撰写')).toBeNull()
+  })
+
+  it('uses tenant product name in built-in source and usage copy', () => {
+    useBrandingStore.setState({ productName: '小新助手' })
+    useSkillStore.setState({
+      skills: [{ ...enabledSkill, source: 'builtin' }],
+    })
+
+    render(<SkillDetailPage skillId="biz-proposal" />)
+
+    expect(screen.getByText('小新助手内置')).toBeInTheDocument()
+    expect(screen.getByText('发送后，小新助手会按该技能的规则处理本轮请求。')).toBeInTheDocument()
+    expect(screen.queryByText(/AI 小家/)).not.toBeInTheDocument()
   })
 
   it('disabled installed skill must be enabled before use', async () => {

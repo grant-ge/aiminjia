@@ -17,8 +17,13 @@ vi.mock('@/stores/authStore', () => ({
 }))
 
 vi.mock('@/stores/brandingStore', () => ({
+  DEFAULTS: {
+    productName: 'AI小家',
+    productNameEn: 'AIjia',
+  },
   useBrandingStore: (sel: (s: unknown) => unknown) => sel({
     productName: 'AI小家',
+    productNameEn: 'AIjia',
     logoUrl: '/brand-avatar-gold.svg',
   }),
 }))

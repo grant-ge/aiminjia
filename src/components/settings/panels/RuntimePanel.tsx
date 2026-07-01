@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/common/SegmentedControl'
 import { getSettings, runtimeDiagnostics, type RuntimeDiagnostics, updateSettings } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useProductName } from '@/hooks/useProductName'
 
 const TOGGLE_OPTIONS: Array<{ value: 'off' | 'on'; label: string }> = [
   { value: 'off', label: '关' },
@@ -35,6 +36,7 @@ function useFormatRelative() {
 
 export function RuntimePanel() {
   const { t } = useTranslation()
+  const productName = useProductName()
   const RESOLVER_LABEL = useResolverLabel()
   const formatRelative = useFormatRelative()
   const [data, setData] = useState<RuntimeDiagnostics | null>(null)
@@ -85,7 +87,7 @@ export function RuntimePanel() {
       <header>
         <h2 className="text-base font-semibold text-foreground">{t('settings.runtime.title')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {t('settings.runtime.description')}
+          {t('settings.runtime.description', { productName })}
         </p>
       </header>
 
@@ -98,14 +100,14 @@ export function RuntimePanel() {
       <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-card px-4 py-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-foreground">
-            {t('settings.runtime.managedRuntime')}
+            {t('settings.runtime.managedRuntime', { productName })}
           </div>
           <div className="mt-1 text-xs leading-5 text-muted-foreground">
-            {t('settings.runtime.managedRuntimeDesc')}
+            {t('settings.runtime.managedRuntimeDesc', { productName })}
           </div>
         </div>
         <SegmentedControl<'off' | 'on'>
-          ariaLabel={t('settings.runtime.managedRuntime')}
+          ariaLabel={t('settings.runtime.managedRuntime', { productName })}
           className="w-20 shrink-0"
           value={managedRuntimeEnabled ? 'on' : 'off'}
           onValueChange={(value) => void handleManagedRuntimeChange(value === 'on')}

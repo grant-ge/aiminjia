@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { LegalDocument } from './legalDocuments'
 
+import { useProductName } from '@/hooks/useProductName'
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,8 @@ interface LegalDocumentDialogProps {
 
 export function LegalDocumentDialog({ document, open, onOpenChange }: LegalDocumentDialogProps) {
   const { t } = useTranslation()
-  const title = document ? t(document.titleKey) : t('legal.dialogTitleFallback')
+  const productName = useProductName()
+  const title = document ? t(document.titleKey, { productName }) : t('legal.dialogTitleFallback')
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent

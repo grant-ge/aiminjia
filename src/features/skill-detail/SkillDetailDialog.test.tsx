@@ -2,6 +2,7 @@ import '@testing-library/jest-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useDevSettingsStore } from '@/stores/devSettingsStore'
 
 import { SkillDetailDialog } from './SkillDetailDialog'
@@ -51,6 +52,7 @@ describe('SkillDetailDialog', () => {
   beforeEach(() => {
     tauriMock.getSkillDetail.mockReset()
     tauriMock.previewMarketplaceSkill.mockReset()
+    useBrandingStore.getState().reset()
     useDevSettingsStore.setState({ showRawSkillContent: false })
   })
 
@@ -84,6 +86,22 @@ describe('SkillDetailDialog', () => {
     expect(screen.getByText(/点击“使用”后/)).toBeInTheDocument()
     expect(screen.getByText('注意事项')).toBeInTheDocument()
     expect(screen.getByText(/技能 chip 只对当前这一轮消息生效/)).toBeInTheDocument()
+  })
+
+  it('uses tenant product name in usage instructions', () => {
+    useBrandingStore.setState({ productName: '小新助手' })
+
+    render(
+      <SkillDetailDialog
+        open
+        skill={INSTALLED_SKILL}
+        onOpenChange={() => {}}
+        onUse={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('发送后，小新助手会按该技能的规则处理本轮请求。')).toBeInTheDocument()
+    expect(screen.queryByText(/AI 小家/)).not.toBeInTheDocument()
   })
 
   it('previews raw SKILL.md from remote marketplace package without installing', async () => {

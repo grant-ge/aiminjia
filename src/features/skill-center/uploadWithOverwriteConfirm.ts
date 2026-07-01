@@ -1,4 +1,5 @@
 import { ask } from '@tauri-apps/plugin-dialog'
+import { DEFAULTS, useBrandingStore } from '@/stores/brandingStore'
 import { SkillAlreadyExistsError } from '@/stores/skillStore'
 
 /**
@@ -17,9 +18,10 @@ export async function uploadWithOverwriteConfirm(
     return 'installed'
   } catch (err) {
     if (err instanceof SkillAlreadyExistsError) {
+      const productName = useBrandingStore.getState().productName.trim() || DEFAULTS.productName
       const confirmed = await ask(
         `技能 "${err.skillId}" 已存在，是否覆盖？`,
-        { title: 'AI小家', kind: 'warning' },
+        { title: productName, kind: 'warning' },
       )
       if (!confirmed) return 'cancelled'
       await upload(true)

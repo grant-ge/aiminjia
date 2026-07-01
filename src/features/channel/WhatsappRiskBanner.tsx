@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useProductName } from '@/hooks/useProductName'
 
 interface Props {
   open: boolean
@@ -25,6 +26,7 @@ interface Props {
  */
 export function WhatsappRiskBanner({ open, onAccept, onCancel }: Props) {
   const { t } = useTranslation()
+  const productName = useProductName()
   const [acknowledged, setAcknowledged] = useState(false)
 
   return (
@@ -36,13 +38,13 @@ export function WhatsappRiskBanner({ open, onAccept, onCancel }: Props) {
     >
       <DialogContent className="max-w-lg overflow-hidden">
         <DialogHeader>
-          <DialogTitle>{t('channel.whatsapp.risk.dialogTitle')}</DialogTitle>
+          <DialogTitle>{t('channel.whatsapp.risk.dialogTitle', { productName })}</DialogTitle>
         </DialogHeader>
         <DialogBody data-testid="whatsapp-risk-dialog-body" className="flex flex-col gap-4">
           <DialogDescription asChild>
             <div className="space-y-3 text-sm text-foreground">
               <p>
-                {t('channel.whatsapp.risk.intro')}{' '}
+                {t('channel.whatsapp.risk.intro', { productName })}{' '}
                 <a
                   href="https://docs.openclaw.ai/channels/whatsapp"
                   target="_blank"
@@ -51,7 +53,7 @@ export function WhatsappRiskBanner({ open, onAccept, onCancel }: Props) {
                 >
                   {t('channel.whatsapp.risk.openClawLink')}
                 </a>
-                {' '}{t('channel.whatsapp.risk.introDesc', { protocol: t('channel.whatsapp.risk.introProtocol') })}
+                {' '}{t('channel.whatsapp.risk.introDesc', { productName, protocol: t('channel.whatsapp.risk.introProtocol') })}
                 {t('channel.whatsapp.risk.introMigration')}
               </p>
               <h4 className="font-semibold mt-2">
@@ -76,7 +78,7 @@ export function WhatsappRiskBanner({ open, onAccept, onCancel }: Props) {
                   {t('channel.whatsapp.risk.suggestRealPhoneDesc', { phone: t('channel.whatsapp.risk.suggestRealPhone') })}
                 </li>
                 <li>
-                  {t('channel.whatsapp.risk.suggestNoBroadcastDesc', { broadcast: t('channel.whatsapp.risk.suggestNoBroadcast') })}
+                  {t('channel.whatsapp.risk.suggestNoBroadcastDesc', { productName, broadcast: t('channel.whatsapp.risk.suggestNoBroadcast') })}
                 </li>
                 <li>{t('channel.whatsapp.risk.suggestAiOnly')}</li>
                 <li>

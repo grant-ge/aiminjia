@@ -430,12 +430,12 @@
     },
     "runtime": {
       "title": "Runtime",
-      "description": "AIjia manages Node, Python, and uv runtimes through OSS downloads and updates.",
+      "description": "{{productName}} manages Node, Python, and uv runtimes through OSS downloads and updates.",
       "installed": "Managed local",
       "unavailable": "Unavailable",
       "source": "Source",
-      "managedRuntime": "Prefer AIjia managed runtime",
-      "managedRuntimeDesc": "When enabled, local commands, skill inline commands, and MCP subprocesses prefer AIjia's managed Node, Python, and uv. When disabled, only the system environment is used.",
+      "managedRuntime": "Prefer {{productName}} managed runtime",
+      "managedRuntimeDesc": "When enabled, local commands, skill inline commands, and MCP subprocesses prefer {{productName}}'s managed Node, Python, and uv. When disabled, only the system environment is used.",
       "installedVersion": "Installed version",
       "checking": "Checking...",
       "recheck": "Re-check",
@@ -1681,7 +1681,7 @@
         "titleNew": "Configure WhatsApp",
         "subtitleConnected": "Set which contacts' messages trigger AI replies",
         "subtitleDisconnected": "Manage allowlist; re-scan if session expired",
-        "subtitleNew": "Sign in via WhatsApp QR code. AIjia will connect as a linked device.",
+        "subtitleNew": "Sign in via WhatsApp QR code. {{productName}} will connect as a linked device.",
         "addAccount": "Add WhatsApp Account",
         "sessionExpired": "Session expired",
         "sessionExpiredHint": "The phone may have logged out or been offline too long. Please re-scan to pair.",
@@ -1728,11 +1728,11 @@
         "+33": "France (+33)"
       },
       "risk": {
-        "dialogTitle": "About AIjia's WhatsApp Integration",
-        "intro": "AIjia's WhatsApp integration currently uses the same approach as the open-source project",
+        "dialogTitle": "About {{productName}}'s WhatsApp Integration",
+        "intro": "{{productName}}'s WhatsApp integration currently uses the same approach as the open-source project",
         "openClawLink": "OpenClaw",
         "introProtocol": "WhatsApp Web multi-device protocol",
-        "introDesc": ": connecting AIjia as a \"linked device\" to your WhatsApp account via the {{protocol}} (the same mechanism as \"Linked Devices → Link a Device\" on your phone).",
+        "introDesc": ": connecting {{productName}} as a \"linked device\" to your WhatsApp account via the {{protocol}} (the same mechanism as \"Linked Devices → Link a Device\" on your phone).",
         "introMigration": "We are applying for official WhatsApp Business API access. Once approved, we will migrate to the official API. In the meantime, we use the OpenClaw approach to ensure availability.",
         "risksHeading": "Risks of this approach (identical to OpenClaw)",
         "riskUnauthorized": "WhatsApp has not officially authorized",
@@ -1748,7 +1748,7 @@
         "suggestRealPhone": "a real phone number",
         "suggestRealPhoneDesc": "Use {{phone}} instead of virtual numbers",
         "suggestNoBroadcast": "mass messaging",
-        "suggestNoBroadcastDesc": "Do not use AIjia for {{broadcast}} or frequent outbound calls",
+        "suggestNoBroadcastDesc": "Do not use {{productName}} for {{broadcast}} or frequent outbound calls",
         "suggestAiOnly": "Use for AI-assisted conversations only, not for marketing or promotions",
         "suggestWorkPhone": "a dedicated work number",
         "suggestWorkPhoneDesc": "Do not connect important numbers; use {{phone}} instead",
@@ -1998,10 +1998,10 @@
   },
   "legal": {
     "terms": {
-      "title": "AIjia Software License and Service Agreement"
+      "title": "{{productName}} Software License and Service Agreement"
     },
     "privacy": {
-      "title": "AIjia Privacy Policy"
+      "title": "{{productName}} Privacy Policy"
     },
     "dialogTitleFallback": "Legal document"
   }

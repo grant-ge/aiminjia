@@ -20,6 +20,7 @@ import {
   channelWhatsappUpdateAllowFrom,
 } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
+import { useProductName } from '@/hooks/useProductName'
 
 interface Props {
   onSaved?: () => void
@@ -160,6 +161,42 @@ function CountryCodePicker({
 }
 
 /** "● 接收所有" / "○ 仅指定号码" 自定义 radio(项目无 RadioGroup 组件,用按钮组实现)。 */
+function ModeRadioOption({
+  active,
+  kind,
+  label,
+  hint,
+  onChange,
+}: {
+  active: boolean
+  kind: AllowMode
+  label: string
+  hint: string
+  onChange: (next: AllowMode) => void
+}) {
+  return (
+    <Button unstyled
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={() => onChange(kind)}
+      className="group flex w-full items-start gap-3 rounded-md border border-border bg-card p-3 text-left transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span
+        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border-2 ${
+          active ? 'border-primary' : 'border-[rgba(var(--muted-foreground-rgb),0.50)]'
+        }`}
+      >
+        {active && <span className="h-2 w-2 rounded-md bg-primary" />}
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-semibold text-foreground">{label}</span>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </Button>
+  )
+}
+
 function ModeRadio({
   value,
   onChange,
@@ -168,41 +205,21 @@ function ModeRadio({
   onChange: (next: AllowMode) => void
 }) {
   const { t } = useTranslation()
-  const Option = ({ kind, label, hint }: { kind: AllowMode; label: string; hint: string }) => {
-    const active = value === kind
-    return (
-      <Button unstyled
-        type="button"
-        role="radio"
-        aria-checked={active}
-        onClick={() => onChange(kind)}
-        className="group flex w-full items-start gap-3 rounded-md border border-border bg-card p-3 text-left transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span
-          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border-2 ${
-            active ? 'border-primary' : 'border-[rgba(var(--muted-foreground-rgb),0.50)]'
-          }`}
-        >
-          {active && <span className="h-2 w-2 rounded-md bg-primary" />}
-        </span>
-        <span className="flex flex-col gap-0.5">
-          <span className="text-sm font-semibold text-foreground">{label}</span>
-          <span className="text-xs text-muted-foreground">{hint}</span>
-        </span>
-      </Button>
-    )
-  }
   return (
     <div role="radiogroup" className="flex flex-col gap-2">
-      <Option
+      <ModeRadioOption
+        active={value === 'all'}
         kind="all"
         label={t('channel.whatsapp.allowlist.modeAll')}
         hint={t('channel.whatsapp.allowlist.modeAllHint')}
+        onChange={onChange}
       />
-      <Option
+      <ModeRadioOption
+        active={value === 'specific'}
         kind="specific"
         label={t('channel.whatsapp.allowlist.modeSpecific')}
         hint={t('channel.whatsapp.allowlist.modeSpecificHint')}
+        onChange={onChange}
       />
     </div>
   )
@@ -221,6 +238,7 @@ function ModeRadio({
  */
 export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
   const { t } = useTranslation()
+  const productName = useProductName()
   const [phase, setPhase] = useState<Phase>('idle')
   const [qrUrl, setQrUrl] = useState<string>('')
   const [expireSec, setExpireSec] = useState<number>(60)
@@ -503,7 +521,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             ? connected
               ? t('channel.whatsapp.config.subtitleConnected')
               : t('channel.whatsapp.config.subtitleDisconnected')
-            : t('channel.whatsapp.config.subtitleNew')}
+            : t('channel.whatsapp.config.subtitleNew', { productName })}
         </p>
       </div>
 
