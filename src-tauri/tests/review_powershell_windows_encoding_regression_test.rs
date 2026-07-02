@@ -52,3 +52,39 @@ fn shell_common_decodes_collected_bytes_through_console_decoder() {
         "direct UTF-8 lossy decoding regresses zh-CN Windows console output"
     );
 }
+
+#[test]
+fn context_builder_hides_command_path_probe_windows() {
+    let source = std::fs::read_to_string("src/runtime/chat/context_builder.rs")
+        .expect("read context_builder source");
+
+    assert!(
+        !source.contains("Command::new(\"where.exe\")")
+            && !source.contains("std::process::Command::new(\"where.exe\")"),
+        "context_builder must not spawn where.exe because it can create a visible conhost flash"
+    );
+    assert!(
+        source.contains("fn detect_windows_command_paths(command: &str)")
+            && source.contains("std::env::split_paths(&path_var)")
+            && source.contains("windows_command_candidate_names(command)"),
+        "Windows command path detection must use in-process PATH/PATHEXT scanning"
+    );
+}
+
+#[test]
+fn dingtalk_bridge_hides_dws_path_probe_windows() {
+    let source =
+        std::fs::read_to_string("src/connector/dingtalk.rs").expect("read dingtalk source");
+
+    assert!(
+        !source.contains("Command::new(\"where.exe\")")
+            && !source.contains("std::process::Command::new(\"where.exe\")"),
+        "dingtalk bridge must not spawn where.exe because it can create a visible conhost flash"
+    );
+    assert!(
+        source.contains("fn find_windows_command_path(command: &str)")
+            && source.contains("std::env::split_paths(&path_var)")
+            && source.contains("windows_command_candidate_names(command)"),
+        "Windows dws path detection must use in-process PATH/PATHEXT scanning"
+    );
+}
