@@ -108,6 +108,12 @@ const CHANNEL_PLATFORM_DISPLAY: Record<string, string> = {
   telegram: "Telegram",
 };
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+}
+
 interface MessageListProps {
   expertTeamId?: ExpertTeamId;
 }
@@ -440,6 +446,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       message,
       actions: [],
       dismissible: true,
+      autoHide: 5,
       context: "toast",
     });
   };
@@ -466,7 +473,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     } catch (err) {
       notifyFileError(
         "open",
-        err instanceof Error ? err.message : "打开生成文件失败。",
+        errorMessage(err, "打开生成文件失败。"),
       );
     }
   };
@@ -493,7 +500,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     } catch (err) {
       notifyFileError(
         "download",
-        err instanceof Error ? err.message : "下载生成文件失败。",
+        errorMessage(err, "下载生成文件失败。"),
       );
     }
   };
@@ -513,7 +520,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     } catch (err) {
       notifyFileError(
         "reveal",
-        err instanceof Error ? err.message : "定位生成文件失败。",
+        errorMessage(err, "定位生成文件失败。"),
       );
     }
   };

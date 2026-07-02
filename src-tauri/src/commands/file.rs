@@ -1,9 +1,11 @@
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::RuntimeRepositoryFacade;
+use crate::storage::process_ext::NoWindowExt;
 use crate::storage::AiJiaHome;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::Arc;
 use tauri::State;
 
@@ -12,6 +14,107 @@ use std::collections::HashSet;
 
 const MAX_PREVIEW_BYTES: u64 = 5 * 1024 * 1024;
 const FILE_RECORD_NOT_FOUND: &str = "File not found or does not belong to this conversation";
+
+fn command_output_text(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    match (stderr.is_empty(), stdout.is_empty()) {
+        (false, false) => format!("{stderr}\n{stdout}"),
+        (false, true) => stderr,
+        (true, false) => stdout,
+        (true, true) => output.status.to_string(),
+    }
+}
+
+fn is_no_default_app_error(detail: &str) -> bool {
+    let normalized = detail.to_ascii_lowercase();
+    normalized.contains("no application knows how to open")
+        || normalized.contains("no application claims the file")
+        || normalized.contains("klsapplicationnotfounderr")
+        || normalized.contains("code=-10814")
+}
+
+fn display_file_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+fn extension_label(path: &Path) -> String {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.trim().is_empty())
+        .map(|ext| format!(".{ext}"))
+        .unwrap_or_else(|| "这种格式".to_string())
+}
+
+fn no_default_app_error(path: &Path) -> String {
+    format!(
+        "无法打开这个文件：{}。当前系统还没有能打开 {} 文件的默认应用。你可以点“在文件夹中显示”后手动选择应用，或先在系统里设置默认应用。",
+        display_file_name(path),
+        extension_label(path)
+    )
+}
+
+fn default_app_open_error(path: &Path, detail: impl AsRef<str>) -> String {
+    let detail = detail.as_ref().trim();
+    if is_no_default_app_error(detail) {
+        return no_default_app_error(path);
+    }
+    if detail.is_empty() {
+        format!(
+            "无法用系统默认应用打开：{}。请先安装或设置默认应用，也可以在文件夹中显示后手动选择应用。",
+            path.display()
+        )
+    } else {
+        format!(
+            "无法用系统默认应用打开：{}。请先安装或设置默认应用，也可以在文件夹中显示后手动选择应用。系统返回：{}",
+            path.display(),
+            detail
+        )
+    }
+}
+
+fn run_default_app_command(mut command: Command, path: &Path) -> Result<(), String> {
+    let output = command
+        .no_window()
+        .output()
+        .map_err(|e| default_app_open_error(path, e.to_string()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(default_app_open_error(path, command_output_text(&output)))
+}
+
+fn open_path_with_default_app(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        command.arg(path);
+        return run_default_app_command(command, path);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("explorer");
+        command.arg(path);
+        return run_default_app_command(command, path);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let mut command = Command::new("xdg-open");
+        command.arg(path);
+        return run_default_app_command(command, path);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        Err(default_app_open_error(path, "当前系统暂不支持默认应用打开"))
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -679,24 +782,7 @@ pub async fn open_generated_file(
     let record = resolve_file_record(&facade, &file_id, &conversation_id)?;
     let full_path = resolve_record_full_path(&facade, &file_mgr, &conversation_id, &record)?;
 
-    // Open with system default application
-    #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
-        .arg(&full_path)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    #[cfg(target_os = "windows")]
-    std::process::Command::new("explorer")
-        .arg(&full_path)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open")
-        .arg(&full_path)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    open_path_with_default_app(&full_path)
 }
 
 /// Reveal a file in the OS file manager (Finder / Explorer / file manager).
@@ -873,22 +959,7 @@ pub async fn open_local_file(path: String) -> Result<(), String> {
     if !p.exists() {
         return Err(format!("Path does not exist: {}", path));
     }
-    #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
-        .arg(p)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    #[cfg(target_os = "windows")]
-    std::process::Command::new("explorer")
-        .arg(p)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open")
-        .arg(p)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    open_path_with_default_app(p)
 }
 
 /// Save a local absolute file path to a user-selected destination.
@@ -946,23 +1017,7 @@ pub async fn open_file_by_name(
 ) -> Result<(), String> {
     let full_path = find_file_in_workspace(&file_mgr, &file_name)?;
 
-    #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
-        .arg(&full_path)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    #[cfg(target_os = "windows")]
-    std::process::Command::new("explorer")
-        .arg(&full_path)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open")
-        .arg(&full_path)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    open_path_with_default_app(&full_path)
 }
 
 /// Search workspace subdirectories for a file by name and reveal it in the OS file manager.
@@ -1075,6 +1130,38 @@ pub async fn delete_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(target_os = "windows"))]
+    use std::sync::{LazyLock, Mutex};
+
+    #[cfg(not(target_os = "windows"))]
+    static OPEN_COMMAND_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[cfg(not(target_os = "windows"))]
+    struct EnvVarRestore {
+        key: &'static str,
+        value: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    impl EnvVarRestore {
+        fn capture(key: &'static str) -> Self {
+            Self {
+                key,
+                value: std::env::var_os(key),
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    impl Drop for EnvVarRestore {
+        fn drop(&mut self) {
+            if let Some(value) = &self.value {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn save_clipboard_image_writes_to_tmp_image_dir() {
@@ -1151,6 +1238,66 @@ mod tests {
                 .await
                 .expect("file availability")
         );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn open_local_file_returns_error_when_default_app_command_fails() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = OPEN_COMMAND_ENV_LOCK.lock().expect("open command env lock");
+        let _path_restore = EnvVarRestore::capture("PATH");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let source = tmp.path().join("unhandled.aijia-noapp");
+        std::fs::write(&source, b"content").expect("write source");
+
+        let bin_dir = tmp.path().join("bin");
+        std::fs::create_dir(&bin_dir).expect("create bin");
+        let command_name = if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        let fake_command = bin_dir.join(command_name);
+        std::fs::write(
+            &fake_command,
+            "#!/bin/sh\necho 'No application knows how to open this file' 1>&2\nexit 66\n",
+        )
+        .expect("write fake open command");
+        let mut permissions = std::fs::metadata(&fake_command)
+            .expect("fake command metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_command, permissions).expect("chmod fake open command");
+
+        let mut paths = vec![bin_dir];
+        if let Some(original_path) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&original_path));
+        }
+        let joined_path = std::env::join_paths(paths).expect("join PATH");
+        std::env::set_var("PATH", joined_path);
+
+        let err = open_local_file(source.to_string_lossy().to_string())
+            .await
+            .expect_err("default app command failure should reach the caller");
+
+        assert!(err.contains("当前系统还没有能打开"), "{err}");
+        assert!(err.contains(".aijia-noapp"), "{err}");
+        assert!(!err.contains("No application knows"), "{err}");
+    }
+
+    #[test]
+    fn default_app_open_error_simplifies_macos_no_application_details() {
+        let path = Path::new("/tmp/aijia-open-test/test.aijia-noapp-20260702");
+        let detail = r#"No application knows how to open URL file:///tmp/aijia-open-test/test.aijia-noapp-20260702 (Error Domain=NSOSStatusErrorDomain Code=-10814 "kLSApplicationNotFoundErr: E.g. no application claims the file" UserInfo={_LSLine=1973, _LSFunction=runEvaluator, _LSFile=LSBindingEvaluator.mm, _LSErrorMessage=kLSApplicationNotFoundErr})."#;
+
+        let message = default_app_open_error(path, detail);
+
+        assert!(message.contains("test.aijia-noapp-20260702"), "{message}");
+        assert!(message.contains(".aijia-noapp-20260702"), "{message}");
+        assert!(!message.contains("NSOSStatusErrorDomain"), "{message}");
+        assert!(!message.contains("LSBindingEvaluator"), "{message}");
+        assert!(!message.contains("Code=-10814"), "{message}");
     }
 }
 

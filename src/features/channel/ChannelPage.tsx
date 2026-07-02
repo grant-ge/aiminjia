@@ -41,6 +41,12 @@ interface ChannelPageProps {
   sessionId?: string;
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+}
+
 type PlatformKey = ChannelPlatform;
 
 const TOGGLE_OPTIONS: Array<{ value: "off" | "on"; label: string }> = [
@@ -574,12 +580,10 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
       pushNotification({
         level: "error",
         title: t("channel.errors.openFileTitle"),
-        message:
-          err instanceof Error
-            ? err.message
-            : t("channel.errors.openFileMessage"),
+        message: errorMessage(err, t("channel.errors.openFileMessage")),
         actions: [],
         dismissible: true,
+        autoHide: 5,
         context: "toast",
       });
     }
@@ -602,12 +606,10 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
       pushNotification({
         level: "error",
         title: t("messageList.cannotDownload", "无法下载文件"),
-        message:
-          err instanceof Error
-            ? err.message
-            : t("channel.errors.openFileMessage"),
+        message: errorMessage(err, t("channel.errors.openFileMessage")),
         actions: [],
         dismissible: true,
+        autoHide: 5,
         context: "toast",
       });
     }

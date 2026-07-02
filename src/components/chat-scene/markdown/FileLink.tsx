@@ -12,6 +12,7 @@ import { savePreviewTargetToDisk } from '@/components/chat/fileDownload'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import type { GeneratedFile } from '@/types/message'
 import { Button } from '@/components/ui/button'
+import { useNotificationStore } from '@/stores/notificationStore'
 import {
   ARTIFACT_ALT,
   basename,
@@ -133,6 +134,24 @@ export function allowMarkdownUrl(url: string): string {
   return ''
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
+}
+
+function notifyOpenFileError(fileName: string, error: unknown) {
+  useNotificationStore.getState().push({
+    level: 'error',
+    title: '无法打开文件',
+    message: errorMessage(error, fileName ? `无法打开文件 "${fileName}"。` : '打开文件失败。'),
+    actions: [],
+    dismissible: true,
+    autoHide: 5,
+    context: 'toast',
+  })
+}
+
 function useOpenMarkdownFile(conversationId?: string) {
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
   return (target: LocalMarkdownTarget) => {
@@ -146,7 +165,7 @@ function useOpenMarkdownFile(conversationId?: string) {
       })
       return
     }
-    void openLocalFile(target.path)
+    void Promise.resolve(openLocalFile(target.path)).catch((error) => notifyOpenFileError(target.fileName, error))
   }
 }
 
@@ -354,10 +373,10 @@ function MarkdownArtifactCard({
   }
   const handleOpenExternal = () => {
     if (generatedFile && conversationId) {
-      void openGeneratedFile(generatedFile.id, conversationId)
+      void Promise.resolve(openGeneratedFile(generatedFile.id, conversationId)).catch((error) => notifyOpenFileError(fileName, error))
       return
     }
-    if (target) void openLocalFile(target.path)
+    if (target) void Promise.resolve(openLocalFile(target.path)).catch((error) => notifyOpenFileError(fileName, error))
   }
   const handleReveal = () => {
     if (generatedFile && conversationId) {

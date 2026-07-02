@@ -9,6 +9,7 @@ import type { GeneratedFile } from '@/types/message'
 const mockOpenLocalFile = vi.fn()
 const mockOpenPreview = vi.fn()
 const mockGetLocalFilePreview = vi.fn()
+const mockPushNotification = vi.fn()
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -29,7 +30,7 @@ vi.mock('@/lib/tauri', () => ({
 }))
 
 vi.mock('@/stores/notificationStore', () => ({
-  useNotificationStore: { getState: () => ({ push: vi.fn() }) },
+  useNotificationStore: { getState: () => ({ push: mockPushNotification }) },
 }))
 
 vi.mock('@/stores/generatedFilePreviewStore', () => ({
@@ -57,6 +58,7 @@ describe('AssistantMarkdown', () => {
     mockOpenLocalFile.mockReset()
     mockOpenPreview.mockReset()
     mockGetLocalFilePreview.mockReset()
+    mockPushNotification.mockReset()
     mockGetLocalFilePreview.mockResolvedValue({
       kind: 'unsupported',
       fileName: '',
@@ -182,6 +184,29 @@ describe('AssistantMarkdown', () => {
 
     expect(mockOpenLocalFile).toHaveBeenCalledWith('/Users/oayzz/Desktop/aijia-test/合同模板.docx')
     expect(mockOpenPreview).not.toHaveBeenCalled()
+  })
+
+  it('pushes an error toast when a workspace link fails to open with the default app', async () => {
+    mockOpenLocalFile.mockRejectedValueOnce('系统没有找到可打开此文件的默认应用')
+
+    render(
+      <AssistantMarkdown
+        text={'[安装脚本](setup.bat)'}
+        conversationId="conv-1"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('link', { name: '安装脚本' }))
+
+    await waitFor(() => {
+      expect(mockPushNotification).toHaveBeenCalledWith(expect.objectContaining({
+        level: 'error',
+        title: '无法打开文件',
+        message: '系统没有找到可打开此文件的默认应用',
+        context: 'toast',
+        autoHide: 5,
+      }))
+    })
   })
 
   it('does not render a broken image when local image markdown points at a non-image file', async () => {

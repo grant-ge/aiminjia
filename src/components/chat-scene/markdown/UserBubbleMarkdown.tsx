@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm'
 import { getLocalFilePreview, openLocalFile } from '@/lib/tauri'
 import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 import type { FileAttachment } from '@/types/message'
 import { Button } from '@/components/ui/button'
 
@@ -49,6 +50,24 @@ function inferIconFromName(name: string): LucideIcon {
   const m = /\.([A-Za-z0-9]+)$/.exec(name)
   if (!m) return FileIcon
   return EXT_TO_ICON[m[1].toLowerCase()] ?? FileIcon
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
+}
+
+function notifyOpenFileError(fileName: string, error: unknown) {
+  useNotificationStore.getState().push({
+    level: 'error',
+    title: '无法打开文件',
+    message: errorMessage(error, fileName ? `无法打开文件 "${fileName}"。` : '打开文件失败。'),
+    actions: [],
+    dismissible: true,
+    autoHide: 5,
+    context: 'toast',
+  })
 }
 
 interface UserBubbleMarkdownProps {
@@ -120,7 +139,7 @@ function useOpenLocalAttachment() {
     if (!path) return
     const matched = files?.find((f) => f.filePath === path)
     if (matched?.kind === 'folder') {
-      void openLocalFile(path)
+      void Promise.resolve(openLocalFile(path)).catch((error) => notifyOpenFileError(fileName, error))
       return
     }
     const fileType = matched?.fileType
@@ -134,7 +153,7 @@ function useOpenLocalAttachment() {
       })
       return
     }
-    void openLocalFile(path)
+    void Promise.resolve(openLocalFile(path)).catch((error) => notifyOpenFileError(fileName, error))
   }
 }
 

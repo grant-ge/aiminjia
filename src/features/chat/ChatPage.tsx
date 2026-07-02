@@ -45,6 +45,12 @@ interface ChatPageProps {
   conversationId: string
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
+}
+
 export function ChatPage({ conversationId }: ChatPageProps) {
   const { i18n, t } = useTranslation()
   const {
@@ -230,9 +236,10 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       pushNotification({
         level: 'error',
         title: '无法打开文件',
-        message: err instanceof Error ? err.message : '打开生成文件失败。',
+        message: errorMessage(err, '打开生成文件失败。'),
         actions: [],
         dismissible: true,
+        autoHide: 5,
         context: 'toast',
       })
     }
@@ -255,9 +262,10 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       pushNotification({
         level: 'error',
         title: t('messageList.cannotDownload', '无法下载文件'),
-        message: err instanceof Error ? err.message : '下载生成文件失败。',
+        message: errorMessage(err, '下载生成文件失败。'),
         actions: [],
         dismissible: true,
+        autoHide: 5,
         context: 'toast',
       })
     }

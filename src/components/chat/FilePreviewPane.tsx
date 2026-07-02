@@ -8,6 +8,7 @@ import { getFilePreview, getLocalFilePreview, openLocalFile, type FilePreview } 
 import type { PreviewTarget } from './generatedFileActions'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 interface FilePreviewPaneProps {
   target: PreviewTarget | null
@@ -21,8 +22,15 @@ type PreviewState =
   | { status: 'error'; key: string; error: string }
   | null
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
+}
+
 export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePreview }: FilePreviewPaneProps) {
   const { t } = useTranslation()
+  const pushNotification = useNotificationStore((s) => s.push)
   const [previewState, setPreviewState] = useState<PreviewState>(null)
   const [retryToken, setRetryToken] = useState(0)
   const requestIdRef = useRef(0)
@@ -79,11 +87,21 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
   const handleOpenExternal = useCallback(() => {
     if (!target) return
     if (target.localPath) {
-      void openLocalFile(target.localPath)
+      void Promise.resolve(openLocalFile(target.localPath)).catch((err) => {
+        pushNotification({
+          level: 'error',
+          title: t('filePreview.cannotOpen', '无法打开文件'),
+          message: errorMessage(err, `无法打开文件 "${target.fileName}"。`),
+          actions: [],
+          dismissible: true,
+          autoHide: 5,
+          context: 'toast',
+        })
+      })
       return
     }
     onOpenExternal?.(target)
-  }, [target, onOpenExternal])
+  }, [target, onOpenExternal, pushNotification, t])
 
   const handleDownload = useCallback(() => {
     if (!target) return

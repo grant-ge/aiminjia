@@ -856,6 +856,22 @@ describe('MessageList generated file actions', () => {
     })
   })
 
+  it('shows the backend error string when default-app open fails', async () => {
+    openGeneratedFileMock.mockRejectedValueOnce('系统没有找到可打开此文件的默认应用')
+    renderWithFile(generatedFile({ fileName: 'summary.xlsx', fileType: 'excel' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: '打开 Summary' }))
+
+    await waitFor(() => {
+      expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+        level: 'error',
+        title: '无法打开文件',
+        message: '系统没有找到可打开此文件的默认应用',
+        autoHide: 5,
+      })
+    })
+  })
+
   it('previews using file owner conversation even when active conversation is missing', async () => {
     renderWithFile(generatedFile(), null)
 
