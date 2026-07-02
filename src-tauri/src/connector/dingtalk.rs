@@ -4,6 +4,8 @@
 //! status tracking.
 //! Covers 5 product domains: AI Table, Contacts, Chat, Calendar, Todo.
 
+#[cfg(target_os = "windows")]
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -74,6 +76,11 @@ impl DingtalkBridge {
 
     /// Find the dws binary from the system PATH.
     fn find_dws(&self) -> Result<PathBuf> {
+        #[cfg(target_os = "windows")]
+        if let Some(path) = find_windows_command_path("dws") {
+            return Ok(path);
+        }
+
         #[cfg(not(target_os = "windows"))]
         if let Ok(output) = std::process::Command::new("which")
             .arg("dws")
@@ -82,25 +89,6 @@ impl DingtalkBridge {
         {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    return Ok(PathBuf::from(path));
-                }
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        if let Ok(output) = std::process::Command::new("where.exe")
-            .arg("dws")
-            .no_window()
-            .output()
-        {
-            if output.status.success() {
-                let path = crate::storage::console_decode::decode_console_bytes(&output.stdout)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
                 if !path.is_empty() {
                     return Ok(PathBuf::from(path));
                 }
@@ -129,11 +117,7 @@ impl DingtalkBridge {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
-        // Windows: suppress CMD window
-        #[cfg(target_os = "windows")]
-        {
-            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        }
+        cmd.no_window();
 
         let child = cmd.spawn().context("Failed to spawn dws process")?;
 
@@ -200,10 +184,7 @@ impl DingtalkBridge {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
-        #[cfg(target_os = "windows")]
-        {
-            cmd.creation_flags(0x08000000);
-        }
+        cmd.no_window();
 
         let mut child = cmd.spawn().context("Failed to start dws auth login")?;
 
@@ -286,10 +267,7 @@ impl DingtalkBridge {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
-        #[cfg(target_os = "windows")]
-        {
-            cmd.creation_flags(0x08000000);
-        }
+        cmd.no_window();
 
         let output = cmd
             .output()
@@ -389,6 +367,54 @@ impl DingtalkBridge {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
+
+#[cfg(target_os = "windows")]
+fn find_windows_command_path(command: &str) -> Option<PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    let names = windows_command_candidate_names(command);
+
+    for dir in std::env::split_paths(&path_var) {
+        for name in &names {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn windows_command_candidate_names(command: &str) -> Vec<String> {
+    let path = Path::new(command);
+    let has_extension = path.extension().is_some();
+    let mut names = Vec::new();
+    push_unique_candidate(&mut names, command.to_string());
+
+    if !has_extension {
+        let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+        for extension in pathext.split(';') {
+            let extension = extension.trim();
+            if extension.is_empty() {
+                continue;
+            }
+            push_unique_candidate(&mut names, format!("{command}{extension}"));
+        }
+    }
+
+    names
+}
+
+#[cfg(target_os = "windows")]
+fn push_unique_candidate(names: &mut Vec<String>, candidate: String) {
+    if !names
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&candidate))
+    {
+        names.push(candidate);
+    }
+}
 
 /// Extract the DingTalk authorization URL from a dws output line.
 ///

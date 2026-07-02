@@ -1,3 +1,6 @@
+#[cfg(not(target_os = "windows"))]
+use crate::storage::process_ext::NoWindowExt;
+
 /// Build the per-iteration user/dynamic context carrying runtime deltas.
 ///
 /// This is kept separate from the static system prompt so that KV-cache prefix stability is
@@ -364,29 +367,33 @@ fn detect_system_command_paths(
 }
 
 fn detect_command_paths(command: &str) -> Vec<std::path::PathBuf> {
-    let mut paths = if cfg!(target_os = "windows") {
-        let mut detect = std::process::Command::new("where.exe");
-        detect.arg(command);
-        command_output_lines(&mut detect)
-    } else {
-        let mut detect = std::process::Command::new("which");
-        detect.arg("-a").arg(command);
-        command_output_lines(&mut detect)
-    };
-
-    if cfg!(target_os = "macos") {
-        if let Some(shell_paths) = detect_command_paths_from_login_shell(command) {
-            paths.extend(shell_paths);
-        }
+    #[cfg(target_os = "windows")]
+    {
+        return detect_windows_command_paths(command);
     }
 
-    paths
-        .into_iter()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| std::path::PathBuf::from(line.trim()))
-        .collect()
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut detect = std::process::Command::new("which");
+        detect.arg("-a").arg(command);
+        let mut paths = command_output_lines(&mut detect);
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(shell_paths) = detect_command_paths_from_login_shell(command) {
+                paths.extend(shell_paths);
+            }
+        }
+
+        paths
+            .into_iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| std::path::PathBuf::from(line.trim()))
+            .collect()
+    }
 }
 
+#[cfg(target_os = "macos")]
 fn detect_command_paths_from_login_shell(command: &str) -> Option<Vec<String>> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
     let output = std::process::Command::new(shell)
@@ -407,7 +414,9 @@ fn detect_command_paths_from_login_shell(command: &str) -> Option<Vec<String>> {
     )
 }
 
+#[cfg(not(target_os = "windows"))]
 fn command_output_lines(command: &mut std::process::Command) -> Vec<String> {
+    command.no_window();
     let Ok(output) = command.output() else {
         return Vec::new();
     };
@@ -420,6 +429,66 @@ fn command_output_lines(command: &mut std::process::Command) -> Vec<String> {
         .filter(|line| !line.is_empty())
         .map(ToString::to_string)
         .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn detect_windows_command_paths(command: &str) -> Vec<std::path::PathBuf> {
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return Vec::new();
+    };
+    let names = windows_command_candidate_names(command);
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+
+    for dir in std::env::split_paths(&path_var) {
+        for name in &names {
+            let candidate = dir.join(name);
+            if candidate.is_file()
+                && !paths
+                    .iter()
+                    .any(|existing| paths_equal(existing, &candidate))
+            {
+                paths.push(candidate);
+            }
+        }
+    }
+
+    paths
+}
+
+#[cfg(target_os = "windows")]
+fn windows_command_candidate_names(command: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    push_unique_candidate(&mut names, command.to_string());
+
+    if std::path::Path::new(command).extension().is_some() {
+        return names;
+    }
+
+    let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    for ext in pathext
+        .split(';')
+        .map(str::trim)
+        .filter(|ext| !ext.is_empty())
+    {
+        let ext = if ext.starts_with('.') {
+            ext.to_string()
+        } else {
+            format!(".{ext}")
+        };
+        push_unique_candidate(&mut names, format!("{command}{ext}"));
+    }
+
+    names
+}
+
+#[cfg(target_os = "windows")]
+fn push_unique_candidate(candidates: &mut Vec<String>, value: String) {
+    if !candidates
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&value))
+    {
+        candidates.push(value);
+    }
 }
 
 fn path_is_inside_managed_runtime(path: &std::path::Path, root: &std::path::Path) -> bool {
