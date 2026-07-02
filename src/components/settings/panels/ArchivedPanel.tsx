@@ -35,6 +35,9 @@ function toConversation(raw: Record<string, unknown>, newChatLabel: string): Con
     updatedAt: (raw.updatedAt as string) ?? new Date().toISOString(),
     isArchived: (raw.isArchived as boolean) ?? false,
     workspaceName: (raw.workspaceName as string | undefined) ?? undefined,
+    kind: (raw.kind as Conversation['kind']) ?? undefined,
+    sourceLabel: (raw.sourceLabel as string | undefined) ?? undefined,
+    isPinned: (raw.isPinned as boolean) ?? false,
   }
 }
 
