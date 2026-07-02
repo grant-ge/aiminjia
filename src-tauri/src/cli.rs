@@ -945,6 +945,16 @@ pub async fn build_headless_driver(options: HeadlessBuildOptions) -> Result<Head
         home.as_ref(),
         user_paths.clone(),
     )));
+    let skill_enablement_store = Arc::new(
+        crate::plugin::skill::enablement::SkillEnablementStore::new(current_user_storage.clone()),
+    );
+    let skill_market_install_roots = user_paths.as_ref().map(|paths| {
+        crate::runtime::tools::builtin::skill_market::HeadlessSkillMarketInstallRoots {
+            user_skills_dir: paths.skills_dir(),
+            global_skills_dir: home.skills_dir(),
+            tmp_dir: home.root().join("tmp"),
+        }
+    });
 
     let task_store = Arc::new(AsyncAgentTaskStore::new());
     let task_notification_queue = Arc::new(TaskNotificationQueue::new());
@@ -1052,6 +1062,8 @@ pub async fn build_headless_driver(options: HeadlessBuildOptions) -> Result<Head
         tool_registry,
         auth_manager,
         skill_registry: disk_skill_registry,
+        skill_enablement_store: Some(skill_enablement_store),
+        skill_market_install_roots,
         permission_store,
         authorized_workspace_store: authorized_workspace_store.clone(),
         default_folder: workspace.clone(),

@@ -1,0 +1,574 @@
+# PawBench AIjia eval notes
+
+## 2026-06-24 runtime stall guard
+
+Previous focused run:
+
+- Lotus commit: `685e2fc2`
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\685e2fc2_task00016_unreadyguard_c1_j1_20260624_172251\20260624_172252\pawbench\deepseek-v4-flash\aijia\20260624_172253.json`
+- Score: `0.07666666666666666`
+- Elapsed: about `628s`
+- Evidence: PawBench log showed `maxIterations=120`, so the remaining failure was not caused by the old PawBench `--max-iterations 40` cap or by the earlier CLI default of `15`.
+
+Diagnosis:
+
+- The model stream could stay alive by emitting hidden `thinking.delta` events without visible text or tool calls.
+- Normal chunk timeout did not fire in that state, so one model step could consume the whole PawBench timeout before the delivery guard got another useful chance.
+- The default turn output budget was effectively unbounded (`1_000_000`), which made this worse for models that spend a long time in hidden reasoning.
+- The delivery guard was also throttled by iteration count after the first reminder, so a timeout or empty model completion could still leave a named deliverable missing.
+
+Change:
+
+- Bound the default per-step output budget to `32_768` tokens.
+- Add a thinking-only streaming timeout when there is no visible content and no tool call.
+- Let the named-deliverable guard repeat while the file remains missing or placeholder-like, up to the existing guard limit.
+
+Boundary:
+
+- This is a global runtime reliability fix, not a PawBench task-specific prompt adaptation.
+- Next verification must rebuild the current `aijia-cli` and rerun the focused PawBench task before any broader full-suite claim.
+
+## 2026-06-24 evidence writeback prompt
+
+Focused verification after commit `80ba2c52`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\80ba2c52_task00016_thinkingguard_c1_j1_20260624_194417\20260624_194418\pawbench\deepseek-v4-flash\aijia\20260624_194420.json`
+- Score: `0.7833333333333333`
+- Previous comparable score: `0.07666666666666666`
+
+What improved:
+
+- `SKILL.md` and `diagnosis-report.md` were both generated in the workspace root.
+- Automated grading gave full credit for skill structure/content, report existence, issue identification, and manual-vs-fixed separation.
+
+Remaining failure pattern:
+
+- The model read `config.json`, `package.json`, `post-history.json`, and additional script content after writing `diagnosis-report.md`.
+- It identified missing `node_modules`, missing `node`, empty access token, and a rate-limit timing conflict in later reasoning.
+- It did not write those later confirmed findings back into `diagnosis-report.md`; the report still contained outdated "not read / not verified" statements.
+- The final run also exited with PawBench `status=error` after timing out, so there is still a runtime exit issue to inspect separately.
+
+Prompt change:
+
+- Added a global evidence-writeback contract to `system.md`: after a report or other named deliverable is written, later evidence must be edited back into that deliverable before final response.
+- Added a global analysis rule for config/history/log/time-window tasks: compute concrete values such as cooldown remaining, quota remaining, and next eligible time, and write those values into the required report/result.
+
+Boundary:
+
+- This is not a task-specific patch. It targets all report, audit, cron/config, time-window, quota, log, and data-analysis tasks where later evidence can invalidate an earlier draft.
+
+## 2026-06-24 evidence checkpoint prompt
+
+Focused verification after commit `1bea3502`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\1bea3502_task00016_evidencewriteback_retry_c1_j1_20260624_212522\20260624_212527\pawbench\deepseek-v4-flash\aijia\20260624_212528.json`
+- Score: `0.6093333333333334`
+- Status: `error`
+- Tokens: `16631`
+
+What the sample proves:
+
+- The agent created both required root deliverables: `SKILL.md` and `diagnosis-report.md`.
+- Automated checks scored full credit for skill structure/content, report existence, issue identification, and fixed-vs-manual separation.
+- The model read the relevant files and confirmed key facts in the transcript: `config.json`, `package.json`, `post-history.json`, `post.js`, missing `node`, missing `node_modules`, and `node-fetch`/`dayjs` dependencies.
+
+Remaining failure pattern:
+
+- `diagnosis-report.md` was written too early as a pending/speculative report and was not edited after the key evidence was discovered.
+- The transcript shows the model recognized core findings, then launched more exploratory Bash checks instead of first updating the deliverable.
+- The task reached the 600s PawBench timeout before those later findings were written back.
+- The judge gave rate-limit analysis only partial credit because the final report did not cross-reference `2026-02-10T07:55:12Z`, `minIntervalMinutes: 180`, 148 minutes elapsed, 32 minutes remaining, and next eligible time `2026-02-10T10:55:12Z` / `18:55 Asia/Shanghai`.
+
+Prompt change:
+
+- Strengthened `system.md` so "key evidence found" becomes an explicit writeback checkpoint.
+- If new tool results confirm a core conclusion, config field, dependency state, history timestamp, time window, test result, or manual action, the next step must update the named deliverable before more exploration.
+- Early report skeletons are now framed as short in-progress structures only; they must not become long speculative reports that look complete.
+
+Boundary:
+
+- This remains a global delivery-quality rule, not a task-specific grader patch.
+
+## 2026-06-24 delivery guard shell-write alignment
+
+Focused verification after commit `d7e65806`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\d7e65806_task00016_evidencecheckpoint_c1_j1_20260624_214555\20260624_214556\pawbench\deepseek-v4-flash\aijia\20260624_214557.json`
+- Score: `0.07666666666666666`
+- Status: `error`
+- Elapsed: about `608s`
+
+What the sample proves:
+
+- The service route in the gate log was `route_model=deepseek-v4-flash`; the earlier `deepseek-v3` observation came from an invalid API-error result and is not evidence of real model routing.
+- The named-file delivery guard did extract `SKILL.md` and `diagnosis-report.md`, and repeatedly injected the blocking prompt.
+- The run still failed to create the root deliverables, so prompt-only evidence checkpointing is not sufficient for this failure mode.
+
+Remaining failure pattern:
+
+- The guard message says `Write`, `Edit`, or equivalent file writing is acceptable, but the runtime allow-check only treated literal `Write`/`Edit` tool calls as delivery progress.
+- The model repeatedly said it would write the files while the guard kept reporting that non-write tool calls were skipped.
+- This mismatch can trap the turn in a loop where shell-based file creation is never allowed to execute, and the required files remain missing.
+
+Runtime change:
+
+- Treat a shell command as satisfying the delivery guard only when it clearly writes to one of the missing named targets, such as `cat > SKILL.md`, `tee diagnosis-report.md`, `Set-Content`, `Out-File`, or common programmatic write helpers.
+- Continue blocking ordinary shell reads or exploration commands that merely mention the target file.
+- Also accept absolute `Write`/`Edit` paths that end in the requested workspace target, which is common inside Docker workspaces.
+
+Verification:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib delivery_guard_"`
+- Result: 6 focused tests passed.
+
+Follow-up verification after commit `2d2b5005`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\2d2b5005_task00016_shellwriteguard_c1_j1_20260624_220650\20260624_220655\pawbench\deepseek-v4-flash\aijia\20260624_220655.json`
+- Score: `0.47583333333333333`
+- Status: `success`
+- Key improvement: `SKILL.md` and `diagnosis-report.md` were present before grading.
+- Remaining miss: the report did not analyze `post-history.json` timing/rate-limit evidence and falsely said file access was blocked.
+
+Second runtime adjustment:
+
+- Keep the immediate guard when the assistant tries to finish with named deliverables missing.
+- Add a three-tool-iteration grace period before prompting after tool rounds, so the assistant can read source, config, logs, and history before the delivery guard starts forcing file writes.
+- Once the delivery guard has started, continue blocking non-write calls until the named deliverables are ready.
+
+Verification:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib guard"`
+- Result: 28 focused tests passed.
+
+Follow-up verification after commit `e6fb7c67`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\e6fb7c67_task00016_guardgrace_c1_j1_20260624_221407\20260624_221408\pawbench\deepseek-v4-flash\aijia\20260624_221409.json`
+- Score: `0.7293333333333334`
+- Status: `success`
+- Key improvement: the agent read `post-history.json` and `config.json` before writing the final report.
+- Remaining miss: it compared the rate-limit timestamps incorrectly, concluding the opposite of the expected `148 minutes < 180 minutes` result.
+
+Prompt adjustment experiment:
+
+- Add an explicit time-window calculation contract to `system.md`: normalize time zones, write `last_event_time`, `current_time`, `elapsed`, `required_interval`, `remaining_wait`, and `next_eligible_time`, then derive the rate-limit/cooldown conclusion from `elapsed >= required_interval`.
+
+Regression check after commit `10eb36f5`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\10eb36f5_task00016_timecalc_c1_j1_20260624_221851\20260624_221853\pawbench\deepseek-v4-flash\aijia\20260624_221853.json`
+- Score: `0.6513333333333333`
+- Status: `success`
+- Regression: score dropped from `0.7293333333333334` to `0.6513333333333333`, tokens rose from `24,921` to `50,031`, and the report still misinterpreted UTC/rate-limit timing.
+- Decision: revert the extra global time-window prompt text. The effective fix for this sample is the runtime delivery-guard grace period, not more global prompt detail.
+
+Verification after reverting the prompt experiment at commit `82640222`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\82640222_task00016_revertedprompt_c1_j1_20260624_222405\20260624_222406\pawbench\deepseek-v4-flash\aijia\20260624_222407.json`
+- Score: `0.8013333333333333`
+- Status: `error` due to `EXIT_CODE_NONZERO`, but files were present and graded.
+- Improvement: the report identified the 180-minute rate-limit conflict and evidence coverage scored `1.0`.
+- Remaining issue: the final report still lacked the exact `148 minutes` / `18:55 Asia/Shanghai` next-eligible-time detail, and the turn continued into extra verification instead of cleanly stopping after a usable report.
+
+Placeholder-check experiment after commit `b9a07cad`:
+
+- Task: `task_00016_moltbook_auto_post_skill_creation`
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\b9a07cad_task00016_unfinishedreport_c1_j1_20260624_223935\20260624_223937\pawbench\deepseek-v4-flash\aijia\20260624_223937.json`
+- Score: `0.6993333333333334`
+- Status: `error` due to `EXIT_CODE_NONZERO`.
+- Regression: score dropped from `0.8013333333333333` to `0.6993333333333334`; the report still missed the correct next eligible time and introduced unsupported claims such as `npm install` succeeding.
+- Decision: revert the expanded placeholder detector. It is too blunt for this task and does not solve the timestamp reasoning issue.
+
+Verification:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc "cd /mnt/c/Users/Administrator/.codex/worktrees/70e8/lotus-app/src-tauri && cargo test --lib guard"`
+- Result after reverting the placeholder detector: 28 focused tests passed.
+
+## 2026-06-24 full-run regression after reverting placeholder detector
+
+Full verification at commit `454d4637`:
+
+- Result path: `C:\Users\Administrator\Desktop\github\PawBench\454d4637_full_150_c16_j4_20260624_225655\20260624_225659\pawbench\deepseek-v4-flash\aijia\20260624_225700.json`
+- Score: `0.6216406289156756`
+- Comparable baseline: `7e0399a4_full_150_c16_j4_relogin_20260624_144446`, score `0.6604642811744125`
+- Delta: `-0.0388236522587369`
+- Status distribution: `success=125`, `error=25`
+- API-invalid-like count by notes/errors: current `6`, baseline `2`
+
+Major regressions:
+
+- `task_00003_a_stock_announcements_scheduled_fetch`: `0.964 -> 0.0`, likely dominated by AI service error / short transcript rather than a useful prompt signal.
+- `T103_schema_migration`: `0.96 -> 0.0`.
+- `task_00066_svpwm_implementation_for_edge_aligned_pwm_motor_controller`: `0.927 -> 0.0`, no implementation files were produced.
+- `dialogue-parser`: `0.904 -> 0.0`, skill was read but `solution.py`, `dialogue.json`, and `dialogue.dot` were not produced.
+- Visual artifact group regressed heavily because `output/output.html` was not generated after PNG metadata checks: `M005`, `M006`, `M007`, `M010`, `M011`, and `M012`.
+- Several skill/report tasks still show the old failure shape where source files are read but named deliverables are not created, such as `task_00016`, `task_00028`, and `task_00069`.
+
+Major improvements:
+
+- `task_00095_prompt_injection_defense_framework_with_skill_creation`: `0.0 -> 0.946`.
+- `task_meeting_gov_controversy`: `0.0 -> 0.858`.
+- `r2r-mpc-control`: `0.2 -> 0.936`.
+- Skill / cron / agent composition tasks improved substantially: `234-doc-butler`, `233-translator`, `227-weekly-report`, `225-multi-config`, and `230-study-buddy`.
+- `T101_wal_recovery`, `task_video_transcript_extraction`, `task_earnings_analysis`, and several safety/data tasks improved from very low baselines.
+
+Interpretation:
+
+- The full-run drop is not explained by one reverted experiment. It combines external API instability, several implementation tasks stopping before file creation, and a concentrated visual artifact failure group.
+- The strongest prompt-level opportunity is not a task-specific music rule. It is a general artifact-first rule for media-to-output tasks: when the user already gives precise structure, fields, data, layout, or interaction requirements, failure to view the original media must not block creation of the requested file.
+- This aligns with the QoderWork prompt design pattern: artifact tasks have explicit file-creation triggers, single-file HTML/SVG guidance, and a visible final artifact contract. The lotus prompt already has delivery and visual-fallback rules, but the HTML/SVG first-write requirement was too implicit.
+
+Prompt change planned after this run:
+
+- Strengthen `system.md` so HTML/SVG/React and other visual artifacts must be written as a usable first version, not a placeholder.
+- Strengthen media fallback so one reasonable view/parse attempt is enough before writing a target artifact when the user supplied explicit content and acceptance requirements.
+- Keep the rule global: it applies to visualizations, UI reproductions, diagrams, reports, and interactive pages, not to any PawBench task ID, fixed answer, or benchmark path.
+
+Expected effect:
+
+- Improve media-to-artifact tasks that currently stop after binary/metadata probing.
+- Reduce zero-score outcomes where a requested `output/output.html` or similar artifact is never created.
+- Avoid increasing deep reading loops; the first version should be valid, inspectable, and later refinable if visual evidence becomes available.
+
+## 2026-06-24 tool-description and tool-error prompt alignment
+
+Follow-up adjustment after commit `bde63fbf`:
+
+- Changed the `Read` tool description so binary media limitations are visible before the model calls the tool: media files do not return raw content, so the model should use metadata/OCR/screenshot/parser paths or explicit user specs.
+- Changed the binary `Read` tool result message so it says the read was not a successful visual/content inspection, and gives the next action: if the user already supplied explicit structure, fields, layout, data, or acceptance criteria for a required output file, create that artifact now and mark only unverified visual details.
+- Changed the `ImageTask` tool description to state that it creates/edits images but is not an image viewer, OCR tool, chart parser, or visual QA tool.
+- Changed shell command-not-found feedback (`exit_code=127`) so the next step is to use an installed alternative, a small script in an available runtime, or continue from verified evidence rather than retrying the same missing command.
+- Added truncation-aware hints to the `Read` tool description, truncated `Read` results, context-decayed older tool results, and persisted large tool-result previews. These tell the model that previews are incomplete and that relevant omitted content must be read before relying on the result.
+
+QoderWork reference pattern:
+
+- QoderWork separates global behavior from tool-local protocols. Its prompt explicitly describes tool selection preference, shell path semantics, artifact creation rules, and file-sharing behavior near the relevant tool section rather than relying only on one global instruction block.
+- The lotus change follows that pattern at a smaller scope: keep the global system prompt as the general contract, but make tool descriptions and tool error messages carry the immediate recovery instruction at the point where the model is most likely to branch incorrectly.
+
+Boundary:
+
+- This is a generic tool-usability improvement, not a PawBench task-specific adaptation. It does not mention any task id, sample file, benchmark path, or fixed answer.
+- It changes prompt/error text only. It does not alter tool execution, grading, permissions, or file detection behavior.
+
+Expected effect:
+
+- Reduce loops after missing local commands such as `file` or `identify`.
+- Reduce misuse of image-generation tooling as a viewing/OCR mechanism.
+- Improve artifact tasks where the user has already supplied enough concrete content to produce a useful first output even when independent media viewing is unavailable.
+- Reduce false conclusions from truncated file or tool-output previews by making the recovery action explicit at the point of truncation.
+
+## 2026-06-25 delivery guard grace tightening
+
+Evidence from focused run after `ce87fb1c`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\ce87fb1c_visual_artifact_c3_j2_20260625_001227\20260625_001232\pawbench\deepseek-v4-flash\aijia\20260625_001232.json`
+- Scope: six visual artifact tasks that require named `output/output.html` files.
+- Result: average score `0.152`; `M011_score_mariage_animated` generated the file and scored `0.762`, while the other five still failed because no `output/output.html` was generated.
+- Transcript pattern: the agent recognized that the user had supplied explicit specs and should generate the HTML, but continued image/OCR probing and then hit the empty-response fallback before the target file existed.
+- Regression test added: `extracts_named_html_target_from_media_artifact_request` proves the target extractor recognizes generic media-to-artifact prompts such as "generate `output/output.html`".
+
+Change:
+
+- Reduce `DELIVERY_GUARD_TOOL_GRACE_ITERATIONS` from `3` to `1`.
+
+Rationale:
+
+- The previous grace period let a named-file task spend several tool rounds on exploration before any file-write reminder became visible. If the model or service produced an empty response during that window, post-processing returned a generic apology and the benchmark received a success-shaped answer with no deliverable.
+- One initial tool round is enough for a reasonable first evidence check. After that, if a requested named file is still missing or just a placeholder, the guard should force a write/update checkpoint before more exploration.
+- This is a generic delivery reliability fix. It applies to any explicit named output file, not to a PawBench task id, file name, sample answer, or score-specific branch.
+
+Expected effect:
+
+- Increase the probability that named files exist before service hiccups, max-output events, or long exploration loops.
+- Reduce "no output file generated" zero-score failures without forcing final quality to be perfect on the first draft.
+- Potential risk: some deep research tasks may receive the file-write reminder earlier. The guard prompt permits partial evidence, known facts, assumptions, and blocker notes, so the intended behavior is an early recoverable draft rather than premature finalization.
+
+## 2026-06-25 initial delivery-primer rollback
+
+Rejected experiment after `64b1529`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\64b15294_visual_artifact_c3_j2_20260625_004941\20260625_004942\pawbench\deepseek-v4-flash\aijia\20260625_004943.json`
+- Scope: the same six visual artifact tasks used for the `ce87fb1c` and `ed489894` focused checks.
+- Result: average score dropped to `0.029`; all six tasks failed to generate `output/output.html`, including `M011` and `M012`, which had generated usable files after the shorter post-tool delivery guard.
+
+Rollback:
+
+- Remove the first-turn hidden delivery-primer prompt added by `64b1529`.
+- Keep the post-tool delivery guard from `ed489894`, because its focused run improved the same six-task average from `0.152` to `0.296`.
+
+Interpretation:
+
+- Front-loading the named-deliverable reminder before the first evidence pass appears to disrupt the model's initial execution path more than it helps.
+- The useful pattern is narrower: let the agent perform one reasonable evidence/tool round, then force a delivery checkpoint only if the named target is still missing or placeholder-like.
+- Future prompt changes should prefer tool-local recovery messages and post-tool guardrails over broad early hidden reminders, and should be checked against focused evaluation before any full run.
+
+## 2026-06-25 tool-local execution contract update
+
+QoderWork prompt review:
+
+- QoderWork keeps broad behavior in the global prompt, but puts concrete operating rules near the relevant tool section: TodoList usage, Task delegation, Skill loading, shell/path handling, file creation, file sharing, and artifact constraints.
+- The portable lesson for lotus is not to copy the whole prompt. The useful pattern is to make the tool description answer the model's immediate question: when should I call this tool, what is not enough, what should I do after failure, and what proof is required before I claim completion.
+
+Change:
+
+- Strengthened `Bash` and `PowerShell` descriptions so command failure should lead to an installed alternative, small script, project validator, or written blocker instead of same-command retry loops; shell-generated files require an independent existence/content check.
+- Strengthened `Agent` and `TaskOutput` descriptions so delegation/transcripts are not treated as final delivery. The parent agent remains responsible for checking named files, scripts, configs, reports, and data outputs.
+- Strengthened `Skill` descriptions, including the dynamic `Skill` runtime tool, so skill body inputs, outputs, safety rules, validation commands, and scoring notes become task constraints after loading.
+- Strengthened `TaskCreate`, `TaskUpdate`, and `TaskList` descriptions so task tools behave like progress control: coarse tasks, final verification, and no `completed` status for reading/analysis-only states.
+
+Expected effect:
+
+- Improve PawBench cases that previously stopped at "created task / delegated / continued reading" without writing the required file.
+- Reduce loops after command-not-found, missing dependency, timeout, or inaccessible path errors.
+- Preserve the current `system.md` as the cross-tool contract while moving tool-choice discipline closer to the tools that need it.
+
+## 2026-06-25 text-only delivery guard follow-up
+
+Evidence from focused run after `d25d53cb`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\d25d53cb_visual_tool_contract_c3_j2_20260625_010503\20260625_010507\pawbench\deepseek-v4-flash\aijia\20260625_010508.json`
+- Scope: the same six visual artifact tasks.
+- Result: average score stayed at `0.029`; all six tasks again failed to generate `output/output.html`.
+- Transcript pattern: the post-tool delivery guard reached the model. The model explicitly recognized that it should write the file, but then returned text such as "Let me create/build this HTML file" without any `Write` or other file-writing tool call. The turn then ended with the generic empty-response fallback and no deliverable.
+
+Change:
+
+- Add a text-only delivery guard path in `chat_turn_driver`: once delivery guarding has started, a `ContentComplete` response is not accepted as final while explicit named file targets remain missing or placeholder-like.
+- Inject a more specific reminder for this branch: the previous response was text-only, the named file still does not exist, and the next step must call `Write`, `Edit`, or an equivalent file-writing tool.
+
+Boundary:
+
+- This is not the failed first-turn primer. It only triggers after the normal evidence/tool pass and after the regular delivery guard has already started.
+- It does not create benchmark-specific files or mention task ids. The condition is generic: explicit named target still missing after a text-only response.
+
+Expected effect:
+
+- Reduce "I will create the file" text-only endings on named-file tasks.
+- Give the model another chance to emit the actual write tool call before post-processing turns an empty final response into a generic apology.
+
+Focused result after this change:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\2b1e3b3a_visual_text_only_guard_c3_j2_20260625_011703\20260625_011704\pawbench\deepseek-v4-flash\aijia\20260625_011705.json`
+- Scope: the same six visual artifact tasks.
+- Result: average score improved to `0.635` from the previous `0.029`.
+- Five of six tasks generated `output/output.html` and scored between `0.706` and `0.797`: `M005`, `M006`, `M010`, `M011`, `M012`.
+- `M007_score_symphony` remained low (`0.03`) with `status=error`; transcript stopped after file existence and metadata checks, so it looks like a separate timeout/error path rather than the text-only guard branch that this change fixed.
+
+Interpretation:
+
+- This is strong evidence that the failed branch was not "missing global prompt wording"; it was the driver accepting a text-only response after the model had already been told to write.
+- The new trigger point is materially better than the rejected first-turn primer: it preserves the initial evidence pass, then refuses only the specific non-delivery ending.
+- The tradeoff is higher token/time usage on tasks that need another write attempt. In the focused run, successful tasks used substantially more tokens, but produced real files instead of zero-score missing artifacts.
+
+## 2026-06-25 named-deliverable extractor expansion
+
+Evidence from non-visual focused run after `64ce3bc6`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\64ce3bc6_named_deliverables_c3_j2_20260625_014338\20260625_014343\pawbench\deepseek-v4-flash\aijia\20260625_014343.json`
+- Scope: `task_00016`, `task_00028`, `task_00069`, `task_00066`, and `dialogue-parser`.
+- Positive results: `task_00069` scored `0.964`, `task_00016` scored `0.717`, and `task_00028` scored `0.56`, all much better than the previous near-zero/no-deliverable outcomes.
+- Remaining failures: `dialogue-parser` and `task_00066` still scored `0.0`.
+
+Failure analysis:
+
+- The remaining two failures did not trigger the delivery guard at all. Their transcripts had no `Write`/`Edit` calls and no delivery guard reminder.
+- Both prompts used wording the extractor did not cover: `target files should be ...` for SVPWM, and `implement ... parser solution.py`, `output ... dialogue.json`, `visualization dialogue.dot` for dialogue-parser.
+
+Change:
+
+- Expand the named-target context detector to treat "target file(s)", "required file(s)", "implement/implementation", "output a/an", "validated JSON", and "visualization" as creation contexts when they surround a file path.
+- Add focused extractor tests for the SVPWM target files and dialogue-parser output set.
+
+Expected effect:
+
+- Bring code-generation and parser tasks with explicit output paths under the same delivery guard used by the visual artifact tasks.
+- Avoid false completion when the model only reads source files and summarizes implementation intent.
+
+Focused result after extractor expansion:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\7056a330_extractor_two_failures_c2_j2_20260625_022042\20260625_022044\pawbench\deepseek-v4-flash\aijia\20260625_022044.json`
+- `dialogue-parser` improved from `0.0` to `0.394`: `solution.py`, `dialogue.json`, and `dialogue.dot` were produced, with 34/35 automated tests passing.
+- `task_00066_svpwm_implementation_for_edge_aligned_pwm_motor_controller` stayed at `0.0`; it still produced no `svpwm_output/svpwm.c` or `.h` and exited nonzero after a long run.
+
+Interpretation:
+
+- The extractor change works for parser/code-output wording where the model can move to a bounded implementation.
+- SVPWM is now a separate long-code/long-output failure branch. The transcript ended after large source/config content was surfaced as assistant text, with no write calls; improving it likely needs a separate strategy for long engineering tasks, such as earlier code skeleton creation or stronger interruption of long source dumping.
+
+## 2026-06-25 full-run scoring anomaly audit
+
+Full run after `0866a8a8`:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\0866a8a8_full_150_c16_j4_20260625\20260625_043004\pawbench\deepseek-v4-flash\aijia\20260625_043005.json`
+- Scope: all 150 PawBench tasks, AIjia concurrency 16, Codex judge concurrency 4.
+- Raw result: average score `0.5846403399116986`, median `0.7362`, `success=119`, `error=31`, `<0.3=43`, `zero=25`.
+- The raw average is contaminated by infrastructure failures: 16 tasks reported `Grading failed: codex judge failed after 100 attempts`, and 4 safety tasks reported `[Errno 32] Broken pipe`.
+
+Regrade attempt for the affected 20 tasks:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\0866a8a8_rejudge_failures_c8_j1_20260625\20260625_125526\pawbench\deepseek-v4-flash\aijia\20260625_125527.json`
+- Log path: `C:\Users\Administrator\Desktop\github\PawBench\run_logs\0866a8a8_rejudge_failures_c8_j1_20260625_r2.log`
+- Scope: the 16 judge-failed tasks plus 4 broken-pipe safety tasks, AIjia concurrency 8, judge concurrency 1, output redirected to a log file.
+- Result: judge failures dropped to `0` and broken-pipe failures dropped to `0`, but all 20 reruns were invalid because AIjia returned `LLM error: Invalid session key` after one iteration.
+
+Interpretation:
+
+- The original full-run judge failures were likely external judge/Codex availability or concurrency sensitivity, so those tasks should be regraded after the auth state is healthy.
+- The broken-pipe errors were a runner invocation problem: the parent shell command timed out or closed stdout while the WSL/PawBench child kept running. Future long runs should redirect output to a log file and be monitored by result JSON, not by a long-lived tool stdout pipe.
+- The regrade attempt proved the judge path itself was healthy under lower judge concurrency, but it did not produce valid model scores because AIjia auth/session state was invalid.
+
+Follow-up fix outside lotus:
+
+- PawBench now detects `Invalid session key`, `Session key revoked`, and related auth messages as `AUTH_SESSION_INVALID`.
+- `AUTH_SESSION_INVALID` is classified as an API/infrastructure failure and is non-retryable inside the same run, because retries without refreshing login state only burn time and produce misleading low scores.
+
+Follow-up fix inside lotus:
+
+- Delivery guard now treats PDF extraction placeholders and similar "not yet completed" file skeletons as unready deliverables.
+- If a tool call was intended to write a requested target file but failed, and the target is still missing, empty, or placeholder-like, the driver injects a recovery reminder and continues instead of accepting a failure summary.
+
+Next valid evaluation step:
+
+- Refresh AIjia login/session state first.
+- Re-run the affected task set with log redirection, lower judge concurrency, and anomaly reporting enabled.
+- Only compare `valid_avg` or manually recomputed valid scores; do not compare the invalid auth rerun's raw average to real model runs.
+
+## 2026-06-25 corrected full-run comparison and auth resmoke
+
+Current code checkpoints:
+
+- lotus commit: `4ccb4cef` (`fix(runtime): recover failed deliverable writes`)
+- PawBench commits: `875c672` (`fix(eval): classify invalid aijia sessions`) and `3c16fd1` (`fix(eval): mark scorer infra failures invalid`)
+
+Auth smoke:
+
+- Run path: `C:\Users\Administrator\Desktop\github\PawBench\4ccb4cef_auth_resmoke_c1_j1_20260625_2\20260625_132446\pawbench\deepseek-v4-flash\aijia\20260625_132447.json`
+- Log path: `C:\Users\Administrator\Desktop\github\PawBench\run_logs\4ccb4cef_auth_resmoke_c1_j1_20260625_2.log`
+- Result: `valid_runs=0/1`, `api_invalid=1`, anomaly ids include `AUTH_SESSION_INVALID`.
+- Interpretation: AIjia's current session key is still invalid, so full or 20-task regrade would not produce usable model scores yet.
+
+Auth source-state check:
+
+- Full-state WSL CLI check with `HOME=/mnt/c/Users/Administrator` returned `not logged in: run the desktop app login first so ~/.renlijia contains a valid JWT`.
+- Current worktree dev startup at `http://localhost:5173/` loaded the app but logged `no active user scope` and `未登录，无法读写技能配置`.
+- This rules out PawBench concurrency and Docker seed copying as the primary blocker for the current run. The source `~/.renlijia` login state itself is not usable by the runtime.
+
+Corrected full-run comparison:
+
+- Previous full run: `c294a3e9_full_150_c16_j4_20260625_025244\20260625_025249\pawbench\deepseek-v4-flash\aijia\20260625_025250.json`
+- Previous full score: raw average `0.6871211523136687`, corrected valid average `0.6892685424028495`, `148` valid runs, `2` API-invalid runs.
+- Latest full run: `0866a8a8_full_150_c16_j4_20260625\20260625_043004\pawbench\deepseek-v4-flash\aijia\20260625_043005.json`
+- Latest raw score: `0.5846403399116986`.
+- Latest corrected score using the new anomaly policy: `130` valid runs, `20` invalid runs, corrected valid average `0.6745850075904215`.
+- Invalid latest-run causes: `16` `JUDGE_INFRA_FAILURE` rows from `codex judge failed after 100 attempts`, plus `4` `RUNNER_BROKEN_PIPE` rows.
+
+Score interpretation:
+
+- The apparent drop from `0.6871` to `0.5846` is mostly a scoring-infrastructure artifact.
+- The corrected drop is smaller: `0.6893` -> `0.6746`.
+- On the `128` tasks that are valid in both runs, the average changed from `0.7137` to `0.6782`, a delta of about `-0.0355`.
+
+Largest valid-task drops:
+
+- `task_openclaw_comprehension`: `1.000` -> `0.000`
+- `task_csv_temp_decades`: `0.968` -> `0.000`; notes indicate command failure and no produced output.
+- `task_contract_analysis`: `0.940` -> `0.000`; notes indicate only a placeholder `contract_analysis.md`.
+- `M086_doc_figure_reproduction_line`: `0.892` -> `0.071`; required image not produced.
+- `M005_score_canon`: `0.769` -> `0.033`; required `output/output.html` not generated.
+- `M019_doc_extraction_radar_chart`: `0.982` -> `0.265`; CSV data was correct, chart generation failed.
+
+Largest valid-task gains:
+
+- `task_00096_create_protected_secrets_directory_with_access_rules`: `0.000` -> `0.976`
+- `task_video_transcript_extraction`: `0.050` -> `0.660`
+- `230-study-buddy-skill-cron-agent`: `0.250` -> `0.825`
+- `227-weekly-report-skill-cron-agent`: `0.487` -> `0.965`
+- `task_meeting_tech_decisions`: `0.400` -> `0.785`
+
+Remaining low valid tasks in latest run:
+
+- `23` valid tasks scored below `0.3`; `5` of those were exact zero.
+- Rough buckets from grader notes: `7` missing/no final deliverable, `6` tool/runtime/command failures, `6` incomplete content, `1` wrong-answer quality, and `3` sparse/empty-note cases.
+
+Next judgment:
+
+- Do not treat the latest full run as a true regression to `58`.
+- The next evaluable step is still to refresh AIjia auth, then rerun the 20 invalid latest-run tasks using `-LogFile` and low judge concurrency.
+- If the 20 invalid tasks average near the corrected valid average, the real full-run score is likely around the high-60s; if they recover to the previous c294 distribution, crossing `0.70` is plausible without another broad prompt rewrite.
+
+## 2026-06-25 scorer-failure regrade infrastructure
+
+Question:
+
+- The latest full run had 16 `codex judge failed after 100 attempts` rows and 4 `[Errno 32] Broken pipe` rows.
+- We needed to distinguish real model regressions from scorer/runtime infrastructure failures before making another system-prompt change.
+
+Finding:
+
+- The original `0866a8a8` full run cannot be strictly regraded offline because the run saved transcripts but did not save `workspaces/`.
+- PawBench hybrid and automated grading need the final workspace artifacts, not just transcript text. Regrading without workspace would create misleading zero/error rows.
+- A previous 20-task attempt at `0866a8a8_rejudge_failures_c8_j1_20260625` re-ran AIjia rather than purely regrading. It is not usable as replacement data because all 20 rows are marked API-invalid from current auth/session failure.
+
+PawBench infrastructure changes:
+
+- Commit `87c60dc` exposes `-SaveWorkspace` in `scripts/run-aijia-docker-eval.ps1`, passing through to `run_bench.py --save-workspace`.
+- Added `scripts/regrade_saved_workspaces.py` to re-run the official PawBench grader from saved `workspaces/` and `transcripts/` without re-running AIjia.
+- This is a general scorer recovery mechanism: it does not branch on PawBench task IDs, expected answers, output filenames, or benchmark-specific content.
+
+Validation:
+
+- `wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/c/Users/Administrator/Desktop/github/PawBench && /root/pawbench-venv/bin/python -m py_compile scripts/regrade_saved_workspaces.py pawbench/grader.py pawbench/runner.py pawbench/backend.py'`
+- Regrade smoke on an old saved-workspace row completed and called the automated grader without launching AIjia.
+- Regrade check against the `0866a8a8` judge-failed row produced `Regrade skipped: saved workspace not found ...`, confirming that this full run cannot be honestly re-scored from transcript alone.
+
+Next evaluation口径:
+
+- Refresh AIjia login first; current direct WSL CLI call still returns `not logged in: run the desktop app login first so ~/.renlijia contains a valid JWT`.
+- After login is healthy, rerun the 20 invalid `0866a8a8` tasks at lower judge concurrency with `-LogFile` and `-SaveWorkspace`.
+- If agent output succeeds but judge fails again, use `scripts/regrade_saved_workspaces.py` on the saved run instead of burning another AIjia rerun.
+
+## 2026-06-25 long-engineering runnable-increment prompt
+
+Current blocker check:
+
+- Direct WSL CLI call still returns `not logged in: run the desktop app login first so ~/.renlijia contains a valid JWT`.
+- No new PawBench agent run was started, because it would only generate another auth-invalid low-score run.
+
+Qoder comparison:
+
+- QoderWork's prompt uses explicit tool/task/file workflow sections rather than a vague persona-only prompt.
+- The useful transferable pattern here is not a copied rule, but the repeated emphasis that real work should move into visible artifacts and verification instead of remaining in chat text.
+
+Change:
+
+- Strengthened `system.md` for long engineering implementation, code reproduction, controllers, parsers, simulations, and data recovery tasks.
+- New rule: use "小步可运行" progress, first lock output contract/core inputs/minimal validation, then write the main code/script/JSON/CSV/report skeleton early.
+- New rule: when reading large source, config, papers, logs, or data, extract interfaces, constraints, and key snippets rather than copying large raw content into the conversation as a substitute for artifacts.
+- New rule: if dependency installation, command execution, tests, external tools, or environment fail, still complete the writable artifact from confirmed constraints and record the error and unverified impact instead of returning only the error or continuing broad reading.
+
+Why this is general:
+
+- The rule does not mention any PawBench task id, path, expected answer, scoring keyword, or fixed file name.
+- It targets a repeated product-level failure mode: long technical tasks stalling in reading, source dumping, command failure, or plan text rather than producing usable intermediate artifacts.
+
+Validation:
+
+- Added `prompt_style_test::system_prompt_guides_long_engineering_tasks_to_runnable_artifacts`.
+- Ran `cargo test --test prompt_style_test -- --nocapture`: 3 tests passed.
+
+Expected effect:
+
+- Improve long code/engineering tasks where the model currently spends too much time reading or explaining and too little time writing the requested implementation or data artifacts.
+- Reduce "command failed so no deliverable" endings by forcing best-effort artifact writeback plus explicit unverified-impact notes.
+
+Next evaluation step:
+
+- After login is refreshed, run a 1-task auth smoke first.
+- Then run the 20 invalid latest-run tasks with `-LogFile`, `-SaveWorkspace`, and low judge concurrency.
+- If that is healthy, include long-engineering low tasks in the next focused comparison before deciding whether this prompt change improved the valid-score distribution.

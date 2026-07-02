@@ -13,7 +13,7 @@ use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::tools::permission::PermissionMode;
 use serde_json::json;
 
-const DEFAULT_MAX_ITERATIONS: usize = 15;
+const DEFAULT_MAX_ITERATIONS: usize = 120;
 
 #[tokio::main]
 async fn main() {
@@ -478,7 +478,7 @@ fn parse_permission_mode(value: &str) -> Result<PermissionMode> {
         "default" => Ok(PermissionMode::Default),
         "plan" => Ok(PermissionMode::Plan),
         "acceptEdits" => Ok(PermissionMode::AcceptEdits),
-        "bypassPermissions" => Ok(PermissionMode::AcceptEdits),
+        "fullAccess" | "bypassPermissions" => Ok(PermissionMode::FullAccess),
         "dontAsk" => Ok(PermissionMode::DontAsk),
         "auto" => Ok(PermissionMode::AcceptEdits),
         _ => anyhow::bail!("invalid --permission-mode value: {value}"),
@@ -487,6 +487,6 @@ fn parse_permission_mode(value: &str) -> Result<PermissionMode> {
 
 fn print_usage() {
     eprintln!(
-        "Usage: aijia agent --prompt <text> [--workspace <dir>] [--session-id <id>] [--system-prompt <text>] [--max-iterations <n>] [--json]\n       aijia -p <text> [--output-format text|json|stream-json] [--add-dir <dirs...>] [--model <model>] [--verbose] [-c, --continue]\n       aijia --version | -v"
+        "Usage: aijia agent --prompt <text> [--workspace <dir>] [--session-id <id>] [--system-prompt <text>] [--max-iterations <n>] [--permission-mode default|plan|acceptEdits|fullAccess|dontAsk] [--json]\n       aijia -p <text> [--output-format text|json|stream-json] [--add-dir <dirs...>] [--model <model>] [--permission-mode default|plan|acceptEdits|fullAccess|dontAsk] [--verbose] [-c, --continue]\n       aijia --version | -v"
     );
 }

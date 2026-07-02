@@ -15,7 +15,7 @@ use crate::runtime::chat::compaction::{
     append_literal_anchor_hints, append_transcript_path_hint,
     compact_transcript_path_for_conversation_dir, AutoCompactConfig, CompactTrigger,
 };
-use crate::runtime::chat::context_builder::build_iteration_context;
+use crate::runtime::chat::context_builder::{build_iteration_context, build_local_skill_context};
 use crate::runtime::chat::multimodal::{
     build_anthropic_image_blocks, retain_text_fallback_attachments,
 };
@@ -53,6 +53,8 @@ use crate::runtime::store::{
 };
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
+
+const DEFAULT_TURN_OUTPUT_TOKEN_BUDGET: usize = 32_768;
 
 fn push_unique_system_segment(
     segments: &mut Vec<SystemPromptSegment>,
@@ -112,6 +114,180 @@ fn round_has_successful_teammate_spawn(round_results: &[ToolRoundResult]) -> boo
             .as_deref()
             == Some("teammate_spawned")
     })
+}
+
+#[cfg(test)]
+fn tool_calls_write_missing_target(
+    tool_calls: &[RuntimeToolCallRequest],
+    missing_targets: &[String],
+) -> bool {
+    tool_calls
+        .iter()
+        .any(|call| tool_call_writes_missing_target(call, missing_targets))
+}
+
+fn delivery_write_call_ids_for_missing_targets(
+    tool_calls: &[RuntimeToolCallRequest],
+    missing_targets: &[String],
+) -> HashSet<String> {
+    tool_calls
+        .iter()
+        .filter(|call| tool_call_writes_missing_target(call, missing_targets))
+        .map(|call| call.tool_call_id.clone())
+        .collect()
+}
+
+fn tool_call_writes_missing_target(
+    call: &RuntimeToolCallRequest,
+    missing_targets: &[String],
+) -> bool {
+    if matches!(call.tool_name.as_str(), "Write" | "Edit") {
+        return call
+            .args
+            .get("file_path")
+            .and_then(|value| value.as_str())
+            .is_some_and(|path| file_path_targets_missing(path, missing_targets));
+    }
+
+    if !matches!(call.tool_name.as_str(), "Bash" | "PowerShell" | "ShellTask") {
+        return false;
+    }
+    let Some(command) = call
+        .args
+        .get("command")
+        .or_else(|| call.args.get("cmd"))
+        .and_then(|value| value.as_str())
+    else {
+        return false;
+    };
+    missing_targets
+        .iter()
+        .any(|target| shell_command_writes_target(command, target))
+}
+
+fn round_has_failed_delivery_write(
+    round_results: &[ToolRoundResult],
+    delivery_write_call_ids: &HashSet<String>,
+) -> bool {
+    if delivery_write_call_ids.is_empty() {
+        return false;
+    }
+    round_results.iter().any(|round_result| match round_result {
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_call_id,
+            is_error: true,
+            ..
+        }) => delivery_write_call_ids.contains(tool_call_id),
+        ToolRoundResult::Blocked(blocked) => {
+            delivery_write_call_ids.contains(&blocked.tool_call_id)
+        }
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired { tool_call_id, .. }) => {
+            delivery_write_call_ids.contains(tool_call_id)
+        }
+        _ => false,
+    })
+}
+
+fn file_path_targets_missing(path: &str, missing_targets: &[String]) -> bool {
+    if let Some(target) = safeguard::normalize_workspace_file_candidate(path) {
+        if missing_targets.iter().any(|missing| missing == &target) {
+            return true;
+        }
+    }
+    let normalized = path
+        .trim()
+        .trim_matches(|c: char| matches!(c, '`' | '"' | '\''))
+        .replace('\\', "/");
+    missing_targets.iter().any(|missing| {
+        let missing = missing.replace('\\', "/");
+        normalized == missing || normalized.ends_with(&format!("/{missing}"))
+    })
+}
+
+fn shell_command_writes_target(command: &str, target: &str) -> bool {
+    let normalized = command.replace('\\', "/");
+    let target = target.replace('\\', "/");
+    if !normalized.contains(&target) {
+        return false;
+    }
+
+    if redirection_points_to_target(&normalized, &target) {
+        return true;
+    }
+
+    let lower = normalized.to_lowercase();
+    let target_lower = target.to_lowercase();
+    let write_markers = [
+        "tee ",
+        "set-content",
+        "out-file",
+        "writefile",
+        "writefilesync",
+        "write_text",
+        "writealltext",
+        "savefig",
+        "imsave",
+        "imwrite",
+        "write_image",
+        "write_pdf",
+        "to_excel",
+        "to_csv",
+        ".save(",
+    ];
+    write_markers.iter().any(|marker| {
+        lower.match_indices(marker).any(|(idx, marker)| {
+            command_segment_after_marker_contains_target(
+                &normalized,
+                idx + marker.len(),
+                &target_lower,
+            )
+        })
+    })
+}
+
+fn redirection_points_to_target(command: &str, target: &str) -> bool {
+    command.match_indices('>').any(|(idx, _)| {
+        let after = command[idx + 1..].trim_start_matches('>').trim_start();
+        if after.starts_with('&') {
+            return false;
+        }
+        first_shell_path_token(after)
+            .is_some_and(|path| file_path_targets_missing(path, &[target.to_string()]))
+    })
+}
+
+fn command_segment_after_marker_contains_target(
+    command: &str,
+    marker_end: usize,
+    target_lower: &str,
+) -> bool {
+    let segment = command[marker_end..]
+        .split(|c: char| matches!(c, '\n' | '\r' | ';' | '&' | '|'))
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    segment.contains(target_lower)
+}
+
+fn first_shell_path_token(input: &str) -> Option<&str> {
+    let input = input.trim_start();
+    let first = input.chars().next()?;
+    if matches!(first, '"' | '\'' | '`') {
+        let start = first.len_utf8();
+        let end = input[start..]
+            .find(first)
+            .map(|idx| start + idx + first.len_utf8())
+            .unwrap_or(input.len());
+        return Some(&input[..end]);
+    }
+
+    let end = input
+        .char_indices()
+        .find_map(|(idx, ch)| {
+            matches!(ch, ' ' | '\t' | '\n' | '\r' | ';' | '&' | '|' | '<' | '>').then_some(idx)
+        })
+        .unwrap_or(input.len());
+    (end > 0).then_some(&input[..end])
 }
 
 fn extract_name_markers(text: &str) -> HashSet<String> {
@@ -2277,10 +2453,13 @@ impl RuntimeChatTurnDriver {
             tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(120),
-            // All chat routes through AIjia Gateway V2: ask for an aspirational
-            // ceiling and let the gateway clamp to the real
-            // per-upstream-model cap (Step 1).
-            token_budget: overrides.token_budget.unwrap_or(1_000_000),
+            // Keep each model step bounded. Very large caps let hidden
+            // reasoning consume the whole turn before the driver can enforce
+            // delivery checks; long visible answers can still continue through
+            // the max_tokens recovery path.
+            token_budget: overrides
+                .token_budget
+                .unwrap_or(DEFAULT_TURN_OUTPUT_TOKEN_BUDGET),
             chunk_timeout_secs: 90,
             workspace_path: workspace_path.clone(),
             authorized_workspace: overrides.authorized_workspace,
@@ -2685,6 +2864,15 @@ impl RuntimeChatTurnDriver {
             Some(instruction) => instruction,
             None => skill_catalog,
         };
+        let local_skill_context =
+            build_local_skill_context(&config.workspace_path, config.authorized_workspace.as_ref());
+        let skill_context = if local_skill_context.is_empty() {
+            skill_context
+        } else if skill_context.is_empty() {
+            local_skill_context
+        } else {
+            format!("{local_skill_context}\n\n{skill_context}")
+        };
         let skill_context = match request.channel_context.as_deref() {
             Some(channel_context)
                 if !channel_context.trim().is_empty() && !skill_context.is_empty() =>
@@ -2723,6 +2911,15 @@ impl RuntimeChatTurnDriver {
         let compact_transcript_path = executor
             .conversation_dir(config.conversation_id.as_str())
             .map(|dir| compact_transcript_path_for_conversation_dir(&dir));
+        let delivery_guard_workspace = config
+            .authorized_workspace
+            .as_ref()
+            .map(|workspace| workspace.root_path.clone())
+            .unwrap_or_else(|| config.workspace_path.clone());
+        let requested_file_targets =
+            safeguard::extract_requested_file_targets(request.content.as_str());
+        let mut delivery_guard_count = 0usize;
+        let mut artifact_quality_guard_count = 0usize;
 
         'turn: for iteration in 0..config.max_iterations {
             let mut preprocess_config = PreprocessConfig::default();
@@ -3409,6 +3606,72 @@ impl RuntimeChatTurnDriver {
                         }
                     }
 
+                    let text_only_missing_targets = safeguard::unready_requested_file_targets(
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                    );
+                    if !text_only_missing_targets.is_empty() {
+                        delivery_guard_count += 1;
+                        state.final_only_content = content.clone();
+                        if !content.trim().is_empty() {
+                            state.messages.push(serde_json::json!({
+                                "role": "assistant",
+                                "content": content,
+                            }));
+                        }
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": safeguard::delivery_guard_text_only_prompt(
+                                &text_only_missing_targets
+                            ),
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
+                    if let Some(msg) = safeguard::maybe_delivery_guard_prompt(
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        delivery_guard_count,
+                        iteration,
+                    ) {
+                        delivery_guard_count += 1;
+                        state.final_only_content = content.clone();
+                        state.messages.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": content,
+                        }));
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
+                    if let Some(msg) = safeguard::maybe_artifact_quality_guard_prompt(
+                        request.content.as_str(),
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        artifact_quality_guard_count,
+                    ) {
+                        artifact_quality_guard_count += 1;
+                        state.final_only_content = content.clone();
+                        state.messages.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": content,
+                        }));
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
                     turn_completed_normally = true;
                     break 'turn;
                 }
@@ -3516,6 +3779,16 @@ impl RuntimeChatTurnDriver {
                     state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
+                    let unready_targets_before_tool_round =
+                        safeguard::unready_requested_file_targets(
+                            &requested_file_targets,
+                            &delivery_guard_workspace,
+                        );
+                    let delivery_write_call_ids = delivery_write_call_ids_for_missing_targets(
+                        &tool_calls,
+                        &unready_targets_before_tool_round,
+                    );
+
                     // Stage: Tools — emit the planned batch so the UI immediately
                     // shows "正在执行 X / 正在并行运行 N 个工具".  Per-tool
                     // start/completion granularity is handled by the existing
@@ -3616,6 +3889,8 @@ impl RuntimeChatTurnDriver {
                     let round_results = self
                         .resolve_interaction_requests(turn, &cancel, round_results)
                         .await?;
+                    let delivery_write_failed_this_round =
+                        round_has_failed_delivery_write(&round_results, &delivery_write_call_ids);
                     let team_deleted_this_round = round_has_successful_team_delete(&round_results);
                     let teammate_spawned_this_round =
                         round_has_successful_teammate_spawn(&round_results);
@@ -3719,6 +3994,57 @@ impl RuntimeChatTurnDriver {
                     state
                         .generated_file_ids
                         .extend(results.new_generated_file_ids);
+
+                    if delivery_write_failed_this_round {
+                        let missing_after_failed_write = safeguard::unready_requested_file_targets(
+                            &requested_file_targets,
+                            &delivery_guard_workspace,
+                        );
+                        if !missing_after_failed_write.is_empty() {
+                            delivery_guard_count += 1;
+                            state.messages.push(serde_json::json!({
+                                "role": "user",
+                                "isMeta": true,
+                                "content": safeguard::delivery_guard_failed_tool_prompt(
+                                    &missing_after_failed_write
+                                ),
+                            }));
+                            pending_task_notifications.clear();
+                            continue 'turn;
+                        }
+                    }
+
+                    if let Some(msg) = safeguard::maybe_delivery_guard_prompt_after_tool_round(
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        delivery_guard_count,
+                        iteration,
+                    ) {
+                        delivery_guard_count += 1;
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
+
+                    if let Some(msg) = safeguard::maybe_artifact_quality_guard_prompt(
+                        request.content.as_str(),
+                        &requested_file_targets,
+                        &delivery_guard_workspace,
+                        artifact_quality_guard_count,
+                    ) {
+                        artifact_quality_guard_count += 1;
+                        state.messages.push(serde_json::json!({
+                            "role": "user",
+                            "isMeta": true,
+                            "content": msg,
+                        }));
+                        pending_task_notifications.clear();
+                        continue 'turn;
+                    }
 
                     // Safeguard check.
                     match safeguard::check_iteration(
@@ -4426,6 +4752,15 @@ mod tests {
         })
     }
 
+    fn tool_call(tool_name: &str, args: serde_json::Value) -> RuntimeToolCallRequest {
+        RuntimeToolCallRequest {
+            tool_call_id: format!("tc-{tool_name}"),
+            tool_name: tool_name.to_string(),
+            args,
+            purpose: None,
+        }
+    }
+
     #[test]
     fn chat_turn_request_pre_persisted_defaults_false() {
         let req = ChatTurnRequest::new("conv-x", "hello", vec![]);
@@ -4459,6 +4794,125 @@ mod tests {
         };
 
         assert!(!should_build_image_blocks_for_turn(&settings, true));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_write_tool_for_named_target() {
+        let calls = vec![tool_call(
+            "Write",
+            serde_json::json!({"file_path": "diagnosis-report.md", "content": "ok"}),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["diagnosis-report.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_write_tool_absolute_workspace_path() {
+        let calls = vec![tool_call(
+            "Write",
+            serde_json::json!({
+                "file_path": "/app/working/workspaces/default/diagnosis-report.md",
+                "content": "ok"
+            }),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["diagnosis-report.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_shell_redirection_to_named_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({
+                "command": "cat > SKILL.md <<'EOF'\n# Scheduled Script Troubleshooter\nEOF"
+            }),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_shell_tee_to_named_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({"command": "printf '%s\\n' '# Title' | tee SKILL.md"}),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_accepts_shell_savefig_to_png_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({
+                "command": "python3 - <<'PY'\nimport matplotlib.pyplot as plt\nplt.bar(['A'], [1])\nplt.savefig('output/relative_gain_bar.png')\nPY"
+            }),
+        )];
+
+        assert!(tool_calls_write_missing_target(
+            &calls,
+            &["output/relative_gain_bar.png".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_detects_failed_shell_write_to_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({
+                "command": "python3 - <<'PY'\nimport matplotlib.pyplot as plt\nplt.savefig('output/relative_gain_bar.png')\nPY"
+            }),
+        )];
+        let ids = delivery_write_call_ids_for_missing_targets(
+            &calls,
+            &["output/relative_gain_bar.png".to_string()],
+        );
+        let results = vec![completed_tool_result_with_content(
+            "Bash",
+            true,
+            "ModuleNotFoundError: No module named 'matplotlib'",
+        )];
+
+        assert!(round_has_failed_delivery_write(&results, &ids));
+    }
+
+    #[test]
+    fn delivery_guard_rejects_shell_read_of_named_target() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({"command": "sed -n '1,80p' SKILL.md"}),
+        )];
+
+        assert!(!tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
+    }
+
+    #[test]
+    fn delivery_guard_rejects_shell_write_to_other_file_before_target_read() {
+        let calls = vec![tool_call(
+            "Bash",
+            serde_json::json!({"command": "echo ok > notes.txt && sed -n '1,80p' SKILL.md"}),
+        )];
+
+        assert!(!tool_calls_write_missing_target(
+            &calls,
+            &["SKILL.md".to_string()]
+        ));
     }
 
     #[test]

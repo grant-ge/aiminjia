@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -8,11 +9,12 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::commands::skill_management::{
-    install_marketplace_skill_with_auth, list_marketplace_skills_with_auth, MarketplaceSkillItem,
+    install_marketplace_skill_headless_with_auth, install_marketplace_skill_with_auth,
+    list_marketplace_skills_with_auth, MarketplaceSkillItem,
 };
 use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::registry::SkillRegistry;
-use crate::plugin::skill::types::DiskSkill;
+use crate::plugin::skill::types::{DiskSkill, SkillSource};
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
@@ -51,10 +53,23 @@ impl SkillMarketSearchRuntimeTool {
 
 #[derive(Clone)]
 pub struct SkillMarketInstallRuntimeTool {
-    app: AppHandle,
+    install_target: SkillMarketInstallTarget,
     auth_manager: Arc<crate::auth::AuthManager>,
     skill_registry: Arc<Mutex<SkillRegistry>>,
     enablement_store: Option<Arc<SkillEnablementStore>>,
+}
+
+#[derive(Clone)]
+enum SkillMarketInstallTarget {
+    Tauri(AppHandle),
+    Headless(HeadlessSkillMarketInstallRoots),
+}
+
+#[derive(Clone)]
+pub struct HeadlessSkillMarketInstallRoots {
+    pub user_skills_dir: PathBuf,
+    pub global_skills_dir: PathBuf,
+    pub tmp_dir: PathBuf,
 }
 
 impl SkillMarketInstallRuntimeTool {
@@ -65,7 +80,21 @@ impl SkillMarketInstallRuntimeTool {
         enablement_store: Option<Arc<SkillEnablementStore>>,
     ) -> Self {
         Self {
-            app,
+            install_target: SkillMarketInstallTarget::Tauri(app),
+            auth_manager,
+            skill_registry,
+            enablement_store,
+        }
+    }
+
+    pub fn new_headless(
+        auth_manager: Arc<crate::auth::AuthManager>,
+        skill_registry: Arc<Mutex<SkillRegistry>>,
+        enablement_store: Option<Arc<SkillEnablementStore>>,
+        roots: HeadlessSkillMarketInstallRoots,
+    ) -> Self {
+        Self {
+            install_target: SkillMarketInstallTarget::Headless(roots),
             auth_manager,
             skill_registry,
             enablement_store,
@@ -112,7 +141,7 @@ impl RuntimeTool for SkillMarketSearchRuntimeTool {
     ) -> ToolDefinition {
         ToolDefinition::new(
             SEARCH_TOOL,
-            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。",
+            "根据用户原始任务搜索企业技能市场，只返回少量候选技能。调用本工具前必须先调用 Skill({skill_id:\"find-skills\"}) 加载发现技能指令；用于当前已启用 skill catalog 没有明显覆盖专项任务时。普通公开网页、简单事实查询、闲聊或已启用技能明确覆盖的任务不要调用。\n\n搜索无候选、候选置信度低/中、技能已关闭或市场请求失败，不代表用户任务结束，也不要默认转成 AskUserQuestion。低/中置信候选只能作为“未找到合适技能”的证据记录，不能安装，不能让用户在明显不匹配的候选里二选一。记录技能发现结果后，继续完成其它可执行交付物；只有多个 high confidence 且都安全、明显匹配的候选必须由用户选择，或缺少安装授权/关键目标时才澄清。若恰好一个候选为 high confidence 且理由明显匹配，先安装再 RefreshSkills，并按新技能继续执行。不要用本工具替代本地 SKILL.md 发现；本地技能用文件搜索和 Read。",
         )
         .with_kind(ToolKind::Support)
         .with_read_only(true)
@@ -263,7 +292,7 @@ impl RuntimeTool for SkillMarketInstallRuntimeTool {
     ) -> ToolDefinition {
         ToolDefinition::new(
             INSTALL_TOOL,
-            "安装 SkillMarketSearch 返回的市场技能。调用前必须确认 packageId 与 pluginId 来自搜索候选；如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。",
+            "安装 SkillMarketSearch 返回的受信任市场技能。调用前必须确认 packageId 与 pluginId 来自本轮搜索候选；本工具不是 GitHub/URL/本地目录安装器，不能用来把未经审查的外部仓库、压缩包或用户代码装入 `~/skills`、`.agents/skills`、工作区 `skills/` 等自动加载目录。如果同名技能已经安装，本工具只返回 alreadyInstalled；如果该技能已关闭，会提示不要重新安装或绕过关闭状态。安装成功后调用 RefreshSkills；如果任务需要立即使用该技能，随后调用 Skill(skill_id=已安装 pluginId) 读取技能说明再执行。安装失败、alreadyInstalled 或 disabled 不是最终交付，继续处理用户任务中其它可执行部分，并把技能状态写入最终结果或阻塞说明。",
         )
         .with_kind(ToolKind::Support)
         .with_destructive(true)
@@ -313,14 +342,35 @@ impl RuntimeTool for SkillMarketInstallRuntimeTool {
             ));
         }
 
-        let _message = install_marketplace_skill_with_auth(
-            self.app.clone(),
-            self.auth_manager.clone(),
-            package_id,
-            plugin_id.clone(),
-        )
-        .await
-        .map_err(ToolError::ExecutionFailed)?;
+        match &self.install_target {
+            SkillMarketInstallTarget::Tauri(app) => {
+                let _message = install_marketplace_skill_with_auth(
+                    app.clone(),
+                    self.auth_manager.clone(),
+                    package_id,
+                    plugin_id.clone(),
+                )
+                .await
+                .map_err(ToolError::ExecutionFailed)?;
+            }
+            SkillMarketInstallTarget::Headless(roots) => {
+                let _message = install_marketplace_skill_headless_with_auth(
+                    self.auth_manager.clone(),
+                    package_id,
+                    plugin_id.clone(),
+                    roots.user_skills_dir.clone(),
+                    roots.tmp_dir.clone(),
+                )
+                .await
+                .map_err(ToolError::ExecutionFailed)?;
+                if let Some(store) = &self.enablement_store {
+                    store
+                        .clear_override(&plugin_id)
+                        .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                }
+                self.refresh_headless_registry(roots)?;
+            }
+        }
 
         let payload = json!({
             "installed": true,
@@ -374,6 +424,22 @@ impl SkillMarketInstallRuntimeTool {
             .lock()
             .map_err(|e| ToolError::ExecutionFailed(format!("Registry lock failed: {}", e)))?;
         Ok(reg.get(plugin_id).map(|_| enablement.is_enabled(plugin_id)))
+    }
+
+    fn refresh_headless_registry(
+        &self,
+        roots: &HeadlessSkillMarketInstallRoots,
+    ) -> Result<(), ToolError> {
+        let loaded = crate::plugin::skill::loader::load_skill_roots_tagged(&[
+            (roots.user_skills_dir.clone(), SkillSource::User),
+            (roots.global_skills_dir.clone(), SkillSource::Global),
+        ])
+        .map_err(|e| ToolError::ExecutionFailed(format!("load_skill_roots failed: {}", e)))?;
+        self.skill_registry
+            .lock()
+            .map_err(|e| ToolError::ExecutionFailed(format!("Registry lock failed: {}", e)))?
+            .replace_all(loaded.into_values().collect());
+        Ok(())
     }
 }
 
@@ -578,11 +644,11 @@ fn search_status_for_candidate_count(count: usize) -> (&'static str, &'static st
         0 => ("no_match", "未找到足够匹配的市场技能。不要安装无关技能。"),
         1 => (
             "matched",
-            "找到一个候选。只有当 confidence 为 high 且理由明显匹配时才可安装。",
+            "找到一个候选。只有当 confidence 为 high 且理由明显匹配时才可安装；若为 low/medium，记录未找到合适技能并继续其它交付物，不要默认 AskUserQuestion。",
         ),
         _ => (
             "needs_choice",
-            "找到多个候选。不要直接安装；必须先调用 AskUserQuestion 让用户选择。",
+            "找到多个候选。只有多个 high confidence 且明显匹配的候选才需要 AskUserQuestion；low/medium 或不相关候选应记录为未找到合适技能并继续其它交付物。",
         ),
     }
 }
@@ -1253,9 +1319,19 @@ mod tests {
     }
 
     #[test]
-    fn multiple_candidates_require_user_choice() {
-        assert_eq!(search_status_for_candidate_count(0).0, "no_match");
-        assert_eq!(search_status_for_candidate_count(1).0, "matched");
-        assert_eq!(search_status_for_candidate_count(2).0, "needs_choice");
+    fn candidate_status_messages_avoid_low_confidence_clarification_stalls() {
+        let no_match = search_status_for_candidate_count(0);
+        assert_eq!(no_match.0, "no_match");
+
+        let single = search_status_for_candidate_count(1);
+        assert_eq!(single.0, "matched");
+        assert!(single.1.contains("low/medium"));
+        assert!(single.1.contains("不要默认 AskUserQuestion"));
+
+        let multiple = search_status_for_candidate_count(2);
+        assert_eq!(multiple.0, "needs_choice");
+        assert!(multiple.1.contains("多个 high confidence"));
+        assert!(multiple.1.contains("low/medium"));
+        assert!(multiple.1.contains("继续其它交付物"));
     }
 }

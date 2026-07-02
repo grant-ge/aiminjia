@@ -978,6 +978,78 @@ pub async fn install_marketplace_skill_with_auth(
     Ok(format!("Installed '{}'", plugin_id))
 }
 
+/// Headless variant used by the CLI runtime. It performs the same marketplace
+/// download and archive install, but the caller owns registry refresh because
+/// there is no Tauri app state in headless mode.
+pub async fn install_marketplace_skill_headless_with_auth(
+    auth: Arc<crate::auth::AuthManager>,
+    package_id: i64,
+    plugin_id: String,
+    custom_dir: PathBuf,
+    tmp_parent: PathBuf,
+) -> Result<String, String> {
+    let session_key = auth.get_session_key().await.map_err(|e| e.to_string())?;
+
+    let client = reqwest::Client::new();
+    let download_url = format!(
+        "{}/v1/skill-packages/{}/download",
+        crate::environment::tenant_host(),
+        package_id
+    );
+    let resp = client
+        .post(&download_url)
+        .header("Authorization", format!("Bearer {}", session_key))
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Download API error: {}", body));
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let package_url = marketplace_download_url(&body).ok_or("No package_url in response")?;
+    let sidecar_meta = marketplace_download_meta(&body);
+
+    let zip_resp = client
+        .get(&package_url)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    if !zip_resp.status().is_success() {
+        return Err(format!(
+            "Failed to download package: HTTP {}",
+            zip_resp.status()
+        ));
+    }
+
+    let zip_bytes = zip_resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    let tmp = tmp_parent.join(format!("marketplace-skill-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let archive_path = tmp.join("marketplace-skill.zip");
+    std::fs::write(&archive_path, zip_bytes.as_ref()).map_err(|e| e.to_string())?;
+    let dest = install_marketplace_archive(
+        &archive_path,
+        &tmp.join("unpacked"),
+        &custom_dir,
+        &plugin_id,
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+    let dest = dest?;
+    write_marketplace_sidecar(Path::new(&dest), sidecar_meta);
+
+    log::info!("Marketplace: installed skill '{}' to {:?}", plugin_id, dest);
+    Ok(format!("Installed '{}'", plugin_id))
+}
+
 /// Download and install a skill package from the marketplace.
 /// Downloads the zip from `package_url` and installs it under the current
 /// user's `~/.renlijia/users/{scope}/skills/{plugin_id}/`.

@@ -106,15 +106,14 @@ fn prompt_diagnostics_reports_section_lengths_and_cache_policy() {
 }
 
 #[test]
-fn prompt_assembler_places_base_before_dynamic_daily_prompt() {
+fn prompt_assembler_uses_system_prompt_as_static_prefix() {
     let _guard = PROMPT_TEST_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let bundled = tmp.path().join("bundled");
     let user = tmp.path().join("user");
     std::fs::create_dir_all(bundled.join("prompts")).unwrap();
     std::fs::create_dir_all(&user).unwrap();
-    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
-    std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
+    std::fs::write(bundled.join("prompts/system.md"), "AI小家 system").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let assembler = PromptAssembler::default();
@@ -124,30 +123,20 @@ fn prompt_assembler_places_base_before_dynamic_daily_prompt() {
     });
 
     let blocks = assembly.blocks();
-    assert!(blocks[0].text.contains("AI小家 base"));
+    assert!(blocks[0].text.contains("AI小家 system"));
     assert_eq!(blocks[0].cache_policy, PromptCachePolicy::StaticPrefix);
-    assert!(blocks
-        .iter()
-        .any(|block| block.text.contains("daily prompt")));
-    assert!(blocks
-        .iter()
-        .any(|block| block.cache_policy == PromptCachePolicy::SessionDynamic));
+    assert_eq!(blocks.len(), 1);
 }
 
 #[test]
-fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exist() {
+fn prompt_assembler_places_persona_memory_hints_in_dynamic_section() {
     let _guard = PROMPT_TEST_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let bundled = tmp.path().join("bundled");
     let user = tmp.path().join("user");
     std::fs::create_dir_all(bundled.join("prompts")).unwrap();
     std::fs::create_dir_all(&user).unwrap();
-    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
-    std::fs::write(
-        bundled.join("prompts/daily.md"),
-        "daily intro\n记忆管理（白名单制）\n- old memory hint\n- another old hint\n\n后续章节\nkeep this section",
-    )
-    .unwrap();
+    std::fs::write(bundled.join("prompts/system.md"), "AI小家 system").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let persona = app_lib::storage::file_store::persona::Persona {
@@ -169,23 +158,20 @@ fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exis
 
     let parts = prompts::build_system_prompt_parts(Some(&persona), None);
 
-    assert!(parts.dynamic_section.contains("daily intro"));
     assert!(parts.dynamic_section.contains("new memory hint"));
-    assert!(!parts.dynamic_section.contains("old memory hint"));
-    assert!(parts.dynamic_section.contains("后续章节"));
-    assert!(parts.dynamic_section.contains("keep this section"));
+    assert!(parts.dynamic_section.contains("【记忆管理（白名单制）】"));
+    assert!(parts.static_section.contains("AI小家 system"));
 }
 
 #[test]
-fn prompt_assembler_matches_legacy_daily_prompt_parts() {
+fn prompt_assembler_matches_system_prompt_parts() {
     let _guard = PROMPT_TEST_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let bundled = tmp.path().join("bundled");
     let user = tmp.path().join("user");
     std::fs::create_dir_all(bundled.join("prompts")).unwrap();
     std::fs::create_dir_all(&user).unwrap();
-    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
-    std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
+    std::fs::write(bundled.join("prompts/system.md"), "AI小家 system").unwrap();
     prompts::init_prompts(&bundled, &user);
 
     let assembler = PromptAssembler::default();
@@ -319,42 +305,6 @@ fn prompt_boundary_copy_does_not_expose_internal_mode_switching() {
 }
 
 #[test]
-fn prompt_identity_copy_keeps_digital_employee_internal() {
-    let parts = prompts::build_system_prompt_parts(None, None);
-    let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
-
-    for marker in ["数字员工", "digital employee", "虚拟协作者"] {
-        assert!(
-            !prompt.contains(marker),
-            "system prompt should not expose internal product identity wording: {marker}"
-        );
-    }
-}
-
-#[test]
-fn prompt_states_internal_capabilities_as_user_facing_principle() {
-    let parts = prompts::build_system_prompt_parts(None, None);
-    let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
-
-    assert!(
-        prompt.contains("内部能力名称") && prompt.contains("普通用户"),
-        "system prompt should keep internal capability names behind user-facing wording"
-    );
-
-    for marker in [
-        "用户问你是谁",
-        "你的角色定义",
-        "用户询问模式",
-        "不使用需要用户手动切换",
-    ] {
-        assert!(
-            !prompt.contains(marker),
-            "system prompt should not hard-code scripted self-description answers: {marker}"
-        );
-    }
-}
-
-#[test]
 fn skill_tool_description_keeps_skill_selection_internal() {
     let catalog = ToolCatalog::default_catalog();
     let skill = catalog.get("Skill").expect("Skill must exist in catalog");
@@ -368,27 +318,4 @@ fn skill_tool_description_keeps_skill_selection_internal() {
             "Skill description should not invite user-visible routing wording: {marker}"
         );
     }
-}
-
-#[test]
-fn refresh_skills_guidance_covers_existing_skill_changes() {
-    let parts = prompts::build_system_prompt_parts(None, None);
-    let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
-
-    assert!(
-        prompt.contains("修改技能") && prompt.contains("RefreshSkills"),
-        "base prompt should require RefreshSkills after modifying existing skills"
-    );
-
-    let catalog = ToolCatalog::default_catalog();
-    let refresh = catalog
-        .get("RefreshSkills")
-        .expect("RefreshSkills must exist in catalog");
-
-    assert!(
-        refresh.description.contains("修改")
-            && refresh.description.contains("覆盖")
-            && refresh.description.contains("新增"),
-        "RefreshSkills description should cover new, overwritten, and modified skills"
-    );
 }

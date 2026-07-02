@@ -874,6 +874,11 @@ impl TauriChatServices {
             auth_manager: self.auth_manager.clone(),
             app: Some(self.app.clone()),
             skill_registry: self.skill_registry.clone(),
+            skill_enablement_store: self
+                .app
+                .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                .map(|store| store.inner().clone()),
+            skill_market_install_roots: None,
             runtime_resolver: self.runtime_resolver.clone(),
             employee_run_overrides: self.employee_run_overrides.clone(),
             authorized_workspace_store: None,
@@ -902,6 +907,9 @@ pub(crate) struct SharedChatRuntimeServices {
     auth_manager: Arc<AuthManager>,
     app: Option<tauri::AppHandle>,
     skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+    skill_enablement_store: Option<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>,
+    skill_market_install_roots:
+        Option<crate::runtime::tools::builtin::skill_market::HeadlessSkillMarketInstallRoots>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
     employee_run_overrides: Arc<std::sync::Mutex<HashMap<String, EmployeeRunOverrides>>>,
     authorized_workspace_store: Option<Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>>,
@@ -981,8 +989,13 @@ impl SharedChatRuntimeServices {
         }
         match self.agent_registry.clone() {
             Some(registry) => {
-                chat_runtime_impl::build_request_scoped_tool_overrides_from_registry(registry, ctx)
-                    .await
+                chat_runtime_impl::build_request_scoped_tool_overrides_from_headless_registry(
+                    registry,
+                    ctx,
+                    Some(self.skill_registry.clone()),
+                    self.skill_enablement_store.clone(),
+                )
+                .await
             }
             None => HashMap::new(),
         }
@@ -1050,6 +1063,8 @@ impl SharedChatRuntimeServices {
             user_scoped_path_resolver: self.user_scoped_path_resolver.clone(),
             event_bus: None,
             skill_registry: Some(self.skill_registry.clone()),
+            skill_enablement_store: self.skill_enablement_store.clone(),
+            skill_market_install_roots: self.skill_market_install_roots.clone(),
             authorized_workspace: self.load_authorized_workspace(&conversation_id),
             read_file_state: None,
             cancellation: None,
@@ -1079,6 +1094,9 @@ pub(crate) struct HeadlessChatRuntimeConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub auth_manager: Arc<AuthManager>,
     pub skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+    pub skill_enablement_store: Option<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>,
+    pub skill_market_install_roots:
+        Option<crate::runtime::tools::builtin::skill_market::HeadlessSkillMarketInstallRoots>,
     pub permission_store: Arc<crate::runtime::store::PermissionStore>,
     pub authorized_workspace_store: Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>,
     pub default_folder: PathBuf,
@@ -1238,6 +1256,8 @@ pub(crate) fn build_headless_chat_runtime(
         auth_manager: config.auth_manager,
         app: None,
         skill_registry: config.skill_registry,
+        skill_enablement_store: config.skill_enablement_store,
+        skill_market_install_roots: config.skill_market_install_roots,
         runtime_resolver: None,
         employee_run_overrides: Arc::new(std::sync::Mutex::new(HashMap::new())),
         authorized_workspace_store: Some(config.authorized_workspace_store.clone()),
@@ -1603,6 +1623,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let mut cache_creation_input_tokens: u64 = 0;
             let mut cache_read_input_tokens: u64 = 0;
             let mut stream_needs_retry = false;
+            let thinking_only_timeout =
+                std::time::Duration::from_secs(input.chunk_timeout_secs.min(45).max(15));
+            let mut thinking_only_started_at: Option<tokio::time::Instant> = None;
 
             loop {
                 // Check the runtime CancellationToken before each iteration
@@ -1823,6 +1846,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 // Strip DeepSeek-style thinking markers before forwarding
                                 let clean = strip_thinking_tag(&delta);
                                 if !clean.is_empty() {
+                                    thinking_only_started_at = None;
                                     iter_content.push_str(&clean);
                                     log::debug!(
                                         "[stream-timing-be] delta len={} total={} run={}",
@@ -1842,6 +1866,42 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             Some(StreamEvent::ThinkingDelta { .. }) => {
                                 // ThinkingDelta: internal model reasoning — intentionally dropped.
                                 // Not shown to users; bypasses prompt_guard.
+                                if iter_content.is_empty() && tool_calls.is_empty() {
+                                    let now = tokio::time::Instant::now();
+                                    let started = thinking_only_started_at.get_or_insert(now);
+                                    if now.duration_since(*started) >= thinking_only_timeout {
+                                        log::warn!(
+                                            "[run_llm_step] thinking-only timeout ({}s) conv={} run={}",
+                                            thinking_only_timeout.as_secs(),
+                                            input.conversation_id,
+                                            input.run_id
+                                        );
+                                        record_diagnostic(
+                                            &crate::telemetry::diagnostics_workspace(),
+                                            DiagnosticEvent::new(
+                                                "streaming.thinking_only_timeout",
+                                                DiagnosticSource::Backend,
+                                            )
+                                            .conversation_id(input.conversation_id)
+                                            .run_id(input.run_id)
+                                            .ok(false)
+                                            .payload(serde_json::json!({
+                                                "timeout_secs": thinking_only_timeout.as_secs(),
+                                            })),
+                                        );
+                                        return Ok(LlmStepResult::ContentComplete {
+                                            content: String::new(),
+                                            thinking_blocks,
+                                            tokens_in,
+                                            tokens_out,
+                                            cache_creation_input_tokens,
+                                            cache_read_input_tokens,
+                                            stop_reason: Some("thinking_timeout".to_string()),
+                                        });
+                                    }
+                                } else {
+                                    thinking_only_started_at = None;
+                                }
                             }
                             Some(StreamEvent::ThinkingBlock { block }) => {
                                 if !block.is_null() {
@@ -1898,6 +1958,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                     "[run_llm_step] Tool call received: name='{}' id='{}'",
                                     tool_call.name, tool_call.id
                                 );
+                                thinking_only_started_at = None;
                                 tool_calls.push(tool_call);
                             }
                             Some(StreamEvent::Done { stop_reason: reason, usage }) => {
@@ -2947,12 +3008,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let enablement = self
             .services
-            .app
+            .skill_enablement_store
             .as_ref()
-            .and_then(|app| {
-                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
-            })
             .map(|store| store.load_or_default())
+            .or_else(|| {
+                self.services.app.as_ref().and_then(|app| {
+                    app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                        .map(|store| store.load_or_default())
+                })
+            })
             .unwrap_or_default();
 
         self.services
@@ -2967,12 +3031,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let enablement = self
             .services
-            .app
+            .skill_enablement_store
             .as_ref()
-            .and_then(|app| {
-                app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
-            })
             .map(|store| store.load_or_default())
+            .or_else(|| {
+                self.services.app.as_ref().and_then(|app| {
+                    app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                        .map(|store| store.load_or_default())
+                })
+            })
             .unwrap_or_default();
 
         self.services
@@ -4718,6 +4785,12 @@ impl TauriChatCommandAdapter {
             user_scoped_path_resolver: None,
             event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
+            skill_enablement_store: self
+                .services
+                .app
+                .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                .map(|store| store.inner().clone()),
+            skill_market_install_roots: None,
             authorized_workspace: chat_runtime_impl::load_authorized_workspace(
                 &self.services.app,
                 &conversation_id,
@@ -5011,6 +5084,12 @@ impl TauriChatCommandAdapter {
             user_scoped_path_resolver: None,
             event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
+            skill_enablement_store: self
+                .services
+                .app
+                .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+                .map(|store| store.inner().clone()),
+            skill_market_install_roots: None,
             authorized_workspace: chat_runtime_impl::load_authorized_workspace(
                 &self.services.app,
                 &conversation_id,

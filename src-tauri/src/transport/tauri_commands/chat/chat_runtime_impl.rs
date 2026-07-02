@@ -328,6 +328,16 @@ pub async fn build_request_scoped_tool_overrides_from_registry(
     agent_registry: Arc<crate::runtime::agent::registry::AgentRegistry>,
     ctx: &crate::runtime::tools::ToolDescriptionContext,
 ) -> std::collections::HashMap<String, crate::llm::streaming::ToolDefinition> {
+    build_request_scoped_tool_overrides_from_headless_registry(agent_registry, ctx, None, None)
+        .await
+}
+
+pub async fn build_request_scoped_tool_overrides_from_headless_registry(
+    agent_registry: Arc<crate::runtime::agent::registry::AgentRegistry>,
+    ctx: &crate::runtime::tools::ToolDescriptionContext,
+    skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    enablement_store: Option<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>,
+) -> std::collections::HashMap<String, crate::llm::streaming::ToolDefinition> {
     use crate::runtime::tools::RuntimeTool;
 
     let mut out = std::collections::HashMap::new();
@@ -351,7 +361,44 @@ pub async fn build_request_scoped_tool_overrides_from_registry(
             parameters,
         },
     );
+    if headless_find_skills_market_tools_enabled(skill_registry.as_ref(), enablement_store.as_ref())
+    {
+        insert_catalog_override(&mut out, "SkillMarketSearch");
+        insert_catalog_override(&mut out, "SkillMarketInstall");
+    }
     out
+}
+
+fn headless_find_skills_market_tools_enabled(
+    skill_registry: Option<&Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    enablement_store: Option<&Arc<crate::plugin::skill::enablement::SkillEnablementStore>>,
+) -> bool {
+    let Some(skill_registry) = skill_registry else {
+        return false;
+    };
+    let enablement = enablement_store
+        .map(|store| store.load_or_default())
+        .unwrap_or_default();
+    skill_registry
+        .lock()
+        .map(|reg| reg.get_enabled("find-skills", &enablement).is_some())
+        .unwrap_or(false)
+}
+
+fn insert_catalog_override(
+    out: &mut std::collections::HashMap<String, crate::llm::streaming::ToolDefinition>,
+    id: &str,
+) {
+    if let Some(entry) = crate::runtime::tools::TOOL_CATALOG.get_entry(id) {
+        out.insert(
+            id.to_string(),
+            crate::llm::streaming::ToolDefinition {
+                name: entry.definition.id.clone(),
+                description: entry.definition.description.clone(),
+                parameters: entry.json_schema.clone(),
+            },
+        );
+    }
 }
 
 /// Stub launcher: never actually invoked (the description-rendering tool
@@ -480,6 +527,37 @@ mod tests {
     use super::*;
     use crate::plugin::builtin::tools::register_builtin_tools;
     use crate::plugin::registry::ToolRegistry;
+    use crate::plugin::skill::types::{DiskSkill, SkillFrontmatter, SkillMetadata, SkillSource};
+    use std::path::PathBuf;
+
+    fn test_skill(id: &str) -> DiskSkill {
+        DiskSkill {
+            id: id.to_string(),
+            root: PathBuf::from("/tmp"),
+            frontmatter: SkillFrontmatter {
+                name: id.to_string(),
+                description: "desc".to_string(),
+                when_to_use: None,
+                allowed_tools: vec![],
+                argument_hint: None,
+                arguments: vec![],
+                model: None,
+                effort: None,
+                context: None,
+                agent: None,
+                user_invocable: true,
+                disable_model_invocation: false,
+                version: None,
+                paths: vec![],
+                hooks: Default::default(),
+                shell: None,
+                category: None,
+                metadata: SkillMetadata::default(),
+            },
+            body: String::new(),
+            source: SkillSource::User,
+        }
+    }
 
     #[tokio::test]
     async fn test_build_visible_tool_defs_with_authorized_workspace() {
@@ -540,6 +618,29 @@ mod tests {
             );
             assert!(names.contains(&"Bash"), "Unix should expose Bash");
         }
+    }
+
+    #[tokio::test]
+    async fn headless_overrides_include_skill_market_tools_when_find_skills_enabled() {
+        let agent_registry =
+            Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
+        let skill_registry = Arc::new(std::sync::Mutex::new(
+            crate::plugin::skill::registry::SkillRegistry::from_skills(vec![test_skill(
+                "find-skills",
+            )]),
+        ));
+
+        let overrides = build_request_scoped_tool_overrides_from_headless_registry(
+            agent_registry,
+            &crate::runtime::tools::ToolDescriptionContext::empty(),
+            Some(skill_registry),
+            None,
+        )
+        .await;
+
+        assert!(overrides.contains_key("Agent"));
+        assert!(overrides.contains_key("SkillMarketSearch"));
+        assert!(overrides.contains_key("SkillMarketInstall"));
     }
 
     #[tokio::test]

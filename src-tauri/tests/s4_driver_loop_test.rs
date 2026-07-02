@@ -185,10 +185,13 @@ fn safeguard_continues_when_not_near_limit() {
 #[test]
 fn safeguard_daily_injects_when_near_limit_no_content() {
     let action = check_iteration(7, 10, "");
-    assert!(matches!(
-        action,
-        SafeguardAction::InjectPromptAndContinue(_)
-    ));
+    match action {
+        SafeguardAction::InjectPromptAndContinue(message) => {
+            assert!(message.contains("优先交付用户要求的最终产物"));
+            assert!(message.contains("验证文件存在、非空、路径正确"));
+        }
+        SafeguardAction::Continue => panic!("expected safeguard prompt near iteration limit"),
+    }
 }
 
 // ── S4-T7: post_process 模块 ──────────────────────────────────────────────

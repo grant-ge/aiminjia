@@ -148,6 +148,14 @@ pub fn format_command_failure(
     let mut message = semantic_message
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("Command failed with exit code {exit_code}"));
+    if exit_code == 127 {
+        message.push_str(
+            ". The command is not available in this shell; use an installed alternative, a small script in an available runtime, or continue with already verified evidence instead of retrying the same missing command.",
+        );
+    }
+    if let Some(hint) = command_failure_recovery_hint(output) {
+        message.push_str(hint);
+    }
     if semantic_message.is_some() {
         message.push_str(&format!(" (exit code {exit_code})"));
     }
@@ -160,6 +168,70 @@ pub fn format_command_failure(
         message.push_str(trimmed);
     }
     message
+}
+
+pub fn auto_loaded_skill_install_deny_message(command: &str) -> Option<String> {
+    let normalized = command.to_ascii_lowercase().replace('\\', "/");
+    if !looks_like_external_code_fetch(&normalized) || !targets_auto_loaded_skill_dir(&normalized) {
+        return None;
+    }
+    Some(
+        "Refusing: unreviewed external code must not be cloned, installed, or written into auto-loaded skill directories such as ~/skills, .agents/skills, or workspace skills/. Clone to an isolated review directory first, inspect it read-only, and warn the user about the security risk before any installation."
+            .to_string(),
+    )
+}
+
+fn looks_like_external_code_fetch(command: &str) -> bool {
+    let has_remote = command.contains("https://")
+        || command.contains("http://")
+        || command.contains("git@")
+        || command.contains("ssh://");
+    has_remote
+        && [
+            "git clone",
+            "gh repo clone",
+            "curl ",
+            "wget ",
+            "invoke-webrequest",
+            "invoke-restmethod",
+            "iwr ",
+            "irm ",
+            " iwr ",
+            " irm ",
+        ]
+        .iter()
+        .any(|marker| command.contains(marker))
+}
+
+fn targets_auto_loaded_skill_dir(command: &str) -> bool {
+    [
+        "~/skills",
+        "$home/skills",
+        "${home}/skills",
+        "$env:userprofile/skills",
+        "%userprofile%/skills",
+        ".agents/skills",
+        " skills/",
+        " ./skills/",
+        " skills ",
+        " ./skills ",
+    ]
+    .iter()
+    .any(|marker| command.contains(marker))
+}
+
+fn command_failure_recovery_hint(output: &str) -> Option<&'static str> {
+    let lower = output.to_ascii_lowercase();
+    if lower.contains("modulenotfounderror: no module named")
+        || lower.contains("no module named 'matplotlib'")
+        || lower.contains("externally-managed-environment")
+        || lower.contains("pep 668")
+    {
+        return Some(
+            ". Dependency recovery: do not keep retrying the same import or pip install in an externally managed environment. Use an installed alternative, create a local venv only if installation is essential, or for simple required image artifacts such as PNG charts generate a dependency-free fallback with Python stdlib and verify the target file exists.",
+        );
+    }
+    None
 }
 
 pub fn format_cancel_message(reason: Option<CancellationReason>, output: &str) -> String {
@@ -588,7 +660,7 @@ pub fn emit_shell_failure_diagnostic(
 
 #[cfg(test)]
 mod classifier_tests {
-    use super::{classify_shell_failure, stderr_signature, tail_chars};
+    use super::{classify_shell_failure, format_command_failure, stderr_signature, tail_chars};
 
     #[test]
     fn npm_install_postinstall_failure_classified() {
@@ -631,6 +703,20 @@ mod classifier_tests {
         let s: String = std::iter::repeat('a').take(2000).collect();
         let tail = tail_chars(&s, 500);
         assert_eq!(tail.chars().count(), 500);
+    }
+
+    #[test]
+    fn command_failure_suggests_dependency_fallback_for_missing_python_module() {
+        let message = format_command_failure(
+            "python3 -c \"import matplotlib\"",
+            1,
+            "ModuleNotFoundError: No module named 'matplotlib'",
+            None,
+        );
+
+        assert!(message.contains("Dependency recovery"));
+        assert!(message.contains("dependency-free fallback"));
+        assert!(message.contains("verify the target file exists"));
     }
 }
 

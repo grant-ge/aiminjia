@@ -4,8 +4,8 @@ lotus-app 的 prompt 主链路由 `runtime/chat/prompt/` 负责组装。
 
 ## 分层
 
-1. Static prefix：品牌、核心行为、少量稳定工具偏好、memory mechanics。
-2. Session dynamic：persona、skill/session guidance、语言偏好、output style。
+1. Static prefix：唯一静态入口 `system.md`，包含品牌、核心行为、工具使用、交付物纪律和输出规则。
+2. Session dynamic：persona、skill/session guidance、运行时语言偏好、output style。
 3. Volatile：MCP delta、runtime env delta、precompute result、当前 iteration 的临时上下文；当前主要是类型和诊断边界，不在 static system prompt assembly 里承载。
 4. User reminders：日期、AGENTS/renlijia 文件、附件提示、runtime notices。
 5. Tool schema：来自 `TOOL_CATALOG` / `ToolRegistry`，不写进 system prompt。
@@ -31,7 +31,7 @@ OpenAI renderer 产出 OpenAI system message；gateway 在 regular messages mask
 ## 代码边界
 
 - 生产组装源是 `runtime/chat/prompt/sections.rs::PromptAssembler`。
-- `src-tauri/src/llm/prompts.rs` 只是 raw prompt store + compatibility shim，负责加载 base、daily 原始 prompt 片段，并保留旧调用点可用的 `get_system_prompt()` / `build_system_prompt_parts()`。
+- `src-tauri/src/llm/prompts.rs` 只是 raw prompt store + compatibility shim，负责加载唯一静态入口 `system.md`，并保留旧调用点可用的 `get_system_prompt()` / `build_system_prompt_parts()`。
 - 新代码如需 system prompt assembly，应直接使用 `PromptAssembler`，而不是自行拼接 raw prompt fragments。
 - 旧 shim 可以继续服务 tests、legacy fallback 或尚未迁移的插件接口，但不应扩展为新的 provider 行为入口。
 

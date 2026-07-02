@@ -85,6 +85,8 @@ impl SubAgentRuntimeDeps {
             user_scoped_path_resolver: None,
             event_bus: self.event_bus.clone(),
             skill_registry: self.skill_registry.clone(),
+            skill_enablement_store: None,
+            skill_market_install_roots: None,
             authorized_workspace: self.authorized_workspace.clone(),
             read_file_state,
             cancellation,

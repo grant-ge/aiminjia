@@ -47,19 +47,12 @@ pub struct PromptAssembler;
 impl PromptAssembler {
     pub fn build_system_prompt(&self, ctx: PromptBuildContext<'_>) -> PromptAssembly {
         let fragments = prompts::get_prompt_fragment_snapshot();
-        let base = apply_product_name(fragments.base, ctx.product_name);
+        let system = apply_product_name(fragments.system, ctx.product_name);
 
-        let mut blocks = vec![
-            PromptBlock::static_block(PromptSectionId::new("base"), base),
-            PromptBlock::static_block(
-                PromptSectionId::new("tool_preference"),
-                fragments.tool_preference,
-            ),
-            PromptBlock::static_block(
-                PromptSectionId::new("memory_mechanics"),
-                fragments.memory_mechanics,
-            ),
-        ];
+        let mut blocks = vec![PromptBlock::static_block(
+            PromptSectionId::new("system"),
+            system,
+        )];
 
         if let Some(persona) = ctx.persona {
             let persona_text = render_persona_section(persona);
@@ -67,22 +60,6 @@ impl PromptAssembler {
                 blocks.push(PromptBlock::dynamic_block(
                     PromptSectionId::new("persona"),
                     persona_text,
-                ));
-            }
-        }
-
-        let daily = apply_product_name(fragments.daily, ctx.product_name);
-        if !daily.trim().is_empty() {
-            let has_persona_memory = ctx.persona.is_some_and(|p| !p.memory_hints.is_empty());
-            let daily = if has_persona_memory {
-                strip_memory_section(&daily)
-            } else {
-                daily
-            };
-            if !daily.trim().is_empty() {
-                blocks.push(PromptBlock::dynamic_block(
-                    PromptSectionId::new("daily"),
-                    daily,
                 ));
             }
         }
@@ -118,42 +95,17 @@ fn render_persona_section(persona: &crate::storage::file_store::persona::Persona
     parts.join("\n\n")
 }
 
-fn strip_memory_section(prompt: &str) -> String {
-    let mut result = Vec::new();
-    let mut skip = false;
-
-    for line in prompt.lines() {
-        if line.contains("记忆管理") && line.contains("白名单") {
-            skip = true;
-            continue;
-        }
-
-        if skip {
-            if !line.trim().is_empty() && !line.trim().starts_with("- ") {
-                skip = false;
-            } else {
-                continue;
-            }
-        }
-
-        result.push(line);
-    }
-
-    result.join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::apply_product_name;
 
     #[test]
-    fn product_name_replacement_covers_base_and_daily_prompt_text() {
-        let text = "你是 AI小家 base\n\nAI小家 daily".to_string();
+    fn product_name_replacement_covers_system_prompt_text() {
+        let text = "你是 AI小家 system".to_string();
 
         let replaced = apply_product_name(text, Some("小新助手"));
 
-        assert!(replaced.contains("你是 小新助手 base"));
-        assert!(replaced.contains("小新助手 daily"));
+        assert!(replaced.contains("你是 小新助手 system"));
         assert!(!replaced.contains("AI小家"));
     }
 

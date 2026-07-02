@@ -5,18 +5,18 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::runtime::path_auth::{decide, Decision, PathOp};
+use crate::runtime::path_auth::{Decision, PathOp, decide};
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::capability::FileState;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
-use crate::runtime::tools::RuntimeTool;
 
 /// Returns the root path for workspace file operations.
 ///
@@ -312,6 +312,125 @@ fn limit_text_content(content: &str, max_bytes: usize) -> (String, bool) {
     (limited, truncated)
 }
 
+fn binary_media_type_from_extension(path: &Path) -> Option<&'static str> {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())?;
+
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "ico" => Some("image/x-icon"),
+        "tif" | "tiff" => Some("image/tiff"),
+        "heic" => Some("image/heic"),
+        "avif" => Some("image/avif"),
+        "pdf" => Some("application/pdf"),
+        "zip" => Some("application/zip"),
+        "gz" | "tgz" => Some("application/gzip"),
+        "bz2" => Some("application/x-bzip2"),
+        "xz" => Some("application/x-xz"),
+        "7z" => Some("application/x-7z-compressed"),
+        "rar" => Some("application/vnd.rar"),
+        "tar" => Some("application/x-tar"),
+        "doc" => Some("application/msword"),
+        "xls" => Some("application/vnd.ms-excel"),
+        "ppt" => Some("application/vnd.ms-powerpoint"),
+        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        "pptx" => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        "sqlite" | "sqlite3" | "db" => Some("application/vnd.sqlite3"),
+        "parquet" => Some("application/vnd.apache.parquet"),
+        "pyc" => Some("application/x-python-code"),
+        "exe" | "dll" | "so" | "dylib" | "bin" => Some("application/octet-stream"),
+        "wasm" => Some("application/wasm"),
+        "mp3" => Some("audio/mpeg"),
+        "wav" => Some("audio/wav"),
+        "m4a" => Some("audio/mp4"),
+        "flac" => Some("audio/flac"),
+        "ogg" => Some("audio/ogg"),
+        "mp4" => Some("video/mp4"),
+        "mov" => Some("video/quicktime"),
+        "avi" => Some("video/x-msvideo"),
+        "mkv" => Some("video/x-matroska"),
+        "webm" => Some("video/webm"),
+        _ => None,
+    }
+}
+
+fn detect_binary_media_type(path: &Path, bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return "image/png";
+    }
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return "image/jpeg";
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return "image/gif";
+    }
+    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return "image/webp";
+    }
+    if bytes.starts_with(b"%PDF-") {
+        return "application/pdf";
+    }
+    if bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") {
+        return binary_media_type_from_extension(path).unwrap_or("application/zip");
+    }
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        return "application/gzip";
+    }
+
+    binary_media_type_from_extension(path).unwrap_or("application/octet-stream")
+}
+
+fn is_known_binary_path(path: &Path) -> bool {
+    binary_media_type_from_extension(path).is_some()
+}
+
+fn is_probably_binary(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return false;
+    }
+
+    let sample_len = bytes.len().min(8192);
+    let sample = &bytes[..sample_len];
+    if sample.contains(&0) {
+        return true;
+    }
+
+    let control_count = sample
+        .iter()
+        .filter(|byte| **byte < 0x20 && !matches!(**byte, b'\n' | b'\r' | b'\t' | 0x0c | 0x08))
+        .count();
+
+    control_count * 100 > sample_len * 10
+}
+
+fn binary_read_tool_result(
+    rel: &str,
+    size: u64,
+    media_type: &'static str,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> ToolResult {
+    let mut result = json!({
+        "file_path": rel,
+        "content": "",
+        "size": size,
+        "binary": true,
+        "media_type": media_type,
+        "message": "Binary or media file content was not returned as text; this is not a successful content inspection. Do not call Read again for this binary payload. Use metadata, OCR, screenshot/image-view, PDF/archive, or a domain-specific parser when available. For structured binary data, write and run a parser script that reads this file and writes the requested target artifact. If the user already provided explicit structure, fields, layout, data, schema, or acceptance criteria for a required output file, create or update that target artifact now and mark only the unverified details.",
+    });
+    if offset.is_some() || limit.is_some() {
+        result["range_ignored"] = json!(true);
+    }
+    tool_result("Read", result)
+}
+
 fn update_file_state_cache(ctx: &ToolExecutionContext, resolved: &Path, content: &str) {
     if let Some(cache) = ctx
         .capability
@@ -412,7 +531,8 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
             .as_secs();
         let cache = capability.and_then(|cap| cap.read_file_state.as_ref());
-        if offset.is_none() && limit.is_none() {
+        let known_binary_path = is_known_binary_path(&resolved);
+        if !known_binary_path && offset.is_none() && limit.is_none() {
             if let Some(state) = cache.and_then(|cache| cache.get(&resolved)) {
                 if state.mtime_secs == mtime_secs && state.offset.is_none() && state.limit.is_none()
                 {
@@ -438,6 +558,15 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         }
         let bytes =
             std::fs::read(&resolved).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        if known_binary_path || is_probably_binary(&bytes) {
+            return Ok(binary_read_tool_result(
+                rel,
+                metadata.len(),
+                detect_binary_media_type(&resolved, &bytes),
+                offset,
+                limit,
+            ));
+        }
         let full_content = String::from_utf8_lossy(&bytes).to_string();
         if offset.is_some() || limit.is_some() {
             let start_line = offset.unwrap_or(1).max(1);
@@ -464,6 +593,9 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             });
             if limit_truncated {
                 result["truncated"] = json!(true);
+                result["message"] = json!(
+                    "Read output was truncated by max_bytes; if omitted lines affect the task, read another range with offset/limit before drawing conclusions or finalizing the deliverable."
+                );
             }
             return Ok(tool_result("Read", result));
         }
@@ -483,6 +615,9 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let mut result = json!({ "file_path": rel, "content": content, "size": bytes.len() });
         if truncated {
             result["truncated"] = json!(true);
+            result["message"] = json!(
+                "Read output was truncated; this is only a preview of the file. If the missing portion matters, use offset/limit to read the relevant lines before drawing conclusions or finalizing the deliverable."
+            );
         }
         Ok(tool_result("Read", result))
     }
