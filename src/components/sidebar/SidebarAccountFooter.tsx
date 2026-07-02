@@ -159,9 +159,20 @@ function ChoiceRow({
         <Icon className="h-4 w-4 shrink-0 text-foreground" aria-hidden />
       ) : (
         <span
-          className={cn("h-3.5 w-3.5 shrink-0 rounded-full border border-border", colorClass)}
+          className={cn(
+            "flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border",
+            checked ? "border-primary" : "border-border",
+            colorClass,
+          )}
           aria-hidden
-        />
+        >
+          {checked ? (
+            <span
+              data-aijia-choice-indicator-dot
+              className="h-[6px] w-[6px] rounded-full bg-primary"
+            />
+          ) : null}
+        </span>
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {checked ? <Check className="h-4 w-4 shrink-0 text-foreground" aria-hidden /> : null}

@@ -126,6 +126,24 @@ describe("SidebarAccountFooter", () => {
     );
   });
 
+  it("shows a filled left radio dot and keeps the trailing check for the active preference choice", async () => {
+    const user = userEvent.setup();
+    render(<SidebarAccountFooter onOpenSettings={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /账户与设置/ }));
+    fireEvent.pointerEnter(screen.getByRole("button", { name: "偏好设置" }));
+    fireEvent.pointerEnter(screen.getByRole("button", { name: "字号大小" }));
+
+    const selected = screen.getByRole("menuitemradio", { name: "中" });
+    const unselected = screen.getByRole("menuitemradio", { name: "小" });
+
+    expect(selected).toHaveAttribute("aria-checked", "true");
+    expect(selected.querySelector("[data-aijia-choice-indicator-dot]")).toBeInTheDocument();
+    expect(selected.querySelector("svg")).toBeInTheDocument();
+    expect(unselected).toHaveAttribute("aria-checked", "false");
+    expect(unselected.querySelector("[data-aijia-choice-indicator-dot]")).not.toBeInTheDocument();
+  });
+
   it("opens the account menu from the whole account footer", async () => {
     const user = userEvent.setup();
     render(<SidebarAccountFooter onOpenSettings={vi.fn()} />);
