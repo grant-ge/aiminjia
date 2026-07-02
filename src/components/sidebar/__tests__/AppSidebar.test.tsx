@@ -311,6 +311,29 @@ describe("AppSidebar", () => {
     expect(screen.getByText("默认项目").closest(".overflow-auto")).toHaveClass("px-2");
   });
 
+  it("limits the global pinned section to three conversations until expanded", async () => {
+    chatState.conversations = Array.from({ length: 4 }, (_, index) => ({
+      id: `conv-pinned-${index + 1}`,
+      title: `置顶对话 ${index + 1}`,
+      workspaceName: "默认项目",
+      isPinned: true,
+    }));
+
+    render(<AppSidebar />);
+
+    expect(screen.getByText("置顶对话 3")).toBeInTheDocument();
+    expect(screen.queryByText("置顶对话 4")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /显示更多 1 个/ }));
+
+    expect(screen.getByText("置顶对话 4")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /收起/ })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /收起/ }));
+
+    expect(screen.queryByText("置顶对话 4")).not.toBeInTheDocument();
+  });
+
   it("renders the sidebar account footer identity", () => {
     render(<AppSidebar />);
     expect(screen.getByText("oay xg")).toBeInTheDocument();

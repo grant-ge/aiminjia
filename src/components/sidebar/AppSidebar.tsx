@@ -6,6 +6,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   CheckSquare,
+  ChevronDown,
+  ChevronUp,
   Copy,
   GraduationCap,
   MessageSquare,
@@ -41,6 +43,8 @@ import {
 import { SidebarAccountFooter } from "./SidebarAccountFooter";
 import { SidebarNav, type SidebarNavKey } from "./SidebarNav";
 import type { ChannelConversation } from "@/lib/tauri";
+
+const PINNED_CONVERSATION_LIMIT = 3;
 
 function channelConversationLabel(
   conversation: {
@@ -152,6 +156,7 @@ export function AppSidebar() {
   const cachedStatuses = useSidebarStatusStore((s) => s.statuses);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [pinnedExpanded, setPinnedExpanded] = useState(false);
 
   const switchTab = (next: SidebarBodyTab) => {
     setSidebarTab(next);
@@ -240,6 +245,13 @@ export function AppSidebar() {
   // channel sessions are not yet pin-aware (no isPinned column on
   // ChannelConversation) so they're excluded.
   const globalPinned = nonChannelConversations.filter((c) => c.isPinned);
+  const visibleGlobalPinned = pinnedExpanded
+    ? globalPinned
+    : globalPinned.slice(0, PINNED_CONVERSATION_LIMIT);
+  const hiddenPinnedCount = Math.max(
+    0,
+    globalPinned.length - PINNED_CONVERSATION_LIMIT,
+  );
 
   const isConversationBusy = (conversationId: string) =>
     busyConversations.has(conversationId) ||
@@ -425,7 +437,7 @@ export function AppSidebar() {
                 {t("sidebar.pinnedSection")}
               </div>
               <div className="flex flex-col gap-0.5">
-                {globalPinned.map((conversation) => (
+                {visibleGlobalPinned.map((conversation) => (
                   <ConversationRow
                     key={conversation.id}
                     id={conversation.id}
@@ -442,6 +454,26 @@ export function AppSidebar() {
                     }
                   />
                 ))}
+                {hiddenPinnedCount > 0 ? (
+                  <Button unstyled
+                    type="button"
+                    onClick={() => setPinnedExpanded((expanded) => !expanded)}
+                    className="my-1 ml-2 flex items-center gap-1 rounded text-left text-xs font-medium text-muted-foreground transition-colors hover:text-sidebar-foreground"
+                  >
+                    {pinnedExpanded ? (
+                      <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span>
+                      {pinnedExpanded
+                        ? t("sidebar.collapseConversations")
+                        : t("sidebar.showMoreConversations", {
+                            count: hiddenPinnedCount,
+                          })}
+                    </span>
+                  </Button>
+                ) : null}
               </div>
             </div>
           ) : null}
