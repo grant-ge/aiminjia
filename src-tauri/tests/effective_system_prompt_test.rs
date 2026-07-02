@@ -1,4 +1,4 @@
-//! 验证 P0 修复：driver 不再用 DAILY_BASE_PROMPT 覆盖 executor 提供的 system_prompt，
+//! 验证 P0 修复：driver 不再用旧的内置默认 prompt 覆盖 executor 提供的 system_prompt，
 //! executor 产出的 system prompt 真正进入 LLM 请求。
 
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ impl RuntimeLlmExecutor for CapturingExecutor {
     }
 
     /// 关键 mock：返回一个 sentinel 字符串，用于断言其确实进入 LLM 请求。
-    /// P0 修复前 driver 会把这个值替换成 DAILY_BASE_PROMPT；修复后保留。
+    /// P0 修复前 driver 会把这个值替换成旧的内置默认 prompt；修复后保留。
     async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok(SENTINEL.to_string())
     }
@@ -105,8 +105,7 @@ async fn p0_fix_executor_system_prompt_reaches_llm_step_input() {
         &captured.chars().take(200).collect::<String>()
     );
 
-    // Negative assertion: ensure DAILY_BASE_PROMPT did NOT clobber it.
-    // (DAILY_BASE_PROMPT ~ 100 chars; sentinel is in a real string, not just an empty default.)
+    // Negative assertion: ensure the old built-in default prompt did not clobber it.
     assert!(
         !captured.is_empty(),
         "captured system_prompt must not be empty"

@@ -1,4 +1,3 @@
-pub mod base_prompt;
 pub mod chat_turn_driver;
 pub mod compact_client;
 pub mod compaction;

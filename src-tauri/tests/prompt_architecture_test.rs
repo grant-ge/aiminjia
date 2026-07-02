@@ -266,23 +266,6 @@ fn iteration_context_contains_only_runtime_delta_sections() {
 }
 
 #[test]
-fn default_system_prompt_uses_base_prompt() {
-    let base = app_lib::runtime::chat::base_prompt::DAILY_BASE_PROMPT;
-    assert!(
-        base.contains("你是 AI小家"),
-        "base prompt must identify as AI小家"
-    );
-    assert!(
-        !base.contains("daily-assistant"),
-        "base prompt must not reference old daily-assistant"
-    );
-    assert!(
-        !base.contains("switch_skill"),
-        "base prompt must not reference switch_skill"
-    );
-}
-
-#[test]
 fn prompt_boundary_copy_does_not_expose_internal_mode_switching() {
     let parts = prompts::build_system_prompt_parts(None, None);
     let prompt = format!("{}\n\n{}", parts.static_section, parts.dynamic_section);
