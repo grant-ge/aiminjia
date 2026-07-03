@@ -35,6 +35,7 @@ describe('UpdaterPanel', () => {
       notes: '',
       progress: null,
       panelOpen: false,
+      _devPreview: false,
       _update: null,
       _cachedBytes: null,
       _bootstrapPromise: null,
@@ -88,6 +89,46 @@ describe('UpdaterPanel', () => {
     expect(retryDownload).toHaveBeenCalledTimes(1)
     expect(startDownload).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['available', 'download', 'updater.updateNow'],
+    ['ready', 'install', 'updater.installAndRestart'],
+    ['failed', 'retry', 'updater.retry'],
+  ] as const)(
+    'keeps %s preview action local instead of calling real updater actions',
+    (phase, action, label) => {
+      const startDownload = vi.fn()
+      const retryDownload = vi.fn()
+      const installNow = vi.fn()
+      act(() => useUpdaterStore.setState({
+        phase,
+        version: '0.5.99-preview',
+        notes: '',
+        progress: phase === 'ready' ? { downloaded: 10, total: 10 } : null,
+        panelOpen: true,
+        _devPreview: true,
+        _update: null,
+        _cachedBytes: null,
+        startDownload,
+        retryDownload,
+        installNow,
+      }))
+
+      render(<UpdaterPanel />)
+
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAttribute('data-aijia-updater-dev-preview', 'true')
+      const button = screen.getByRole('button', { name: label })
+      expect(button).toHaveAttribute('data-aijia-updater-action', action)
+      fireEvent.click(button)
+
+      expect(useUpdaterStore.getState().panelOpen).toBe(false)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(startDownload).not.toHaveBeenCalled()
+      expect(retryDownload).not.toHaveBeenCalled()
+      expect(installNow).not.toHaveBeenCalled()
+    },
+  )
 
   it('exposes stable updater action selectors for intent tests', () => {
     act(() => useUpdaterStore.setState({

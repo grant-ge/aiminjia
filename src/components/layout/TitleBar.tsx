@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
-import { UpdateAvailableLink } from './UpdateAvailableLink'
 import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
-import { useUpdaterStore } from '@/lib/updaterStore'
 import { useUiStore } from '@/stores/uiStore'
 import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
@@ -193,9 +191,6 @@ function DevBadge() {
  * the page top bars. Windows still renders a compact custom title bar.
  */
 export function TitleBar() {
-  const showUpdateLink = useUpdaterStore((s) =>
-    s.phase === 'available' || s.phase === 'downloading' || s.phase === 'ready' || s.phase === 'failed'
-  )
   const isMacOS = navigator.userAgent.includes('Macintosh')
   const isWindows = navigator.userAgent.includes('Windows')
   const isDev = import.meta.env.DEV
@@ -231,11 +226,6 @@ export function TitleBar() {
             </div>
           </div>
           <div className="pointer-events-auto flex items-center">
-            {showUpdateLink ? (
-              <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
-                <UpdateAvailableLink />
-              </div>
-            ) : null}
             {isDev ? <TitleBarEnvSwitcher /> : null}
             {isDev ? <DevBadge /> : null}
           </div>
@@ -256,11 +246,6 @@ export function TitleBar() {
           <TitleBarNavigationButtons />
         </div>
         <div className="flex items-center">
-          {showUpdateLink ? (
-            <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
-              <UpdateAvailableLink />
-            </div>
-          ) : null}
           {isDev ? <TitleBarEnvSwitcher /> : null}
           {isDev ? <DevBadge /> : null}
         </div>
@@ -280,9 +265,6 @@ export function TitleBar() {
         <TitleBarNavigationButtons />
       </div>
       <div className="flex-1" data-tauri-drag-region />
-      <div onMouseDown={(e) => e.stopPropagation()}>
-        <UpdateAvailableLink />
-      </div>
       {isDev ? <TitleBarEnvSwitcher /> : null}
       {isDev ? <DevBadge /> : null}
       <WindowControls />

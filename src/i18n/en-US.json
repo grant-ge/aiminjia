@@ -740,6 +740,12 @@
   "updater": {
     "linkReady": "v{{version}} ready to install",
     "linkReadyTooltip": "Download complete — click to install",
+    "sidebarButton": "Update",
+    "sidebarButtonDownloading": "Downloading",
+    "sidebarButtonReady": "Install",
+    "sidebarButtonFailed": "Update failed",
+    "sidebarButtonInstalling": "Installing",
+    "sidebarButtonTooltip": "Open update v{{version}}",
     "dialogTitleAvailable": "Update available v{{version}}",
     "dialogTitleDownloading": "Downloading update v{{version}}",
     "dialogTitleReady": "Update downloaded v{{version}}",
@@ -1139,7 +1145,7 @@
         },
         "presentationOutline": {
           "title": "Presentation outline",
-          "prompt": "Create a presentation outline for \"xxx project progress\" in an order suitable for a spoken update:\n1. One-sentence conclusion;\n2. Current progress and milestones;\n3. Completed work;\n4. Work in progress;\n5. Issues, risks, and impact;\n6. Next steps;\n7. Decisions or support needed from the audience;\n8. Messaging advice.\n\nShow the result directly in the chat so I can copy and edit it."
+          "prompt": "Create a presentation outline for \"customer success system redesign progress\" in an order suitable for a spoken update:\n1. One-sentence conclusion;\n2. Current progress and milestones;\n3. Completed work;\n4. Work in progress;\n5. Issues, risks, and impact;\n6. Next steps;\n7. Decisions or support needed from the audience;\n8. Messaging advice.\n\nShow the result directly in the chat so I can copy and edit it."
         },
         "professionalReply": {
           "title": "Professional reply",
@@ -1147,7 +1153,7 @@
         },
         "projectRetrospective": {
           "title": "Project retro",
-          "prompt": "Create a project retrospective outline for \"xxx project\".\n\nStructure it as:\n1. Project goals and actual results;\n2. Key milestones;\n3. What went well;\n4. Issues and root causes;\n5. Reusable lessons;\n6. Follow-up improvement actions.\n\nShow the result directly in the chat so I can copy and edit it."
+          "prompt": "Create a project retrospective outline for \"Q2 customer renewal improvement project\".\n\nStructure it as:\n1. Project goals and actual results;\n2. Key milestones;\n3. What went well;\n4. Issues and root causes;\n5. Reusable lessons;\n6. Follow-up improvement actions.\n\nShow the result directly in the chat so I can copy and edit it."
         },
         "interviewQuestions": {
           "title": "Interview questions",
@@ -1223,11 +1229,11 @@
         },
         "bugTriage": {
           "title": "Bug triage",
-          "prompt": "Based on the error \"xxx\", inspect the current code workspace and identify likely causes. Do not modify code yet.\n\nAnalyze step by step:\n1. Search for the error keyword and related call chain;\n2. Read the most relevant files;\n3. Provide 2-3 possible causes ranked by likelihood;\n4. Identify affected files and key code locations;\n5. Explain how to reproduce or validate;\n6. Suggest a fix and note risks."
+          "prompt": "Based on the error \"TypeError: Cannot read properties of undefined (reading 'map')\", inspect the current code workspace and identify likely causes. Do not modify code yet.\n\nAnalyze step by step:\n1. Search for the error keyword and related call chain;\n2. Read the most relevant files;\n3. Provide 2-3 possible causes ranked by likelihood;\n4. Identify affected files and key code locations;\n5. Explain how to reproduce or validate;\n6. Suggest a fix and note risks."
         },
         "featurePlan": {
           "title": "Feature plan",
-          "prompt": "For the feature \"xxx\", first inspect the current code workspace and provide an implementation plan. Do not modify code before the plan is confirmed.\n\nThe plan should include:\n1. Existing related modules and entry points;\n2. Recommended implementation path;\n3. Files to add or modify;\n4. Key state, data flow, or interface changes;\n5. Edge cases and failure modes;\n6. Test plan;\n7. Implementation order and risks."
+          "prompt": "For the feature \"batch export conversation records\", first inspect the current code workspace and provide an implementation plan. Do not modify code before the plan is confirmed.\n\nThe plan should include:\n1. Existing related modules and entry points;\n2. Recommended implementation path;\n3. Files to add or modify;\n4. Key state, data flow, or interface changes;\n5. Edge cases and failure modes;\n6. Test plan;\n7. Implementation order and risks."
         },
         "codeReview": {
           "title": "Code review",
@@ -1259,7 +1265,7 @@
         },
         "dingtalkMessage": {
           "title": "Send DingTalk",
-          "prompt": "Send a test DingTalk message to the contact \"xxx\".\n\nMessage body:\nHello, I am testing the ability to send DingTalk messages with AI. No action is needed if you receive this message. Thank you.\n\nFirst check the DingTalk connection status. If I am not signed in or permissions are missing, guide me through connecting inside the chat.\nBefore sending, show the recipient and message body in the chat and wait for my confirmation."
+          "prompt": "Send a test DingTalk message to the contact \"Alex Chen\".\n\nMessage body:\nHello, I am testing the ability to send DingTalk messages with AI. No action is needed if you receive this message. Thank you.\n\nFirst check the DingTalk connection status. If I am not signed in or permissions are missing, guide me through connecting inside the chat.\nBefore sending, show the recipient and message body in the chat and wait for my confirmation."
         },
         "rehcmRecentChanges": {
           "title": "Query joiners/leavers",
@@ -1279,11 +1285,11 @@
         },
         "eventResearchReport": {
           "title": "Generate event report",
-          "prompt": "Research \"xxx event\" and generate a Word analysis report.\n\nFirst find public sources and list source links, then structure the report as:\n1. Background and timeline;\n2. Key stakeholders;\n3. Facts and points of controversy;\n4. Impact analysis;\n5. Risks and uncertainty;\n6. Outlook;\n7. Recommendations for decision-making.\n\nAfter finishing, summarize 5 key conclusions in the chat."
+          "prompt": "Research the \"electric vehicle price war\" event and generate a Word analysis report.\n\nFirst find public sources and list source links, then structure the report as:\n1. Background and timeline;\n2. Key stakeholders;\n3. Facts and points of controversy;\n4. Impact analysis;\n5. Risks and uncertainty;\n6. Outlook;\n7. Recommendations for decision-making.\n\nAfter finishing, summarize 5 key conclusions in the chat."
         },
         "opinionToPpt": {
           "title": "Turn idea into PPT",
-          "prompt": "Based on the viewpoint \"xxx\", generate a 6-8 page PPT.\n\nFirst expand the viewpoint into a clear argument, then create slides covering:\n1. Title page and one-sentence thesis;\n2. Background and problem definition;\n3. Breakdown of core arguments;\n4. Supporting reasons and cases;\n5. Counterarguments or risks;\n6. Action recommendations;\n7. Conclusion page.\n\nMake each slide title clear and concise, and explain the narrative logic in the chat."
+          "prompt": "Based on the viewpoint \"AI will shift repetitive office work from execution to review, and small businesses should start with document, spreadsheet, and customer service workflows instead of trying to automate everything at once\", generate a 6-8 page PPT.\n\nFirst expand the viewpoint into a clear argument, then create slides covering:\n1. Title page and one-sentence thesis;\n2. Background and problem definition;\n3. Breakdown of core arguments;\n4. Supporting reasons and cases;\n5. Counterarguments or risks;\n6. Action recommendations;\n7. Conclusion page.\n\nMake each slide title clear and concise, and explain the narrative logic in the chat."
         },
         "excelDataCleanup": {
           "title": "Validate Excel data",

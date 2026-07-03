@@ -32,6 +32,7 @@ export function UpdaterPanel() {
   const installProgress = useUpdaterStore((s) => s.installProgress)
   const error = useUpdaterStore((s) => s.error)
   const online = useUpdaterStore((s) => s.online)
+  const devPreview = useUpdaterStore((s) => s._devPreview)
   const closePanel = useUpdaterStore((s) => s.closePanel)
   const startDownload = useUpdaterStore((s) => s.startDownload)
   const retryDownload = useUpdaterStore((s) => s.retryDownload)
@@ -69,6 +70,7 @@ export function UpdaterPanel() {
         data-aijia-updater-panel
         data-aijia-updater-phase={phase}
         data-aijia-updater-version={version}
+        data-aijia-updater-dev-preview={devPreview ? 'true' : undefined}
         className="max-w-md overflow-hidden"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -188,7 +190,7 @@ export function UpdaterPanel() {
               </Button>
               <Button
                 data-aijia-updater-action="download"
-                onClick={() => void startDownload()}
+                onClick={() => { devPreview ? closePanel() : void startDownload() }}
               >
                 {t('updater.updateNow')}
               </Button>
@@ -205,7 +207,7 @@ export function UpdaterPanel() {
               </Button>
               <Button
                 data-aijia-updater-action="install"
-                onClick={() => void installNow()}
+                onClick={() => { devPreview ? closePanel() : void installNow() }}
                 disabled={!online}
                 title={!online ? t('updater.offlineHint') : undefined}
               >
@@ -216,7 +218,7 @@ export function UpdaterPanel() {
           {phase === 'failed' && (
             <Button
               data-aijia-updater-action="retry"
-              onClick={() => void retryDownload()}
+              onClick={() => { devPreview ? closePanel() : void retryDownload() }}
             >
               {t('updater.retry')}
             </Button>

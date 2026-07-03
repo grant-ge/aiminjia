@@ -38,6 +38,7 @@ interface UpdaterState {
   _expectedSize: number
   _downloadUrl: string
   _etag: string
+  _devPreview: boolean
   _bootstrapPromise: Promise<void> | null
   _downloadInFlight: Promise<void> | null
   _progressUnlisten: UnlistenFn | null
@@ -243,6 +244,7 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   _expectedSize: 0,
   _downloadUrl: '',
   _etag: '',
+  _devPreview: false,
   _bootstrapPromise: null,
   _downloadInFlight: null,
   _progressUnlisten: null,
