@@ -37,6 +37,7 @@ const mockUser = {
 describe('GeneralPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    delete (window as unknown as { __aijia?: unknown }).__aijia
     void i18n.changeLanguage('zh-CN')
     useBrandingStore.setState({ productName: 'AI猫' })
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, isLoaded: false })
@@ -143,6 +144,29 @@ describe('GeneralPanel', () => {
       'src',
       'asset://localhost//Users/me/.renlijia/users/t_1__u_2/profile/avatars/avatar.png',
     )
+  })
+
+  it('uses an e2e queued avatar path while keeping the real save path', async () => {
+    ;(window as unknown as { __aijia?: { _pickAvatarImageMockQueue: string[] } }).__aijia = {
+      _pickAvatarImageMockQueue: ['C:\\tmp\\source-avatar.png'],
+    }
+    tauriMock.saveProfileAvatarImage.mockResolvedValue('C:\\Users\\me\\.renlijia\\users\\t_1__u_2\\profile\\avatars\\avatar.png')
+
+    render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: '上传图片' }))
+    fireEvent.click(screen.getByRole('button', { name: '选择图片' }))
+
+    await waitFor(() => {
+      expect(dialogMock.open).not.toHaveBeenCalled()
+      expect(tauriMock.saveProfileAvatarImage).toHaveBeenCalledWith('C:\\tmp\\source-avatar.png')
+      expect(tauriMock.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profileAvatarMode: 'image',
+          profileAvatarImagePath: 'C:\\Users\\me\\.renlijia\\users\\t_1__u_2\\profile\\avatars\\avatar.png',
+        }),
+      )
+    })
   })
 
   it('shows the backend error when image upload fails', async () => {
