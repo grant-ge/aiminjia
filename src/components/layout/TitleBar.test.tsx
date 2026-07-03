@@ -32,6 +32,7 @@ describe('TitleBar', () => {
   beforeEach(() => {
     vi.stubEnv('DEV', false)
     localStorage.removeItem('aijia-sidebar-hidden')
+    localStorage.removeItem('aijia-titlebar-dev-tools-dock')
     useBrandingStore.setState({
       productName: 'AI 猫',
       logoUrl: '/app-icon.png',
@@ -57,7 +58,7 @@ describe('TitleBar', () => {
     expect(titleBar).toHaveClass('text-sidebar-foreground')
     const controlsLayer = container.children[1] as HTMLElement
     expect(controlsLayer).toHaveClass('pointer-events-none', 'absolute', 'z-30', 'h-12')
-    expect(controlsLayer.lastElementChild).toHaveClass('pointer-events-auto')
+    expect(container.querySelector('[data-aijia-titlebar-dev-tools-dock]')).not.toBeInTheDocument()
   })
 
   it('renders window controls on Windows', () => {
@@ -91,6 +92,48 @@ describe('TitleBar', () => {
     const badge = screen.getByText(getDevBadgeLabel())
     expect(badge).toBeInTheDocument()
     expect(badge).toHaveClass('inline-flex', 'border')
+  })
+
+  it('places DEV tools dock inside the main title bar area by default', async () => {
+    vi.stubEnv('DEV', true)
+    Object.defineProperty(navigator, 'userAgent', { value: WINDOWS_UA, configurable: true })
+    const { container } = render(<TitleBar />)
+
+    const dock = container.querySelector('[data-aijia-titlebar-dev-tools-dock]') as HTMLElement
+    expect(dock).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(Number.parseFloat(dock.style.left)).toBeGreaterThan(256)
+    })
+    expect(Number.parseFloat(dock.style.left)).toBeLessThan(window.innerWidth - 140)
+    expect(dock.style.top).toBe('50%')
+    expect(dock.style.transform).toBe('translateY(-50%)')
+
+    fireEvent.mouseDown(dock, { buttons: 1, detail: 1 })
+    expect(startDragging).not.toHaveBeenCalled()
+  })
+
+  it('drags DEV tools dock horizontally without changing vertical alignment', async () => {
+    vi.stubEnv('DEV', true)
+    Object.defineProperty(navigator, 'userAgent', { value: WINDOWS_UA, configurable: true })
+    const { container } = render(<TitleBar />)
+
+    const dock = container.querySelector('[data-aijia-titlebar-dev-tools-dock]') as HTMLElement
+    await waitFor(() => {
+      expect(Number.parseFloat(dock.style.left)).toBeGreaterThan(256)
+    })
+    const initialLeft = Number.parseFloat(dock.style.left)
+
+    fireEvent.pointerDown(dock, { button: 0, pointerId: 1, clientX: 400 })
+    fireEvent.pointerMove(dock, { pointerId: 1, clientX: 460, clientY: 999 })
+    fireEvent.pointerUp(dock, { pointerId: 1, clientX: 460, clientY: 999 })
+
+    expect(Number.parseFloat(dock.style.left)).toBeCloseTo(initialLeft + 60)
+    expect(dock.style.top).toBe('50%')
+    expect(dock.style.transform).toBe('translateY(-50%)')
+    expect(JSON.parse(localStorage.getItem('aijia-titlebar-dev-tools-dock') ?? '{}')).toEqual({
+      x: Number.parseFloat(dock.style.left),
+    })
   })
 
   it('places sidebar toggle on the left side of the macOS title bar', () => {
