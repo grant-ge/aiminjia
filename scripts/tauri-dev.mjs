@@ -85,7 +85,7 @@ const devCsp = [
   `connect-src 'self' http://localhost:${port} ws://localhost:${port} http://127.0.0.1:${port} ws://127.0.0.1:${port} ipc: http://ipc.localhost https://*`,
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: asset: http://localhost:${port} http://127.0.0.1:${port} https:`,
+  `img-src 'self' data: asset: http://asset.localhost http://localhost:${port} http://127.0.0.1:${port} https:`,
 ].join('; ')
 
 const portOverride = JSON.stringify({
