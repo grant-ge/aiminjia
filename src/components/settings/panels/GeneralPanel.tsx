@@ -27,6 +27,15 @@ const PROFILE_EMOJIS = [
   '🧸', '🎁', '👾', '🤖', '🏔️', '🌋', '🎪', '🔭', '💎', '🧠',
 ]
 
+function takeQueuedAvatarImagePath(): string | null {
+  if (!(import.meta.env.DEV || import.meta.env.VITE_E2E_ENABLED === 'true')) return null
+  return (
+    window as unknown as {
+      __aijia?: { _pickAvatarImageMockQueue?: string[] }
+    }
+  ).__aijia?._pickAvatarImageMockQueue?.shift() ?? null
+}
+
 function normalizeProfileAvatarMode(value: unknown): ProfileAvatarMode {
   return value === 'emoji' || value === 'image' ? value : 'initial'
 }
@@ -132,17 +141,19 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
     setAvatarUploadError(null)
     setIsAvatarUploading(true)
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog')
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        filters: [
-          {
-            name: t('settings.general.avatarImageFiles'),
-            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'],
-          },
-        ],
-      })
+      const selected = takeQueuedAvatarImagePath() ?? await (async () => {
+        const { open } = await import('@tauri-apps/plugin-dialog')
+        return open({
+          multiple: false,
+          directory: false,
+          filters: [
+            {
+              name: t('settings.general.avatarImageFiles'),
+              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'],
+            },
+          ],
+        })
+      })()
       const filePath = Array.isArray(selected) ? selected[0] : selected
       if (!filePath) return
 
@@ -198,12 +209,14 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
           <section className="rounded-md border border-border bg-card">
             <div className="flex items-center gap-4 border-b border-border px-4 py-4">
               <div
+                data-aijia-profile-avatar-preview
                 data-testid="settings-profile-avatar-preview"
                 style={{ background: previewAvatarBackground }}
                 className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border text-primary"
               >
                 {imageAvatarSrc ? (
                   <img
+                    data-aijia-profile-avatar-image
                     src={imageAvatarSrc}
                     alt={t('settings.general.currentAvatar')}
                     className="h-full w-full object-cover"
@@ -234,6 +247,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                 <Button unstyled
                   type="button"
                   role="radio"
+                  data-aijia-profile-avatar-action="select-initial"
                   aria-checked={profileAvatarMode === 'initial'}
                   aria-label={t('settings.general.avatarInitial')}
                   onClick={() => {
@@ -249,6 +263,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                 <Button unstyled
                   type="button"
                   role="radio"
+                  data-aijia-profile-avatar-action="select-emoji"
                   aria-checked={profileAvatarMode === 'emoji'}
                   aria-label="Emoji"
                   onClick={handleEmojiAvatarMode}
@@ -284,6 +299,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                 <Button unstyled
                   type="button"
                   role="radio"
+                  data-aijia-profile-avatar-action="select-image"
                   aria-checked={profileAvatarMode === 'image'}
                   aria-label={t('settings.general.avatarUpload')}
                   onClick={handleImageAvatarMode}
@@ -297,6 +313,7 @@ export function GeneralPanel({ user, onLogout, section = 'all' }: GeneralPanelPr
                     <Button
                       type="button"
                       variant="outline"
+                      data-aijia-profile-avatar-action="choose-image"
                       onClick={() => void handleImageAvatar()}
                       disabled={isAvatarUploading}
                     >

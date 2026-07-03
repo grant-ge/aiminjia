@@ -55,6 +55,10 @@ if (import.meta.env.DEV || import.meta.env.VITE_E2E_ENABLED === 'true') {
     // normal. The variant selection (which item the user clicks) determines
     // which handler consumes the queue—queue itself is variant-agnostic.
     _pickSkillImportMockQueue: [] as string[],
+    // E2E one-shot mock for profile avatar's OS image picker. CLI pushes a
+    // single absolute image path; the next "选择图片" click shifts it and still
+    // runs saveProfileAvatarImage + settings persistence + real image render.
+    _pickAvatarImageMockQueue: [] as string[],
   }
 }
 
