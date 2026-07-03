@@ -1259,7 +1259,7 @@
         },
         "dingtalkMessage": {
           "title": "Send DingTalk",
-          "prompt": "Send a DingTalk message to the contact \"xxx\".\n\nFirst check the DingTalk connection status. If I am not signed in or permissions are missing, guide me through connecting inside the chat.\n\nDraft the message with:\n1. Background context;\n2. What the recipient needs to confirm or handle;\n3. Expected response time;\n4. Concise and polite wording.\n\nBefore sending, show the recipient and message body in the chat and wait for my confirmation."
+          "prompt": "Send a test DingTalk message to the contact \"xxx\".\n\nMessage body:\nHello, I am testing the ability to send DingTalk messages with AI. No action is needed if you receive this message. Thank you.\n\nFirst check the DingTalk connection status. If I am not signed in or permissions are missing, guide me through connecting inside the chat.\nBefore sending, show the recipient and message body in the chat and wait for my confirmation."
         },
         "rehcmRecentChanges": {
           "title": "Query joiners/leavers",
