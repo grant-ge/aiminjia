@@ -15,6 +15,7 @@ import { ChatAvatar } from '@/components/chat-scene/ChatAvatar'
 import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useUiStore } from '@/stores/uiStore'
 
 export interface ChatTopBarEmployee {
   avatar: string;
@@ -90,6 +91,9 @@ export function ChatTopBar({
   onToggleSidebar,
   trailing,
 }: ChatTopBarProps) {
+  const sidebarHidden = useUiStore((state) => state.sidebarHidden);
+  const reserveMacWindowControlInset =
+    navigator.userAgent.includes("Macintosh") && sidebarHidden;
   const workspaceMissing = workspaceAvailable === false;
   const workspaceStatus = workspaceMissing
     ? "missing"
@@ -118,7 +122,11 @@ export function ChatTopBar({
   return (
     <header
       data-tauri-drag-region
-      className="relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-6"
+      className={cn(
+        "relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-6 transition-[padding] duration-200 ease-out motion-reduce:transition-none",
+        // Reserve the macOS window-controls strip when the sidebar is collapsed.
+        reserveMacWindowControlInset && "pl-48",
+      )}
     >
       <div className="flex min-w-0 items-center gap-3">
         {employee ? (

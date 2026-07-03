@@ -22,9 +22,8 @@ use crate::runtime::tools::RuntimeTool;
 
 use super::shell_common::{
     append_reader_fallback_notice, auto_loaded_skill_install_deny_message, collect_reader_bounded,
-    content_from_output,
-    emit_shell_failure_diagnostic, format_cancel_message, format_command_failure,
-    inject_managed_runtime_env, inject_trace_env, interpret_command_result,
+    content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
+    format_command_failure, inject_managed_runtime_env, inject_trace_env, interpret_command_result,
     kill_child_process_tree, optional_transcript_path,
     read_merged_streams_with_progress_and_optional_transcript, reader_drain_timeout, tail_n_lines,
     truncated_to_max_bytes, ExitKind, ReaderSnapshot, MAX_OUTPUT_BYTES,

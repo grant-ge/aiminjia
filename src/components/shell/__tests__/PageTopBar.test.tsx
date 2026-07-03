@@ -1,10 +1,24 @@
 import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { PageTopBar } from '../PageTopBar'
+import { useUiStore } from '@/stores/uiStore'
 
 describe('PageTopBar', () => {
+  const originalUserAgent = navigator.userAgent
+
+  beforeEach(() => {
+    useUiStore.setState({ sidebarHidden: false })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: originalUserAgent,
+      configurable: true,
+    })
+  })
+
   it('default variant: empty bar with bottom border, 48px height, px-8', () => {
     const { container } = render(<PageTopBar variant="default" />)
     const header = container.querySelector('header')
@@ -65,5 +79,19 @@ describe('PageTopBar', () => {
   it('header has data-tauri-drag-region', () => {
     const { container } = render(<PageTopBar variant="default" />)
     expect(container.querySelector('header')?.hasAttribute('data-tauri-drag-region')).toBe(true)
+  })
+
+  it('reserves macOS window-control space when the sidebar is hidden', () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh)',
+      configurable: true,
+    })
+    useUiStore.setState({ sidebarHidden: true })
+
+    const { container } = render(<PageTopBar variant="title" title="技能中心" />)
+    const header = container.querySelector('header')
+
+    expect(header).toHaveClass('pl-48')
+    expect(header).toHaveClass('transition-[padding]', 'duration-200', 'ease-out')
   })
 })

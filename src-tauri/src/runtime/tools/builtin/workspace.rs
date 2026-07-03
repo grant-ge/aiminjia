@@ -5,18 +5,18 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::runtime::path_auth::{Decision, PathOp, decide};
-use crate::runtime::tools::RuntimeTool;
+use crate::runtime::path_auth::{decide, Decision, PathOp};
 use crate::runtime::tools::capability::FileState;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use crate::runtime::tools::RuntimeTool;
 
 /// Returns the root path for workspace file operations.
 ///

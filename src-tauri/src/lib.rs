@@ -302,6 +302,44 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
+fn configure_main_window_chrome<R: tauri::Runtime + 'static>(app: &tauri::App<R>) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+
+    // TitleBar is rendered by React, but the native title still drives the
+    // macOS Dock right-click menu, Mission Control and Cmd+Tab window list.
+    let native_title = app
+        .config()
+        .product_name
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| std::env::var("AIJIA_DEV_APP_NAME").ok())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "AIjia".to_string());
+    let _ = win.set_title(&native_title);
+
+    commands::window_chrome::hide_window_title(&win);
+
+    #[cfg(target_os = "macos")]
+    {
+        commands::window_chrome::position_traffic_lights_then_show(&win);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = win.set_decorations(false);
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 fn build_tray_menu<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     labels: AppMenuLabels,
@@ -416,6 +454,7 @@ pub fn run() {
         .setup(|app| {
             install_app_navigation_menu(app)?;
             install_app_tray(app)?;
+            configure_main_window_chrome(app);
 
             // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
@@ -733,42 +772,6 @@ pub fn run() {
                 llm::gateway::LlmGateway::new_with_registry(db.clone(), run_registry.clone())
                     .with_auth_manager(auth_manager.clone()),
             );
-
-            // Set window title from persisted branding (before WebView renders)
-            // Window setup: custom titlebar on all platforms
-            {
-                if let Some(win) = app.get_webview_window("main") {
-                    // Title bar is rendered by the HTML TitleBar component, but the
-                    // native window title still drives the macOS Dock right-click
-                    // menu, Mission Control and Cmd+Tab window list — a blank " "
-                    // there shows up as a nameless entry. Seed it with the product
-                    // name; brandingStore refines it to the tenant productName once
-                    // the webview loads.
-                    let native_title = app
-                        .config()
-                        .product_name
-                        .clone()
-                        .filter(|value| !value.trim().is_empty())
-                        .or_else(|| std::env::var("AIJIA_DEV_APP_NAME").ok())
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or_else(|| "AIjia".to_string());
-                    let _ = win.set_title(&native_title);
-
-                    // macOS: `titleBarStyle: Overlay` floats the traffic lights over
-                    // content but does NOT hide the native title text — it would
-                    // otherwise show "AIjia" right of the lights. Hide it so the
-                    // TitleBar React component is the only thing in that strip.
-                    commands::window_chrome::hide_window_title(&win);
-
-                    // Windows: disable native decorations to avoid double titlebar.
-                    // macOS uses titleBarStyle: Overlay (set in tauri.conf.json) which
-                    // keeps the traffic light buttons overlaid on content.
-                    #[cfg(target_os = "windows")]
-                    {
-                        let _ = win.set_decorations(false);
-                    }
-                }
-            }
 
             // Initialize DingTalk bridge (dws CLI sidecar)
             let dingtalk_bridge = Arc::new(connector::dingtalk::DingtalkBridge::new(

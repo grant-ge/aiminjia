@@ -816,33 +816,27 @@ Use exactly the following structure.
         std::fs::write(dir.path().join("report.md"), "done").unwrap();
         let targets = vec!["report.md".to_string()];
 
-        assert!(
-            maybe_artifact_quality_guard_prompt(
-                "Create `report.md` with a short summary.",
-                &targets,
-                dir.path(),
-                0,
-            )
-            .is_none()
-        );
-        assert!(
-            maybe_artifact_quality_guard_prompt(
-                "Modify `report.md` and rename one field in the example.",
-                &targets,
-                dir.path(),
-                0,
-            )
-            .is_none()
-        );
-        assert!(
-            maybe_artifact_quality_guard_prompt(
-                "Create `report.md` with exactly the following structure.",
-                &targets,
-                dir.path(),
-                1,
-            )
-            .is_none()
-        );
+        assert!(maybe_artifact_quality_guard_prompt(
+            "Create `report.md` with a short summary.",
+            &targets,
+            dir.path(),
+            0,
+        )
+        .is_none());
+        assert!(maybe_artifact_quality_guard_prompt(
+            "Modify `report.md` and rename one field in the example.",
+            &targets,
+            dir.path(),
+            0,
+        )
+        .is_none());
+        assert!(maybe_artifact_quality_guard_prompt(
+            "Create `report.md` with exactly the following structure.",
+            &targets,
+            dir.path(),
+            1,
+        )
+        .is_none());
     }
 
     #[test]

@@ -525,12 +525,10 @@ mod tests {
         let artifact_dir = tool_results_dir(tmp.path()).canonicalize().unwrap();
         let artifact_path = record.path_buf().canonicalize().unwrap();
         assert!(artifact_path.starts_with(artifact_dir));
-        assert!(
-            !artifact_path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .contains("..")
-        );
+        assert!(!artifact_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains(".."));
     }
 }

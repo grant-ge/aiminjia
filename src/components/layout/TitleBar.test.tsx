@@ -53,10 +53,10 @@ describe('TitleBar', () => {
     const { container } = render(<TitleBar />)
     const titleBar = container.firstChild as HTMLElement
     expect(titleBar.style.backgroundColor).toBe('transparent')
-    expect(titleBar).toHaveClass('absolute', 'inset-x-0', 'top-0', 'z-10', 'w-full')
+    expect(titleBar).toHaveClass('absolute', 'inset-x-0', 'top-0', 'z-10', 'h-12', 'w-full')
     expect(titleBar).toHaveClass('text-sidebar-foreground')
     const controlsLayer = container.children[1] as HTMLElement
-    expect(controlsLayer).toHaveClass('pointer-events-none', 'absolute', 'z-30')
+    expect(controlsLayer).toHaveClass('pointer-events-none', 'absolute', 'z-30', 'h-12')
     expect(controlsLayer.lastElementChild).toHaveClass('pointer-events-auto')
   })
 

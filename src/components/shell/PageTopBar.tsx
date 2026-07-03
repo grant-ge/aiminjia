@@ -5,6 +5,8 @@
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { useUiStore } from '@/stores/uiStore'
 
 export type PageTopBarVariant = "default" | "title" | "breadcrumb" | "compact";
 
@@ -29,10 +31,18 @@ export function PageTopBar({
   leading,
   trailing,
 }: PageTopBarProps) {
+  const sidebarHidden = useUiStore((state) => state.sidebarHidden);
+  const reserveMacWindowControlInset =
+    navigator.userAgent.includes("Macintosh") && sidebarHidden;
+
   return (
     <header
       data-tauri-drag-region
-      className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-8"
+      className={cn(
+        "relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-8 transition-[padding] duration-200 ease-out motion-reduce:transition-none",
+        // Reserve the macOS window-controls strip when the sidebar is collapsed.
+        reserveMacWindowControlInset && "pl-48",
+      )}
     >
       {variant === "compact" ? (
         <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-foreground">

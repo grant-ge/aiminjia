@@ -189,8 +189,8 @@ function DevBadge() {
 }
 
 /**
- * Both macOS (Overlay titleBarStyle) and Windows render a 28px shell strip at
- * the top. macOS draws native traffic lights over this strip.
+ * macOS overlays native traffic lights over the same 48px header band used by
+ * the page top bars. Windows still renders a compact custom title bar.
  */
 export function TitleBar() {
   const showUpdateLink = useUpdaterStore((s) =>
@@ -203,8 +203,8 @@ export function TitleBar() {
   const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(isMacOS)
 
   const barClass = 'flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
-  const macDragClass = 'absolute inset-x-0 top-0 z-10 flex h-8 w-full items-center text-sidebar-foreground'
-  const macControlsClass = 'pointer-events-none absolute inset-x-0 top-0 z-30 flex h-8 w-full items-center justify-between text-sidebar-foreground'
+  const macDragClass = 'absolute inset-x-0 top-0 z-10 flex h-12 w-full items-center text-sidebar-foreground'
+  const macControlsClass = 'pointer-events-none absolute inset-x-0 top-0 z-30 flex h-12 w-full items-center justify-between text-sidebar-foreground'
   const barStyle = isMacOS ? OVERLAY_TITLE_BAR_STYLE : SIDEBAR_TITLE_BAR_STYLE
   const leftGroupClass = sidebarHidden
     ? 'flex items-center pl-2'

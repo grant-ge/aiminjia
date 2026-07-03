@@ -418,8 +418,8 @@ button:not(:disabled) {
 }
 
 .titlebar-sidebar-toggle {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   color: rgba(var(--sidebar-foreground-rgb), 0.7);
 }
@@ -433,7 +433,7 @@ button:not(:disabled) {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  color: rgba(var(--sidebar-foreground-rgb), 0.46);
+  color: rgba(var(--sidebar-foreground-rgb), 0.7);
 }
 
 .titlebar-navigation-button:hover:not(:disabled) {

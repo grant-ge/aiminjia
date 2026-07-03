@@ -424,7 +424,7 @@ export function AppSidebar() {
   return (
     <>
       <aside
-        className={`flex h-full shrink-0 flex-col overflow-hidden bg-sidebar ${isMacOS ? "pt-8" : "pt-2"} text-sidebar-foreground`}
+        className={`flex h-full shrink-0 flex-col overflow-hidden bg-sidebar ${isMacOS ? "pt-12" : "pt-2"} text-sidebar-foreground`}
       >
         <SidebarNav
           activeKey={activeKey}

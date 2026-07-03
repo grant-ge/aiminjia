@@ -28,7 +28,9 @@ import { SegmentedControl } from "@/components/common/SegmentedControl";
 import { getMessages, getTasks, openGeneratedFile } from "@/lib/tauri";
 import type { ChannelPlatform, ChannelPlatformState } from "@/lib/tauri";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useUiStore } from "@/stores/uiStore";
 import { useTeamOverview } from "@/hooks/useTeamOverview";
+import { cn } from "@/lib/utils";
 import { ChannelConfig } from "./ChannelConfig";
 import { ChannelConfigDetails } from "./ChannelConfigDetails";
 import { FeishuChannelConfig } from "./FeishuChannelConfig";
@@ -393,13 +395,20 @@ function ChannelOverview({
   onToggleWhatsapp: (enabled: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const sidebarHidden = useUiStore((state) => state.sidebarHidden);
+  const reserveMacWindowControlInset =
+    navigator.userAgent.includes("Macintosh") && sidebarHidden;
   const noop = () => {};
   const noopToggle = () => {};
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div
         data-tauri-drag-region
-        className="relative z-20 flex h-12 shrink-0 items-center border-b border-border bg-background px-8"
+        className={cn(
+          "relative z-20 flex h-12 shrink-0 items-center border-b border-border bg-background px-8 transition-[padding] duration-200 ease-out motion-reduce:transition-none",
+          // Reserve the macOS window-controls strip when the sidebar is collapsed.
+          reserveMacWindowControlInset && "pl-48",
+        )}
       >
         <span className="text-[15px] font-semibold leading-[22px] text-foreground">
           {t("nav.channel")}

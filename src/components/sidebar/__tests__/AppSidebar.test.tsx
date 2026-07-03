@@ -311,7 +311,7 @@ describe("AppSidebar", () => {
     expect(screen.getByText("默认项目").closest(".overflow-auto")).toHaveClass("px-2");
   });
 
-  it("reserves space for macOS traffic lights when the title bar overlays the sidebar", () => {
+  it("reserves macOS header-height space when the title bar overlays the sidebar", () => {
     Object.defineProperty(navigator, "userAgent", {
       value: "Mozilla/5.0 (Macintosh)",
       configurable: true,
@@ -319,7 +319,7 @@ describe("AppSidebar", () => {
 
     const { container } = render(<AppSidebar />);
     const aside = container.querySelector("aside");
-    expect(aside).toHaveClass("pt-8");
+    expect(aside).toHaveClass("pt-12");
     expect(aside).not.toHaveClass("pt-2");
   });
 
