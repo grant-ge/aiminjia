@@ -118,7 +118,7 @@ export function ChatTopBar({
   return (
     <header
       data-tauri-drag-region
-      className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-6"
+      className="relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-6"
     >
       <div className="flex min-w-0 items-center gap-3">
         {employee ? (

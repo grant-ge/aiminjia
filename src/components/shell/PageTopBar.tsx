@@ -32,7 +32,7 @@ export function PageTopBar({
   return (
     <header
       data-tauri-drag-region
-      className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-8"
+      className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-8"
     >
       {variant === "compact" ? (
         <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-foreground">

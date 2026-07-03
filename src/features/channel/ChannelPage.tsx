@@ -399,7 +399,7 @@ function ChannelOverview({
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div
         data-tauri-drag-region
-        className="flex h-12 shrink-0 items-center border-b border-border px-8"
+        className="relative z-20 flex h-12 shrink-0 items-center border-b border-border bg-background px-8"
       >
         <span className="text-[15px] font-semibold leading-[22px] text-foreground">
           {t("nav.channel")}

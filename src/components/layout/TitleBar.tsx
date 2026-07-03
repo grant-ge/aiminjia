@@ -156,12 +156,12 @@ function TitleBarNavigationButtons() {
   )
 }
 
-/**
- * The native drag strip uses the same surface color as the left sidebar so the
- * window chrome and app navigation read as one continuous shell.
- */
-const TITLE_BAR_STYLE: React.CSSProperties = {
+const SIDEBAR_TITLE_BAR_STYLE: React.CSSProperties = {
   backgroundColor: 'var(--sidebar)',
+}
+
+const OVERLAY_TITLE_BAR_STYLE: React.CSSProperties = {
+  backgroundColor: 'transparent',
 }
 
 // "DEV" or "DEV 5174" when a vite dev port is detectable.  Including the port
@@ -196,15 +196,53 @@ export function TitleBar() {
   const showUpdateLink = useUpdaterStore((s) =>
     s.phase === 'available' || s.phase === 'downloading' || s.phase === 'ready' || s.phase === 'failed'
   )
+  const isMacOS = navigator.userAgent.includes('Macintosh')
   const isWindows = navigator.userAgent.includes('Windows')
   const isDev = import.meta.env.DEV
-  const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(!isWindows)
+  const sidebarHidden = useUiStore((s) => s.sidebarHidden)
+  const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(isMacOS)
 
   const barClass = 'flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
-  const barStyle = TITLE_BAR_STYLE
-  const macLeftGroupClass = reserveMacTrafficLightInset
-    ? 'flex items-center pl-20'
-    : 'flex items-center'
+  const macDragClass = 'absolute inset-x-0 top-0 z-10 flex h-8 w-full items-center text-sidebar-foreground'
+  const macControlsClass = 'pointer-events-none absolute inset-x-0 top-0 z-30 flex h-8 w-full items-center justify-between text-sidebar-foreground'
+  const barStyle = isMacOS ? OVERLAY_TITLE_BAR_STYLE : SIDEBAR_TITLE_BAR_STYLE
+  const leftGroupClass = sidebarHidden
+    ? 'flex items-center pl-2'
+    : 'flex w-64 items-center justify-end pr-2'
+  const macLeftGroupClass = sidebarHidden
+    ? reserveMacTrafficLightInset
+      ? 'flex items-center pl-20'
+      : leftGroupClass
+    : leftGroupClass
+
+  if (isMacOS) {
+    return (
+      <>
+        <div
+          data-tauri-drag-region
+          className={macDragClass}
+          style={barStyle}
+        />
+        <div className={macControlsClass}>
+          <div className={macLeftGroupClass}>
+            <div className="pointer-events-auto flex items-center">
+              <SidebarToggleButton />
+              <TitleBarNavigationButtons />
+            </div>
+          </div>
+          <div className="pointer-events-auto flex items-center">
+            {showUpdateLink ? (
+              <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
+                <UpdateAvailableLink />
+              </div>
+            ) : null}
+            {isDev ? <TitleBarEnvSwitcher /> : null}
+            {isDev ? <DevBadge /> : null}
+          </div>
+        </div>
+      </>
+    )
+  }
 
   if (!isWindows) {
     return (
@@ -213,7 +251,7 @@ export function TitleBar() {
         className={`${barClass} justify-between`}
         style={barStyle}
       >
-        <div className={macLeftGroupClass}>
+        <div className={leftGroupClass}>
           <SidebarToggleButton />
           <TitleBarNavigationButtons />
         </div>
@@ -237,8 +275,10 @@ export function TitleBar() {
       style={barStyle}
       onMouseDown={handleDragStart}
     >
-      <SidebarToggleButton className="ml-2" />
-      <TitleBarNavigationButtons />
+      <div className={leftGroupClass}>
+        <SidebarToggleButton />
+        <TitleBarNavigationButtons />
+      </div>
       <div className="flex-1" data-tauri-drag-region />
       <div onMouseDown={(e) => e.stopPropagation()}>
         <UpdateAvailableLink />

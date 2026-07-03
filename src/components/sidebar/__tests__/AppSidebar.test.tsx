@@ -311,6 +311,18 @@ describe("AppSidebar", () => {
     expect(screen.getByText("默认项目").closest(".overflow-auto")).toHaveClass("px-2");
   });
 
+  it("reserves space for macOS traffic lights when the title bar overlays the sidebar", () => {
+    Object.defineProperty(navigator, "userAgent", {
+      value: "Mozilla/5.0 (Macintosh)",
+      configurable: true,
+    });
+
+    const { container } = render(<AppSidebar />);
+    const aside = container.querySelector("aside");
+    expect(aside).toHaveClass("pt-8");
+    expect(aside).not.toHaveClass("pt-2");
+  });
+
   it("limits the global pinned section to three conversations until expanded", async () => {
     chatState.conversations = Array.from({ length: 4 }, (_, index) => ({
       id: `conv-pinned-${index + 1}`,

@@ -48,11 +48,16 @@ describe('TitleBar', () => {
     vi.unstubAllEnvs()
   })
 
-  it('renders sidebar-colored strip on macOS', () => {
+  it('renders a transparent overlay strip on macOS', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     const { container } = render(<TitleBar />)
-    expect(container.firstChild).toHaveStyle({ backgroundColor: 'var(--sidebar)' })
-    expect(container.firstChild).toHaveClass('text-sidebar-foreground')
+    const titleBar = container.firstChild as HTMLElement
+    expect(titleBar.style.backgroundColor).toBe('transparent')
+    expect(titleBar).toHaveClass('absolute', 'inset-x-0', 'top-0', 'z-10', 'w-full')
+    expect(titleBar).toHaveClass('text-sidebar-foreground')
+    const controlsLayer = container.children[1] as HTMLElement
+    expect(controlsLayer).toHaveClass('pointer-events-none', 'absolute', 'z-30')
+    expect(controlsLayer.lastElementChild).toHaveClass('pointer-events-auto')
   })
 
   it('renders window controls on Windows', () => {
@@ -61,6 +66,15 @@ describe('TitleBar', () => {
     expect(screen.getByLabelText('Minimize')).toBeInTheDocument()
     expect(screen.getByLabelText('Maximize')).toBeInTheDocument()
     expect(screen.getByLabelText('Close')).toBeInTheDocument()
+  })
+
+  it('keeps the normal occupied title bar on Windows', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
+    const { container } = render(<TitleBar />)
+    const titleBar = container.firstChild as HTMLElement
+    expect(titleBar).toHaveStyle({ backgroundColor: 'var(--sidebar)' })
+    expect(titleBar).toHaveClass('flex', 'shrink-0')
+    expect(titleBar).not.toHaveClass('absolute')
   })
 
   it('does not add a bottom border on Windows in production', () => {
@@ -83,12 +97,16 @@ describe('TitleBar', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     const { container } = render(<TitleBar />)
 
-    const titleBar = container.firstElementChild as HTMLElement
-    const leftGroup = titleBar.firstElementChild as HTMLElement
+    const controlsLayer = container.children[1] as HTMLElement
+    const leftGroup = controlsLayer.firstElementChild as HTMLElement
+    const buttonGroup = leftGroup.firstElementChild as HTMLElement
     const toggle = screen.getByLabelText('隐藏侧栏')
 
     expect(leftGroup).toContainElement(toggle)
-    expect(leftGroup).toHaveClass('pl-20')
+    expect(leftGroup).toHaveClass('w-64', 'justify-end', 'pr-2')
+    expect(leftGroup).not.toHaveClass('pointer-events-auto')
+    expect(buttonGroup).toHaveClass('pointer-events-auto')
+    expect(leftGroup).not.toHaveClass('pl-20')
     expect(toggle).toHaveAttribute('data-aijia-sidebar-toggle', 'true')
     expect(container.querySelector('.lucide-panel-left')).toBeInTheDocument()
   })
@@ -96,15 +114,32 @@ describe('TitleBar', () => {
   it('removes the macOS traffic-light padding while fullscreen', async () => {
     isFullscreen.mockResolvedValue(true)
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    useUiStore.setState({ sidebarHidden: true })
     const { container } = render(<TitleBar />)
 
-    const titleBar = container.firstElementChild as HTMLElement
-    const leftGroup = titleBar.firstElementChild as HTMLElement
+    const controlsLayer = container.children[1] as HTMLElement
+    const leftGroup = controlsLayer.firstElementChild as HTMLElement
 
     await waitFor(() => {
       expect(leftGroup).not.toHaveClass('pl-20')
     })
-    expect(leftGroup).toContainElement(screen.getByLabelText('隐藏侧栏'))
+    expect(leftGroup).toContainElement(screen.getByLabelText('显示侧栏'))
+  })
+
+  it('keeps the macOS sidebar toggle after traffic lights when the sidebar is hidden', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    useUiStore.setState({ sidebarHidden: true })
+    const { container } = render(<TitleBar />)
+
+    const controlsLayer = container.children[1] as HTMLElement
+    const leftGroup = controlsLayer.firstElementChild as HTMLElement
+    const buttonGroup = leftGroup.firstElementChild as HTMLElement
+
+    expect(leftGroup).toHaveClass('pl-20')
+    expect(leftGroup).not.toHaveClass('pointer-events-auto')
+    expect(leftGroup).not.toHaveClass('w-64', 'justify-end')
+    expect(buttonGroup).toHaveClass('pointer-events-auto')
+    expect(leftGroup).toContainElement(screen.getByLabelText('显示侧栏'))
   })
 
   it('renders route back and forward buttons in the macOS title bar', () => {
@@ -149,7 +184,7 @@ describe('TitleBar', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     const { container } = render(<TitleBar />)
     const style = (container.firstChild as HTMLElement).style
-    expect(style.backgroundColor).toBe('var(--sidebar)')
+    expect(style.backgroundColor).toBe('transparent')
     expect(style.backgroundImage).toBe('')
   })
 
@@ -189,13 +224,14 @@ describe('TitleBar', () => {
       expect(startDragging).not.toHaveBeenCalled()
     })
 
-    it('shows sidebar toggle from the visible left edge without starting drag', () => {
+    it('aligns sidebar controls to the sidebar edge without starting drag', () => {
       const { container } = render(<TitleBar />)
       const titleBar = container.firstElementChild as HTMLElement
+      const leftGroup = titleBar.firstElementChild as HTMLElement
       const toggle = screen.getByLabelText('隐藏侧栏')
 
-      expect(titleBar.firstElementChild).toBe(toggle)
-      expect(toggle).toHaveClass('ml-2')
+      expect(leftGroup).toContainElement(toggle)
+      expect(leftGroup).toHaveClass('w-64', 'justify-end', 'pr-2')
 
       fireEvent.mouseDown(toggle, { buttons: 1, detail: 1 })
       expect(startDragging).not.toHaveBeenCalled()
@@ -204,10 +240,11 @@ describe('TitleBar', () => {
     it('does not show the tenant brand in the Windows title bar', () => {
       const { container } = render(<TitleBar />)
       const titleBar = container.firstElementChild as HTMLElement
+      const leftGroup = titleBar.firstElementChild as HTMLElement
       const toggle = screen.getByLabelText('隐藏侧栏')
 
       expect(screen.queryByTestId('titlebar-tenant-brand')).not.toBeInTheDocument()
-      expect(titleBar.firstElementChild).toBe(toggle)
+      expect(leftGroup).toContainElement(toggle)
       expect(screen.queryByText('AI 猫')).not.toBeInTheDocument()
     })
   })
