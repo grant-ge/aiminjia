@@ -884,6 +884,10 @@
     "selectWorkDirAria": "Select working directory, currently in {{name}}",
     "selectOtherDir": "Choose another directory…",
     "useDefaultFolder": "Use default folder",
+    "workspaceRequiredHint": "This example needs to read project code. Choose a project directory first.",
+    "dismissWorkspaceHint": "Dismiss project directory hint",
+    "attachmentRequiredHint": "This example needs Excel data. Upload a spreadsheet first.",
+    "dismissAttachmentHint": "Dismiss upload hint",
     "newConversation": "New conversation"
   },
   "errors": {
@@ -1109,7 +1113,184 @@
     "organize": "Organizing…"
   },
   "homePage": {
-    "heroTitle": "Many threads ahead — start with one"
+    "heroTitle": "Give every teammate an AI team that gets things done",
+    "quickExamples": {
+      "ariaLabel": "Quick task examples",
+      "scrollLeft": "Scroll examples left",
+      "scrollRight": "Scroll examples right",
+      "categories": {
+        "office": "Office work",
+        "analysis": "Data analysis",
+        "docs": "Documents",
+        "coding": "Code development",
+        "automation": "Scheduled tasks",
+        "connection": "App connections",
+        "hrExpert": "HR expert",
+        "generalAssistant": "General assistant"
+      },
+      "examples": {
+        "weeklyPlan": {
+          "title": "Weekly plan",
+          "prompt": "For goals like \"product launch / sales expansion / hiring push\", generate a weekly plan.\n\nOutput it step by step:\n1. Break down the core weekly goals and key results;\n2. Plan daily tasks from Monday to Friday;\n3. Mark each task with priority, dependencies, estimated effort, and acceptance criteria;\n4. Add risk reminders and items that need early coordination.\n\nShow the result directly in the chat so I can copy and edit it."
+        },
+        "meetingNotes": {
+          "title": "Meeting template",
+          "prompt": "Generate a reusable meeting notes template.\n\nInclude:\n1. Basic meeting information;\n2. Meeting background and goals;\n3. Discussion points;\n4. Key decisions;\n5. An action item table with item, owner, due date, priority, and status;\n6. Risk reminders and next follow-up suggestions.\n\nShow the result directly in the chat so I can copy and edit it."
+        },
+        "presentationOutline": {
+          "title": "Presentation outline",
+          "prompt": "Create a presentation outline for \"xxx project progress\" in an order suitable for a spoken update:\n1. One-sentence conclusion;\n2. Current progress and milestones;\n3. Completed work;\n4. Work in progress;\n5. Issues, risks, and impact;\n6. Next steps;\n7. Decisions or support needed from the audience;\n8. Messaging advice.\n\nShow the result directly in the chat so I can copy and edit it."
+        },
+        "professionalReply": {
+          "title": "Professional reply",
+          "prompt": "For scenarios like \"customer chasing progress / project delay / requirement change\", draft professional replies that I can send directly.\n\nProvide 3 versions:\n1. Brief and safe;\n2. Fully explained;\n3. More proactive and accountable.\n\nEach version should include acknowledgment, current status, next action, a clear time point, a polite closing, and editable placeholders.\n\nShow them directly in the chat so I can copy them."
+        },
+        "projectRetrospective": {
+          "title": "Project retro",
+          "prompt": "Create a project retrospective outline for \"xxx project\".\n\nStructure it as:\n1. Project goals and actual results;\n2. Key milestones;\n3. What went well;\n4. Issues and root causes;\n5. Reusable lessons;\n6. Follow-up improvement actions.\n\nShow the result directly in the chat so I can copy and edit it."
+        },
+        "interviewQuestions": {
+          "title": "Interview questions",
+          "prompt": "Generate an interview question bank for roles like \"product manager / frontend engineer / sales consultant\".\n\nInclude:\n1. Candidate profile;\n2. Basic competency questions;\n3. Business scenario questions;\n4. Follow-up questions;\n5. Scoring rubric;\n6. Interviewer notes.\n\nShow the result directly in the chat so I can copy and edit it."
+        },
+        "spreadsheetInsight": {
+          "title": "Earnings analysis",
+          "prompt": "First find Alibaba's latest annual or interim earnings report and public announcements, then produce a full earnings analysis package.\n\nWork step by step:\n1. Extract revenue, profit, cash flow, segment performance, expenses, and key operating metrics;\n2. Generate an Excel earnings analysis workbook with raw metrics, YoY/QoQ analysis, chart dashboard, risk list, and conclusion summary;\n3. Generate a 6-8 page PPT executive summary covering key conclusions, operating performance, business highlights, risks, and recommendations;\n4. Summarize 5 key findings in the chat and include public source links."
+        },
+        "anomalyReview": {
+          "title": "Competitor analysis",
+          "prompt": "Research public materials, strengths, and weaknesses for products like \"DingTalk, Feishu, and WeCom\", then produce a competitor analysis package.\n\nWork step by step:\n1. Summarize each product's target users, positioning, core features, collaboration capabilities, AI capabilities, pricing signals, and typical strengths and weaknesses;\n2. Generate an Excel comparison matrix for side-by-side evaluation;\n3. Generate a 6-8 page PPT competitor analysis covering market background, comparison conclusions, differentiation opportunities, and product recommendations;\n4. Include public source links in the document and chat summary."
+        },
+        "businessReview": {
+          "title": "Industry trends",
+          "prompt": "First find public materials from the latest quarter about the low-altitude economy industry, then generate a 6-8 page PPT industry trend brief.\n\nWork step by step:\n1. Extract changes in policy, capital, technology, application scenarios, and competition;\n2. Summarize 3-5 trend judgments;\n3. Create an opportunity map and risk list;\n4. Select representative cases;\n5. Propose follow-up questions worth tracking.\n\nInclude public source links in the PPT and chat summary."
+        },
+        "dashboardAdvice": {
+          "title": "Dashboard advice",
+          "prompt": "Assume I want to track growth for a SaaS product. Generate an Excel metrics dashboard template.\n\nWork step by step:\n1. Design a metrics system covering acquisition, activation, retention, conversion, revenue, and churn;\n2. Define each metric with calculation formula, analysis dimensions, and alert threshold;\n3. Fill in sample data and create a dashboard view;\n4. Explain in the chat how to replace the sample data with real data.\n\nUse sample data so I do not need to upload data first."
+        },
+        "salesFunnel": {
+          "title": "Sales funnel",
+          "prompt": "Assume I want to track B2B sales opportunities. Generate an Excel sales funnel analysis template.\n\nInclude:\n1. Stages such as lead, opportunity, quotation, negotiation, and closed-won;\n2. Conversion rate and stage duration for each stage;\n3. Sample data;\n4. Funnel dashboard;\n5. Risk alert rules;\n6. Instructions for replacing sample data with real data.\n\nUse sample data so I do not need to upload data first."
+        },
+        "surveyAnalysis": {
+          "title": "Survey analysis",
+          "prompt": "Assume I ran a user satisfaction survey. Generate an Excel survey analysis template and a one-page conclusion summary.\n\nInclude:\n1. Sample survey data;\n2. Rating question statistics;\n3. Multiple-choice distribution;\n4. Theme clustering for open-ended answers;\n5. User pain points and opportunities;\n6. Next action recommendations.\n\nUse sample data so I do not need to upload data first."
+        },
+        "sourceSummary": {
+          "title": "Public source summary",
+          "prompt": "First find Alibaba's latest annual or interim earnings report, then generate a one-page Word summary document.\n\nStructure it as:\n1. One-sentence overview;\n2. 3-5 core conclusions;\n3. Key data table;\n4. Business highlights;\n5. Risk reminders;\n6. Open questions;\n7. Public source links.\n\nAfter finishing, provide the file name and summary highlights in the chat."
+        },
+        "prdDraft": {
+          "title": "PRD draft",
+          "prompt": "Generate a Word PRD draft for an \"AI meeting notes assistant\".\n\nInclude:\n1. Background and goals;\n2. Target users and usage scenarios;\n3. User pain points;\n4. Core flow;\n5. Feature list and priorities;\n6. Boundaries and non-goals;\n7. Edge cases;\n8. Data and permission requirements;\n9. Acceptance criteria;\n10. Future iteration suggestions.\n\nAfter finishing, summarize the document structure in the chat."
+        },
+        "contractRisk": {
+          "title": "Agreement risks",
+          "prompt": "First find a public SaaS service agreement template, then generate a Word agreement risk review document.\n\nOrganize it by clause type:\n1. Service scope;\n2. Fees and renewal;\n3. Data security;\n4. Privacy compliance;\n5. Service availability;\n6. Liability limits;\n7. Termination;\n8. Dispute resolution.\n\nFor each type, include risk explanation, possible impact, suggested edit direction, negotiation points, and questions to confirm, plus public source links."
+        },
+        "sop": {
+          "title": "SOP",
+          "prompt": "First find a public customer support ticket handling workflow template, then generate a Word SOP document.\n\nInclude:\n1. Scope;\n2. Roles and responsibilities;\n3. Process overview;\n4. Step-by-step operating instructions;\n5. Input, output, owner, and time limit for each step;\n6. Common exception handling;\n7. Quality checklist;\n8. Notes.\n\nAfter finishing, provide usage suggestions in the chat."
+        },
+        "resumeTemplate": {
+          "title": "Resume template",
+          "prompt": "Generate a Word resume template that can be adapted for \"product manager / operations / frontend engineer\" roles.\n\nInclude:\n1. Personal information;\n2. Strength summary;\n3. Work experience;\n4. Project experience;\n5. Skills;\n6. Education;\n7. Editable placeholder tips.\n\nAfter finishing, explain in the chat how to adjust it for different roles."
+        },
+        "proposalDraft": {
+          "title": "Proposal draft",
+          "prompt": "Generate a Word proposal draft for topics like \"enterprise knowledge base setup / customer service efficiency improvement / data dashboard buildout\".\n\nInclude:\n1. Background and goals;\n2. Current problems;\n3. Proposed solution;\n4. Implementation steps;\n5. Resources and timeline;\n6. Risks and mitigations;\n7. Expected benefits.\n\nAfter finishing, summarize the proposal highlights in the chat."
+        },
+        "portfolioSite": {
+          "title": "Portfolio site",
+          "prompt": "Build a personal portfolio website. Create a standalone pure HTML/CSS/JS static page. Do not install dependencies, require a build step, or start a dev server; it should run by opening the entry HTML file directly in a browser.\n\nThe page should include:\n1. Hero introduction and call-to-action;\n2. Project showcase cards;\n3. Skill tags;\n4. Experience or service section;\n5. Contact section;\n6. Mobile responsiveness.\n\nMake the visual design polished, with clear hierarchy and interactive buttons/links. After finishing, explain the project location, entry HTML file, and how to open and verify it."
+        },
+        "snakeGame": {
+          "title": "Snake game",
+          "prompt": "Build a playable Snake game. Create a standalone pure HTML/CSS/JS static page. Do not install dependencies, require a build step, or start a dev server; it should run by opening the entry HTML file directly in a browser.\n\nThe game should include:\n1. Keyboard direction controls and mobile touch controls;\n2. Score and high score;\n3. Pause/resume;\n4. Game over and restart;\n5. Gradually increasing difficulty;\n6. Clear rule hints.\n\nMake sure it is playable immediately after opening the page, and explain the project location, entry HTML file, and verification method."
+        },
+        "todoApp": {
+          "title": "Todo app",
+          "prompt": "Build a Todo task management app. Create a standalone pure HTML/CSS/JS static page. Do not install dependencies, require a build step, or start a dev server; it should run by opening the entry HTML file directly in a browser.\n\nFeatures should include:\n1. Add, complete, edit, and delete tasks;\n2. Filter all/active/completed tasks;\n3. Priority or due date;\n4. Task counts;\n5. Persistence with browser local storage;\n6. Empty states and input validation.\n\nAfter finishing, explain the project location, entry HTML file, and how to open and verify it."
+        },
+        "markdownEditor": {
+          "title": "Markdown editor",
+          "prompt": "Build a Markdown editor. Create a standalone pure HTML/CSS/JS static page. Do not install dependencies, require a build step, or start a dev server; it should run by opening the entry HTML file directly in a browser.\n\nFeatures should include:\n1. Side-by-side editing and live preview;\n2. Rendering for headings, lists, blockquotes, bold, italic, links, and code blocks;\n3. Sample content;\n4. Copy Markdown action;\n5. Clear action;\n6. Mobile single-column layout.\n\nAfter finishing, explain the project location, entry HTML file, and how to open and verify it."
+        },
+        "projectOnboarding": {
+          "title": "Project onboarding",
+          "prompt": "Read the current code workspace and generate a beginner onboarding guide. Do not modify code yet.\n\nWork step by step:\n1. Identify the project type and tech stack;\n2. Summarize main directories and key entry points;\n3. Find start, build, test, and lint commands;\n4. Explain the core data flow or module relationships;\n5. Mark the files a newcomer should read first;\n6. Provide local run and verification suggestions.\n\nShow the result directly in the chat."
+        },
+        "bugTriage": {
+          "title": "Bug triage",
+          "prompt": "Based on the error \"xxx\", inspect the current code workspace and identify likely causes. Do not modify code yet.\n\nAnalyze step by step:\n1. Search for the error keyword and related call chain;\n2. Read the most relevant files;\n3. Provide 2-3 possible causes ranked by likelihood;\n4. Identify affected files and key code locations;\n5. Explain how to reproduce or validate;\n6. Suggest a fix and note risks."
+        },
+        "featurePlan": {
+          "title": "Feature plan",
+          "prompt": "For the feature \"xxx\", first inspect the current code workspace and provide an implementation plan. Do not modify code before the plan is confirmed.\n\nThe plan should include:\n1. Existing related modules and entry points;\n2. Recommended implementation path;\n3. Files to add or modify;\n4. Key state, data flow, or interface changes;\n5. Edge cases and failure modes;\n6. Test plan;\n7. Implementation order and risks."
+        },
+        "codeReview": {
+          "title": "Code review",
+          "prompt": "Review the uncommitted changes in the current code workspace. Do not modify code yet.\n\nPrioritize:\n1. Bugs;\n2. Behavioral regressions;\n3. Edge cases;\n4. Security or permission risks;\n5. Performance issues;\n6. Missing tests.\n\nSort findings by severity; each finding should include file location, issue explanation, impact scope, suggested fix, and validation that should be added. Finish with an overall risk assessment."
+        },
+        "workflowBreakdown": {
+          "title": "Daily news",
+          "prompt": "Create a scheduled task that runs every day at 9 AM: find and summarize important AI industry news from the past 24 hours.\n\nThe output should include:\n1. The 5 most important news items;\n2. Source links for each item;\n3. One-sentence importance judgment;\n4. Possible impact on products, technology, or markets;\n5. Questions worth tracking next.\n\nSet it to run automatically every day and explain the output format after creation."
+        },
+        "scheduleDraft": {
+          "title": "Weekly plan task",
+          "prompt": "Create a scheduled task that runs every Monday at 9 AM: generate a draft weekly work plan based on my conversations and todos from last week.\n\nThe output should include:\n1. Carry-over items from last week;\n2. Key goals for this week;\n3. Task list sorted by priority;\n4. Suggested timing for each task;\n5. Risk reminders;\n6. Questions that need my confirmation.\n\nExplain the output format after creation."
+        },
+        "skillDesign": {
+          "title": "Announcement monitor",
+          "prompt": "Create a scheduled task that runs on the 1st of every month: find Alibaba's latest public announcements and summarize important changes.\n\nThe output should include:\n1. Announcement titles and source links;\n2. Key change summary;\n3. Potentially affected business or financial metrics;\n4. Potential risks;\n5. Questions worth continued monitoring.\n\nIf there are no important updates, return no material changes."
+        },
+        "handoffBrief": {
+          "title": "Market close brief",
+          "prompt": "Create a scheduled task that runs after market close on each trading day: summarize public market information and key company updates for the new energy vehicle industry.\n\nThe output should include:\n1. Overall industry movement;\n2. Key company updates;\n3. Key data or news source links;\n4. Interpretation of major changes;\n5. Risk reminders;\n6. Items worth watching tomorrow."
+        },
+        "competitorMonitor": {
+          "title": "Competitor monitor",
+          "prompt": "Create a scheduled task that runs every Monday at 10 AM: track public product updates from DingTalk, Feishu, and WeCom.\n\nThe output should include:\n1. Important updates from the past week;\n2. Source links;\n3. Feature change interpretation;\n4. Inspiration for our product;\n5. Questions worth continued monitoring."
+        },
+        "weeklyReportReminder": {
+          "title": "Weekly report",
+          "prompt": "Create a scheduled task that runs every Friday at 5 PM: generate a weekly report draft based on my conversations and todos from this week.\n\nThe output should include:\n1. Completed work;\n2. Key progress;\n3. Issues encountered;\n4. Plan for next week;\n5. Items that need support.\n\nOnly generate a draft; do not send it automatically."
+        },
+        "dingtalkMessage": {
+          "title": "Send DingTalk",
+          "prompt": "Send a DingTalk message to the contact \"xxx\".\n\nFirst check the DingTalk connection status. If I am not signed in or permissions are missing, guide me through connecting inside the chat.\n\nDraft the message with:\n1. Background context;\n2. What the recipient needs to confirm or handle;\n3. Expected response time;\n4. Concise and polite wording.\n\nBefore sending, show the recipient and message body in the chat and wait for my confirmation."
+        },
+        "rehcmRecentChanges": {
+          "title": "Query joiners/leavers",
+          "prompt": "Query REHCM for employees who joined or left in the past week.\n\nFirst check whether an REHCM capability is available. If not, use the skill discovery capability to find and load a suitable HR system skill.\n\nThe output should include:\n1. New hires with department, role, and start date;\n2. Departures with department, role, and departure date;\n3. A summary of workforce changes from the past week;\n4. Exceptions or missing information HR should confirm."
+        },
+        "payrollLatestPayslip": {
+          "title": "Query payslip",
+          "prompt": "Query Smart Payslip for the latest payslip distribution status.\n\nFirst check whether a Smart Payslip capability is available. If not, use the skill discovery capability to find and load a suitable payroll or payslip skill.\n\nThe output should include:\n1. The latest payslip month or batch;\n2. Number of recipients and delivery status;\n3. Employees not sent, failed, or not confirmed;\n4. Questions I need to confirm."
+        },
+        "compensationFairness": {
+          "title": "Analyze pay fairness",
+          "prompt": "First use skill discovery to find an HR or compensation analysis skill suitable for pay fairness analysis, then ask me to upload an Excel file with fields such as employee, department, role, level, performance, and compensation.\n\nAfter receiving the data, complete:\n1. Field checks and missing value notes;\n2. Pay gap analysis by department, role, level, gender, or other available dimensions;\n3. Potential unfairness or abnormal compensation points;\n4. An Excel analysis workbook with charts;\n5. A conclusion summary with risks, possible causes, and improvement suggestions."
+        },
+        "talentReview": {
+          "title": "Review talent pipeline",
+          "prompt": "First use skill discovery to find an HR analysis skill suitable for talent review, then ask me to upload an Excel file with fields such as employee, department, role, level, performance, potential, and tenure.\n\nAfter receiving the data, complete:\n1. Field checks and metric definitions;\n2. Talent segmentation using a nine-box or similar framework;\n3. Identification of high-potential employees, critical roles, succession risks, and groups needing attention;\n4. An Excel review table and visual summary;\n5. Management recommendations and follow-up actions."
+        },
+        "eventResearchReport": {
+          "title": "Generate event report",
+          "prompt": "Research \"xxx event\" and generate a Word analysis report.\n\nFirst find public sources and list source links, then structure the report as:\n1. Background and timeline;\n2. Key stakeholders;\n3. Facts and points of controversy;\n4. Impact analysis;\n5. Risks and uncertainty;\n6. Outlook;\n7. Recommendations for decision-making.\n\nAfter finishing, summarize 5 key conclusions in the chat."
+        },
+        "opinionToPpt": {
+          "title": "Turn idea into PPT",
+          "prompt": "Based on the viewpoint \"xxx\", generate a 6-8 page PPT.\n\nFirst expand the viewpoint into a clear argument, then create slides covering:\n1. Title page and one-sentence thesis;\n2. Background and problem definition;\n3. Breakdown of core arguments;\n4. Supporting reasons and cases;\n5. Counterarguments or risks;\n6. Action recommendations;\n7. Conclusion page.\n\nMake each slide title clear and concise, and explain the narrative logic in the chat."
+        },
+        "excelDataCleanup": {
+          "title": "Validate Excel data",
+          "prompt": "I will upload an Excel file. Please validate the data and organize it into the format I need.\n\nFirst check:\n1. Whether field names are consistent;\n2. Missing required fields;\n3. Duplicate records;\n4. Date, amount, phone number, email, and other format issues;\n5. Outliers and clearly unreasonable values.\n\nThen generate a cleaned Excel file and summarize the issues, cleaning rules, and records that still need manual confirmation in the chat."
+        }
+      }
+    }
   },
   "employeesPage": {
     "greeting": {

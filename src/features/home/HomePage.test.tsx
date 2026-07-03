@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sendUserMessage = vi.fn(async () => undefined)
@@ -63,18 +63,99 @@ describe('HomePage', () => {
     setReasoningModeForSession.mockClear()
   })
 
-  it('renders mascot title and composer without secondary CTA or suggestions', () => {
+  it('renders mascot title, quick example categories, and composer without secondary CTA', () => {
     render(<HomePage />)
-    expect(screen.getAllByText('千头万绪在前，先理一端').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('让每个伙伴，都有一支会办事的 AI 团队').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByRole('button', { name: /前往技能中心/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /为你推荐/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /实施计划/ })).not.toBeInTheDocument()
+    const categoryButtons = screen.getAllByTestId('home-quick-category-scroll')[0].querySelectorAll('button')
+    expect(Array.from(categoryButtons).slice(0, 3).map((button) => button.textContent)).toEqual([
+      '应用连接',
+      'HR 专家',
+      '通用助手',
+    ])
+    expect(screen.getByRole('button', { name: /应用连接/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /HR 专家/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /通用助手/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /日常办公/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /数据分析/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /文档处理/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /代码开发/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /定时任务/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: /周计划/ })).not.toBeInTheDocument()
+  })
+
+  it('flips from categories to examples and back after choosing an example', () => {
+    render(<HomePage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /数据分析/ }))
+
+    expect(screen.queryByRole('button', { name: /日常办公/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /财报分析全流程/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /财报分析全流程/ }))
+
+    expect(screen.getByRole('button', { name: /数据分析/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: /财报分析全流程/ })).not.toBeInTheDocument()
+  })
+
+  it('shows code development examples with concrete zero-dependency starters', () => {
+    render(<HomePage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /代码开发/ }))
+
+    expect(screen.queryByRole('button', { name: /日常办公/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /作品集网站/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /贪吃蛇游戏/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /作品集网站/ }))
+
+    expect(screen.getByRole('button', { name: /代码开发/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: /作品集网站/ })).not.toBeInTheDocument()
+  })
+
+  it('shows connection, HR expert, and general assistant example groups', () => {
+    render(<HomePage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /应用连接/ }))
+    expect(screen.getByRole('button', { name: /发送钉钉消息/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /查询入离职/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /查询工资条/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /发送钉钉消息/ }))
+
+    fireEvent.click(screen.getByRole('button', { name: /HR 专家/ }))
+    expect(screen.getByRole('button', { name: /分析薪酬公平性/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /盘点人才梯队/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /分析薪酬公平性/ }))
+
+    fireEvent.click(screen.getByRole('button', { name: /通用助手/ }))
+    expect(screen.getByRole('button', { name: /生成事件报告/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /观点转 PPT/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /校验 Excel 数据/ })).toBeInTheDocument()
   })
 
   it('vertically centers the main home content column', () => {
     const { container } = render(<HomePage />)
     const pageWrapper = container.querySelector('.mx-auto.max-w-\\[1280px\\]')
     expect(pageWrapper?.className).toMatch(/justify-center/)
+    const contentColumn = Array.from(container.querySelectorAll('div')).find((el) =>
+      el.className.includes('w-[760px]'),
+    )
+    expect(contentColumn?.className).toMatch(/items-start/)
+    expect(contentColumn?.querySelector('.flex.w-full.flex-col')?.className).toMatch(/gap-16/)
+  })
+
+  it('renders quick examples as single-row horizontal scrollers', () => {
+    const { container } = render(<HomePage />)
+    const categoryScroll = screen.getByTestId('home-quick-category-scroll')
+    expect(categoryScroll.className).toMatch(/overflow-x-auto/)
+    expect(categoryScroll.className).toMatch(/overflow-y-hidden/)
+    expect(categoryScroll.className).toMatch(/scrollbar/)
+
+    fireEvent.click(screen.getByRole('button', { name: /代码开发/ }))
+    const exampleScroll = screen.getByTestId('home-quick-example-scroll')
+    expect(exampleScroll.className).toMatch(/overflow-x-auto/)
+    expect(exampleScroll.querySelectorAll('button').length).toBeGreaterThan(4)
+    expect(container.querySelector('[data-testid="home-quick-example-face"]')?.className).not.toMatch(/flex-wrap/)
   })
 
   it('uses tenant logoUrl from branding store as mascot', () => {

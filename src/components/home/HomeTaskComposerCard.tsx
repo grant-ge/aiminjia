@@ -44,8 +44,28 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { DRAFT_PERMISSION_SESSION_ID, DRAFT_REASONING_SESSION_ID, useUiStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
-export function HomeTaskComposerCard() {
+export interface HomeQuickPrompt {
+  mode: 'clear' | 'fill'
+  prompt: string
+  requirements?: HomeQuickPromptRequirement[]
+  requiresWorkspace?: boolean
+}
+
+type HomeQuickPromptRequirement =
+  | 'workspace'
+  | 'excelAttachment'
+  | 'skillDiscovery'
+  | 'businessConnection'
+
+type ActiveRequirementHint = 'workspace' | 'excelAttachment' | null
+
+interface HomeTaskComposerCardProps {
+  quickPrompt?: HomeQuickPrompt | null
+}
+
+export function HomeTaskComposerCard({ quickPrompt = null }: HomeTaskComposerCardProps) {
   const { t, i18n } = useTranslation()
   const composerRef = useRef<RichComposerHandle>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -60,6 +80,7 @@ export function HomeTaskComposerCard() {
     selectedWorkspace,
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
+  const [activeRequirementHint, setActiveRequirementHint] = useState<ActiveRequirementHint>(null)
   const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
   const defaultPermissionMode = useSettingsStore((s) => s.defaultPermissionMode ?? 'default')
@@ -111,6 +132,38 @@ export function HomeTaskComposerCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const hasExplicitWorkspace = Boolean(selectedWorkspace && selectedWorkspace.id !== 'default')
+
+  useEffect(() => {
+    if (!quickPrompt) return
+    if (quickPrompt.mode === 'clear') {
+      composerRef.current?.clear()
+      composerRef.current?.focus()
+      return
+    }
+    composerRef.current?.setMarkdown(quickPrompt.prompt)
+  }, [quickPrompt])
+
+  useEffect(() => {
+    if (!quickPrompt || quickPrompt.mode === 'clear') {
+      setActiveRequirementHint(null)
+      return
+    }
+    const requirements = quickPrompt.requirements
+      ?? (quickPrompt.requiresWorkspace ? ['workspace' as const] : [])
+    if (requirements.includes('excelAttachment')) {
+      setActiveRequirementHint('excelAttachment')
+      return
+    }
+    setActiveRequirementHint(requirements.includes('workspace') && !hasExplicitWorkspace ? 'workspace' : null)
+  }, [hasExplicitWorkspace, quickPrompt])
+
+  useEffect(() => {
+    if (hasExplicitWorkspace && activeRequirementHint === 'workspace') {
+      setActiveRequirementHint(null)
+    }
+  }, [activeRequirementHint, hasExplicitWorkspace])
+
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
     composerRef.current?.insertSkillToken({
@@ -146,6 +199,7 @@ export function HomeTaskComposerCard() {
   const selectWorkspace = useCallback((ws: AuthorizedWorkspaceRef) => {
     setSelectedWorkspace(ws)
     setDisplayWorkspace(ws)
+    setActiveRequirementHint((hint) => (hint === 'workspace' ? null : hint))
   }, [setSelectedWorkspace])
 
   // Switch back to the implicit default folder. Because its id is 'default',
@@ -160,6 +214,7 @@ export function HomeTaskComposerCard() {
       // fall back to clearing the selection — UI will show "默认项目"
       setSelectedWorkspace(null)
       setDisplayWorkspace(null)
+      setActiveRequirementHint((hint) => (hint === 'workspace' ? null : hint))
     }
   }, [selectWorkspace, setSelectedWorkspace])
 
@@ -174,10 +229,18 @@ export function HomeTaskComposerCard() {
     selectWorkspace({ id: name, rootPath: path, displayName: name })
   }
 
+  const handleComposerContentChange = useCallback((
+    _markdown: string,
+    meta: { source: 'user' | 'programmatic' },
+  ) => {
+    if (meta.source === 'user') setActiveRequirementHint(null)
+  }, [])
+
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()
     if (results.length > 0) {
       composerRef.current?.insertAttachmentTokens(pendingAttachmentsToTokens(results))
+      setActiveRequirementHint((hint) => (hint === 'excelAttachment' ? null : hint))
     }
   }, [pickAttachments])
 
@@ -288,11 +351,32 @@ export function HomeTaskComposerCard() {
         showProjectButton={false}
         limitEditorHeight
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
+        onContentChange={handleComposerContentChange}
+        leftToolbarHint={
+          activeRequirementHint === 'excelAttachment' ? (
+            <div
+              data-testid="home-attachment-required-hint"
+              className="relative ml-2 flex min-w-0 max-w-[320px] items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground shadow-[var(--shadow-popover)] animate-[workspaceHintNudge_0.72s_ease-out_2]"
+            >
+              <span className="absolute right-full top-1/2 h-2.5 w-2.5 -translate-y-1/2 translate-x-1/2 rotate-45 border-b border-l border-border bg-card" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{t('homeComposer.attachmentRequiredHint')}</span>
+              <Button
+                unstyled
+                type="button"
+                aria-label={t('homeComposer.dismissAttachmentHint')}
+                onClick={() => setActiveRequirementHint(null)}
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : null
+        }
       />
 
       <div
         data-testid="home-workspace-bar"
-        className="absolute inset-x-0 top-full z-0 flex min-h-[58px] -translate-y-2 items-center justify-between rounded-b-md border-x border-b border-border bg-sidebar px-5 pt-2"
+        className="absolute inset-x-0 top-full z-0 flex min-h-[58px] -translate-y-2 items-center justify-start gap-3 rounded-b-md border-x border-b border-border bg-sidebar px-5 pt-2"
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -302,7 +386,10 @@ export function HomeTaskComposerCard() {
               disabled={isSubmitting}
               aria-label={t('homeComposer.selectWorkDirAria', { name: workspaceLabel })}
               title={workspacePath}
-              className="inline-flex max-w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+              className={cn(
+                'inline-flex max-w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40',
+                activeRequirementHint === 'workspace' && 'bg-muted text-foreground',
+              )}
             >
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
               <span className="truncate">{t('homeComposer.workingIn', { name: workspaceLabel })}</span>
@@ -364,6 +451,24 @@ export function HomeTaskComposerCard() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {activeRequirementHint === 'workspace' ? (
+          <div
+            data-testid="home-workspace-required-hint"
+            className="relative z-20 flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground shadow-[var(--shadow-popover)] animate-[workspaceHintNudge_0.72s_ease-out_2] sm:max-w-[360px] sm:flex-none"
+          >
+            <span className="absolute right-full top-1/2 h-2.5 w-2.5 -translate-y-1/2 translate-x-1/2 rotate-45 border-b border-l border-border bg-card" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{t('homeComposer.workspaceRequiredHint')}</span>
+            <Button
+              unstyled
+              type="button"
+              aria-label={t('homeComposer.dismissWorkspaceHint')}
+              onClick={() => setActiveRequirementHint(null)}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   )

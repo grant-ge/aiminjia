@@ -71,6 +71,200 @@ describe('HomeTaskComposerCard', () => {
     await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
   })
 
+  it('clears and fills the composer from quick prompt actions without submitting', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<HomeTaskComposerCard />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+
+    await user.click(editor)
+    await user.type(editor, 'existing draft')
+    rerender(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'clear',
+          prompt: '',
+        }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(editor).not.toHaveTextContent('existing draft')
+    })
+
+    rerender(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'fill',
+          prompt: '把这周的目标拆成每日任务，标注优先级、依赖关系和验收标准。',
+        }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent('把这周的目标拆成每日任务')
+    })
+    expect(editor).not.toHaveTextContent('existing draft')
+    expect(mockCreateConversation).not.toHaveBeenCalled()
+    expect(mockSendUserMessage).not.toHaveBeenCalled()
+  })
+
+  it('shows a workspace hint for quick prompts that need project code and lets the user dismiss it', async () => {
+    const user = userEvent.setup()
+    render(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'fill',
+          prompt: '请阅读当前代码工作区，生成一份新手上手指南。',
+          requiresWorkspace: true,
+        }}
+      />,
+    )
+
+    expect(await screen.findByTestId('home-workspace-required-hint'))
+      .toHaveTextContent('这个示例需要读取项目代码')
+
+    await user.click(screen.getByRole('button', { name: '关闭项目目录提示' }))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('home-workspace-required-hint')).not.toBeInTheDocument()
+    })
+  })
+
+  it('hides the workspace hint when the user edits the filled quick prompt', async () => {
+    const user = userEvent.setup()
+    render(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'fill',
+          prompt: '请根据报错「xxx」在当前代码工作区中定位可能原因。',
+          requiresWorkspace: true,
+        }}
+      />,
+    )
+
+    expect(await screen.findByTestId('home-workspace-required-hint')).toBeInTheDocument()
+
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, ' 补充说明')
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('home-workspace-required-hint')).not.toBeInTheDocument()
+    })
+  })
+
+  it('does not show the workspace hint when an explicit project directory is already selected', async () => {
+    useHomeStore.setState({
+      selectedWorkspace: { id: 'lotus-app', rootPath: '/Users/me/lotus-app', displayName: 'lotus-app' },
+      recentWorkspaces: [],
+    })
+
+    render(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'fill',
+          prompt: '请评审当前代码工作区的未提交改动。',
+          requiresWorkspace: true,
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    expect(screen.queryByTestId('home-workspace-required-hint')).not.toBeInTheDocument()
+  })
+
+  it('does not overwrite edited quick prompt text when selecting a workspace', async () => {
+    const user = userEvent.setup()
+    useHomeStore.setState({
+      selectedWorkspace: null,
+      recentWorkspaces: [
+        { id: 'lotus-app', rootPath: '/Users/me/lotus-app', displayName: 'lotus-app' },
+      ],
+    })
+    render(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'fill',
+          prompt: '请阅读当前代码工作区，生成一份新手上手指南。',
+          requirements: ['workspace'],
+        }}
+      />,
+    )
+
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await waitFor(() => expect(editor).toHaveTextContent('请阅读当前代码工作区'))
+    await user.click(editor)
+    await user.type(editor, ' 我补充了一句')
+    expect(editor).toHaveTextContent('我补充了一句')
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /选择工作目录/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /lotus-app/ }))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('home-workspace-required-hint')).not.toBeInTheDocument()
+    })
+    expect(editor).toHaveTextContent('我补充了一句')
+  })
+
+  it('shows an attachment hint for quick prompts that need Excel data and lets the user dismiss it', async () => {
+    const user = userEvent.setup()
+    render(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'fill',
+          prompt: '我会上传一份 Excel 数据，请帮我完成数据校验。',
+          requirements: ['excelAttachment'],
+        }}
+      />,
+    )
+
+    expect(await screen.findByTestId('home-attachment-required-hint'))
+      .toHaveTextContent('这个示例需要 Excel 数据')
+
+    await user.click(screen.getByRole('button', { name: '关闭上传提示' }))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('home-attachment-required-hint')).not.toBeInTheDocument()
+    })
+  })
+
+  it('hides the attachment hint after the user uploads an attachment', async () => {
+    mockPickAttachments.mockResolvedValueOnce([
+      {
+        id: 'sheet-1',
+        fileName: 'salary.xlsx',
+        path: '/tmp/salary.xlsx',
+        kind: 'file',
+        fileType: 'xlsx',
+        fileSize: 0,
+        mimeType: undefined,
+        source: 'picker',
+      },
+    ])
+    const { container } = render(
+      <HomeTaskComposerCard
+        quickPrompt={{
+          mode: 'fill',
+          prompt: '请先提示我上传 Excel，然后做人群分析。',
+          requirements: ['excelAttachment'],
+        }}
+      />,
+    )
+
+    expect(await screen.findByTestId('home-attachment-required-hint')).toBeInTheDocument()
+
+    const attachBtn = container.querySelector('[aria-label="添加附件"]') as HTMLElement
+    await act(async () => {
+      attachBtn.click()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('home-attachment-required-hint')).not.toBeInTheDocument()
+    })
+    expect(document.querySelector('.ProseMirror')?.innerHTML ?? '').toContain('salary.xlsx')
+  })
+
   it('inserts a pending skill chip only once under StrictMode', async () => {
     useUiStore.setState({
       pendingSkill: {

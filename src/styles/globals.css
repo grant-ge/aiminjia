@@ -808,6 +808,24 @@ button:not(:disabled) {
   }
 }
 
+@keyframes workspaceHintNudge {
+  0% {
+    transform: translateX(0);
+  }
+  22% {
+    transform: translateX(5px);
+  }
+  48% {
+    transform: translateX(-2px);
+  }
+  72% {
+    transform: translateX(1.5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
 @keyframes typingIndicatorBreath {
   0%,
   100% {
