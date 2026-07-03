@@ -19,6 +19,14 @@ use crate::runtime::run_registry::RuntimeRunRegistry;
 
 use super::types::{EnqueueOutcome, EnqueueRejection, PendingConfig, PendingItem, PendingSource};
 
+const TASK_NOTIFICATION_RESUME_SENTINEL: &str = "__resume_from_task_notification__";
+
+fn is_internal_task_notification_resume_sentinel(item: &PendingItem) -> bool {
+    item.source == PendingSource::App
+        && item.attachments.is_empty()
+        && item.text == TASK_NOTIFICATION_RESUME_SENTINEL
+}
+
 /// Per-host abstraction over conversation directory layout.
 pub trait ConvDirResolver: Send + Sync {
     fn conversation_dir(&self, session_id: &SessionId) -> Option<PathBuf>;
@@ -358,6 +366,17 @@ impl PendingQueueManager {
 
         let Some(items) = items_opt else { return };
         let drained_ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
+        let dispatch_items: Vec<PendingItem> = items
+            .into_iter()
+            .filter(|item| !is_internal_task_notification_resume_sentinel(item))
+            .collect();
+        let skipped_internal_count = drained_ids.len().saturating_sub(dispatch_items.len());
+        if skipped_internal_count > 0 {
+            log::info!(
+                "[pending] dropped {} internal task-notification resume sentinel(s)",
+                skipped_internal_count
+            );
+        }
 
         // 2. Persist empty file
         if let Some(dir) = self.resolver.conversation_dir(&session_id) {
@@ -383,12 +402,16 @@ impl PendingQueueManager {
             log::warn!("[pending] emit PendingDrained failed: {:#}", e);
         }
 
+        if dispatch_items.is_empty() {
+            return;
+        }
+
         let dispatcher = self.dispatcher.read().await.clone();
         let Some(dispatcher) = dispatcher else {
             log::warn!("[pending] no dispatcher set; drained items dropped");
             return;
         };
-        for batch in split_items_by_dispatch_context(items) {
+        for batch in split_items_by_dispatch_context(dispatch_items) {
             let request = build_request_from_batch(&session_id, batch);
             if let Err(e) = dispatcher.dispatch(request).await {
                 log::error!(

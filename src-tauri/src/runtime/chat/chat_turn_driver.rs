@@ -1319,8 +1319,16 @@ fn drain_and_inject_task_notifications(
 fn re_enqueue_task_notifications(
     queue: &Option<Arc<TaskNotificationQueue>>,
     notifications: Vec<QueuedNotification>,
+    cancellation_reason: Option<CancellationReason>,
 ) {
     if notifications.is_empty() {
+        return;
+    }
+    if matches!(cancellation_reason, Some(CancellationReason::Interrupt)) {
+        log::info!(
+            "[chat_turn_driver] consumed {} task notification(s) after user interrupt",
+            notifications.len()
+        );
         return;
     }
     let Some(queue) = queue.as_ref() else {
@@ -3192,6 +3200,7 @@ impl RuntimeChatTurnDriver {
                 re_enqueue_task_notifications(
                     &self.task_notification_queue,
                     std::mem::take(&mut pending_task_notifications),
+                    cancel.reason(),
                 );
                 mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                 break 'turn;
@@ -3387,6 +3396,7 @@ impl RuntimeChatTurnDriver {
                         re_enqueue_task_notifications(
                             &self.task_notification_queue,
                             std::mem::take(&mut pending_task_notifications),
+                            cancel.reason(),
                         );
                         continue 'turn;
                     }
@@ -3394,6 +3404,7 @@ impl RuntimeChatTurnDriver {
                     re_enqueue_task_notifications(
                         &self.task_notification_queue,
                         std::mem::take(&mut pending_task_notifications),
+                        cancel.reason(),
                     );
                     self.event_bus
                         .emit(RuntimeEvent::new(
@@ -3447,6 +3458,7 @@ impl RuntimeChatTurnDriver {
                     re_enqueue_task_notifications(
                         &self.task_notification_queue,
                         std::mem::take(&mut pending_task_notifications),
+                        cancel.reason(),
                     );
                     inject_synthetic_tool_results_for_missing_calls(
                         &mut state.messages,
@@ -3688,6 +3700,7 @@ impl RuntimeChatTurnDriver {
                     re_enqueue_task_notifications(
                         &self.task_notification_queue,
                         std::mem::take(&mut pending_task_notifications),
+                        cancel.reason(),
                     );
                     mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                     break 'turn;
@@ -3878,6 +3891,7 @@ impl RuntimeChatTurnDriver {
                         re_enqueue_task_notifications(
                             &self.task_notification_queue,
                             std::mem::take(&mut pending_task_notifications),
+                            cancel.reason(),
                         );
                         mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                         break 'turn;
@@ -3930,6 +3944,7 @@ impl RuntimeChatTurnDriver {
                             re_enqueue_task_notifications(
                                 &self.task_notification_queue,
                                 std::mem::take(&mut pending_task_notifications),
+                                cancel.reason(),
                             );
                             mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                             break 'turn;

@@ -716,26 +716,11 @@ export function useStreaming() {
 
       // Child/background agent idle should not clear parent conversation state
       if (effectiveScope === 'child') {
-        console.log('[agent:idle] child agent idle for conversationId:', conversationId, '— skipping parent state clear')
-        // Auto-resume the parent: a background sub-agent finished, so its
-        // <task-notification> is now sitting in the queue. Trigger a sentinel
-        // send_message so the parent's chat_turn_driver drains the notification
-        // and the LLM continues.
-        const parentBusy = useStreamingStore.getState().busyConversations.has(conversationId)
-        console.log('[agent:idle] auto-resume parent: conversationId=', conversationId, 'parentBusy=', parentBusy)
-        if (parentBusy) {
-          // Parent's current turn will drain the queue at its next iteration —
-          // no need to fire a sentinel turn (would just collide).
-          console.log('[agent:idle] parent busy — skipping sentinel; current turn will drain')
-        } else {
-          import('@/lib/tauri')
-            .then(({ sendMessage }) => {
-              console.log('[agent:idle] firing sentinel sendMessage for', conversationId)
-              return sendMessage(conversationId, '__resume_from_task_notification__')
-            })
-            .then(() => console.log('[agent:idle] sentinel sendMessage returned'))
-            .catch((err) => console.warn('[agent:idle] resume sendMessage failed:', err))
-        }
+        console.log(
+          '[agent:idle] child agent idle for conversationId:',
+          conversationId,
+          '— backend task-notification wake handles parent resume',
+        )
         return
       }
 

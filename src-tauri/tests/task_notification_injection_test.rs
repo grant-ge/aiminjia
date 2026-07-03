@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use app_lib::runtime::agent::task_notification::TaskNotificationQueue;
-use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
@@ -56,13 +56,26 @@ impl IterationDrainExecutor {
 
 struct CancelingExecutor {
     seen_messages: Mutex<Vec<Vec<Value>>>,
+    cancel_reason: Option<CancellationReason>,
 }
 
 impl CancelingExecutor {
     fn new() -> Self {
         Self {
             seen_messages: Mutex::new(Vec::new()),
+            cancel_reason: None,
         }
+    }
+
+    fn interrupting() -> Self {
+        Self {
+            seen_messages: Mutex::new(Vec::new()),
+            cancel_reason: Some(CancellationReason::Interrupt),
+        }
+    }
+
+    fn captured_messages(&self) -> Vec<Vec<Value>> {
+        self.seen_messages.lock().unwrap().clone()
     }
 }
 
@@ -129,12 +142,15 @@ impl RuntimeLlmExecutor for CancelingExecutor {
         &self,
         input: &LlmStepInput<'_>,
         _bus: &RuntimeEventBus,
-        _cancel: &CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
         self.seen_messages
             .lock()
             .unwrap()
             .push(input.messages.clone());
+        if let Some(reason) = self.cancel_reason {
+            cancel.cancel_with_reason(reason);
+        }
         Ok(LlmStepResult::Cancelled {
             partial_content: String::new(),
         })
@@ -525,4 +541,77 @@ async fn cancelled_turn_re_enqueues_injected_task_notification() {
         0,
         "follow-up turn must drain the re-enqueued notification"
     );
+}
+
+#[tokio::test]
+async fn user_interrupted_turn_consumes_injected_task_notification() {
+    let queue = Arc::new(TaskNotificationQueue::new());
+    let xml = "<task-notification><task-id>agent-stop</task-id><status>completed</status></task-notification>";
+    let session = test_session_id();
+    queue.enqueue("agent-stop", xml, session.clone(), None);
+
+    let interrupting = Arc::new(CancelingExecutor::interrupting());
+    let interrupt_driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::new(),
+        RuntimeEventBus::new(),
+        interrupting.clone(),
+    )
+    .with_task_notification_queue(queue.clone());
+
+    let run_id_interrupt = RunId::new("run-interrupt");
+    let mut interrupt_turn = TurnState::new(
+        IdentityMapping::direct(session.clone()),
+        run_id_interrupt.clone(),
+        "parent turn".to_string(),
+    );
+    let mut interrupt_request = ChatTurnRequest::new(session.clone(), "parent turn", vec![]);
+    interrupt_request.run_id = run_id_interrupt;
+
+    interrupt_driver
+        .run_chat_turn(&mut interrupt_turn, &interrupt_request)
+        .await
+        .expect("interrupted chat turn should still complete");
+
+    let interrupted_messages = interrupting.captured_messages();
+    assert_eq!(interrupted_messages.len(), 1);
+    assert_eq!(
+        task_notification_user_contents(&interrupted_messages[0]),
+        vec![xml.to_string()],
+        "interrupted turn should have consumed a notification that was already injected"
+    );
+    assert_eq!(
+        queue.pending_count(),
+        0,
+        "user interrupt should consume the injected notification instead of replaying it"
+    );
+
+    let finisher = Arc::new(RecordingExecutor::default());
+    let finish_driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::new(),
+        RuntimeEventBus::new(),
+        finisher.clone(),
+    )
+    .with_task_notification_queue(queue.clone());
+
+    let run_id_finish = RunId::new("run-after-interrupt");
+    let mut finish_turn = TurnState::new(
+        IdentityMapping::direct(session.clone()),
+        run_id_finish.clone(),
+        "parent turn".to_string(),
+    );
+    let mut finish_request = ChatTurnRequest::new(session.clone(), "parent turn", vec![]);
+    finish_request.run_id = run_id_finish;
+
+    finish_driver
+        .run_chat_turn(&mut finish_turn, &finish_request)
+        .await
+        .expect("follow-up chat turn should complete");
+
+    let captured = finisher.captured_messages();
+    assert_eq!(captured.len(), 1);
+    assert!(
+        task_notification_user_contents(&captured[0]).is_empty(),
+        "follow-up turn must not receive a user-interrupted notification again"
+    );
+    assert_eq!(queue.pending_count(), 0);
 }

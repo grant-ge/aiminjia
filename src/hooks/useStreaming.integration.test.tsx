@@ -183,6 +183,47 @@ describe('useStreaming integration review', () => {
     view.unmount()
   })
 
+  it('does not send a frontend task-notification sentinel when a child/background agent becomes idle', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-parent',
+      busyConversations: new Set(),
+      streamStates: {},
+      isStreaming: false,
+      streamingContent: '',
+      toolExecutions: [],
+      taskStates: {},
+    })
+
+    const view = render(<HookHarness />)
+    await waitForListeners()
+
+    const agentIdle = tauriEventMock.listeners.get('agent:idle')
+    expect(agentIdle).toBeTypeOf('function')
+
+    act(() => {
+      agentIdle?.({
+        payload: {
+          conversationId: 'conv-parent',
+          agentId: 'child-agent-1',
+          runId: 'child-run-1',
+        },
+      })
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(
+      vi.mocked(invoke).mock.calls.some(([command, args]) => {
+        const payload = args as { content?: string } | undefined
+        return command === 'send_message' && payload?.content === '__resume_from_task_notification__'
+      }),
+    ).toBe(false)
+
+    view.unmount()
+  })
+
   it('adds pending ask to store when permission:ask event arrives', async () => {
     render(<HookHarness />)
     await waitForListeners()

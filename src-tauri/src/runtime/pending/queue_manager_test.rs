@@ -658,6 +658,44 @@ async fn immediate_drain_bypasses_debounce_window() {
 }
 
 #[tokio::test]
+async fn internal_task_notification_resume_sentinel_is_not_dispatched() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let mut config = PendingConfig::default();
+    config.debounce_window = std::time::Duration::from_secs(60);
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+        last_reasoning_mode: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("conv-internal-resume-sentinel");
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    let mut item = sample_item("sentinel");
+    item.text = "__resume_from_task_notification__".to_string();
+    mgr.enqueue_or_send(session.clone(), item).await.unwrap();
+
+    registry.clear(session.as_str());
+    mgr.schedule_drain_immediate(session.clone()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    assert_eq!(
+        dispatcher.count.load(Ordering::SeqCst),
+        0,
+        "internal task-notification resume sentinels must not become user turns"
+    );
+    assert!(mgr.snapshot(&session).await.is_empty());
+}
+
+#[tokio::test]
 async fn drain_preserves_skill_command_on_dispatched_request() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
