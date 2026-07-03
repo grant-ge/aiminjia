@@ -62,3 +62,15 @@ fn system_prompt_guides_composite_product_tasks_to_partial_delivery() {
         "system prompt should continue deliverable work when one product tool path is blocked"
     );
 }
+
+#[test]
+fn system_prompt_guides_markdown_delimiters_to_parse_reliably() {
+    assert!(
+        SYSTEM_PROMPT.contains("Markdown 标记")
+            && SYSTEM_PROMPT.contains("中文正文")
+            && SYSTEM_PROMPT.contains("前后留空格")
+            && SYSTEM_PROMPT.contains("**“重点”**")
+            && SYSTEM_PROMPT.contains("~~“删除”~~"),
+        "system prompt should guide assistant replies toward Markdown that standard parsers recognize"
+    );
+}
