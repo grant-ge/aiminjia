@@ -137,6 +137,36 @@ fn handle_window_close_requested<R: tauri::Runtime>(
     let _ = event;
 }
 
+fn handle_window_chrome_event<R: tauri::Runtime + 'static>(
+    window: &tauri::Window<R>,
+    event: &tauri::WindowEvent,
+) {
+    #[cfg(target_os = "macos")]
+    {
+        if window.label() != "main" {
+            return;
+        }
+
+        let should_check = matches!(
+            event,
+            tauri::WindowEvent::Resized(_)
+                | tauri::WindowEvent::Moved(_)
+                | tauri::WindowEvent::ScaleFactorChanged { .. }
+                | tauri::WindowEvent::Focused(true)
+        );
+        if !should_check {
+            return;
+        }
+
+        if let Some(webview_window) = window.app_handle().get_webview_window("main") {
+            commands::window_chrome::schedule_traffic_light_position_check(&webview_window);
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, event);
+}
+
 fn build_localized_app_menu<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     language: &str,
@@ -448,6 +478,7 @@ pub fn run() {
     builder
         .on_window_event(|window, event| {
             handle_window_close_requested(window, event);
+            handle_window_chrome_event(window, event);
         })
         .setup(|app| {
             install_app_navigation_menu(app)?;
