@@ -1,44 +1,14 @@
 //! macOS NSWindow chrome adjustments for the overlay title bar.
 //!
-//! Background: `titleBarStyle: Overlay` only floats the traffic lights over
-//! content — it does NOT hide the title text. Without setting
-//! `titleVisibility = .hidden`, the native title shows up next to the lights
-//! (e.g. "AIjia") even though there is no visible title bar background.
-//! We also position the traffic-light buttons before showing the main window,
-//! so the first visible frame already matches the 48px React header band.
-//!
-//! No-op on non-macOS platforms.
+//! `trafficLightPosition` in `tauri.conf.json` is the primary path, but AppKit
+//! can still do one titlebar layout pass while the hidden main window is being
+//! created. Apply the same inset before showing the first visible frame.
 
 use tauri::{Runtime, WebviewWindow};
 
 const MAC_TRAFFIC_LIGHT_X: f64 = 16.0;
 const MAC_TRAFFIC_LIGHT_Y: f64 = 20.0;
-// Give AppKit/WebView one layout pass before showing the hidden main window.
 const MAC_TRAFFIC_LIGHT_REPOSITION_DELAY_MS: u64 = 400;
-
-pub fn hide_window_title<R: Runtime>(_window: &WebviewWindow<R>) {
-    #[cfg(target_os = "macos")]
-    {
-        use objc2::msg_send;
-        use objc2::runtime::AnyObject;
-        use objc2_app_kit::NSWindowTitleVisibility;
-
-        // ns_window() returns a *mut c_void pointing at the NSWindow*.
-        let Ok(ns_window_ptr) = _window.ns_window() else {
-            return;
-        };
-        if ns_window_ptr.is_null() {
-            return;
-        }
-        // SAFETY: Tauri hands back a live NSWindow pointer; we call two
-        // standard AppKit selectors on it from the main thread (setup
-        // closure already runs on the main thread).
-        unsafe {
-            let window: *mut AnyObject = ns_window_ptr as *mut AnyObject;
-            let _: () = msg_send![window, setTitleVisibility: NSWindowTitleVisibility::Hidden];
-        }
-    }
-}
 
 pub fn position_traffic_lights_then_show<R: Runtime + 'static>(_window: &WebviewWindow<R>) {
     apply_traffic_light_position(_window);
@@ -80,7 +50,7 @@ fn apply_traffic_light_position<R: Runtime>(_window: &WebviewWindow<R>) {
         }
 
         // SAFETY: Tauri returns a live NSWindow pointer during setup on the
-        // main thread. This mirrors WRY/Tao's traffic-light inset algorithm.
+        // main thread. This matches WRY's traffic-light inset algorithm.
         unsafe {
             let window = &*(ns_window_ptr as *mut NSWindow);
             let Some(close) = window.standardWindowButton(NSWindowButton::CloseButton) else {

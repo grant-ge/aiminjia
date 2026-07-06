@@ -319,8 +319,6 @@ fn configure_main_window_chrome<R: tauri::Runtime + 'static>(app: &tauri::App<R>
         .unwrap_or_else(|| "AIjia".to_string());
     let _ = win.set_title(&native_title);
 
-    commands::window_chrome::hide_window_title(&win);
-
     #[cfg(target_os = "macos")]
     {
         commands::window_chrome::position_traffic_lights_then_show(&win);
