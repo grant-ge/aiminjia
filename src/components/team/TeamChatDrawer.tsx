@@ -228,7 +228,8 @@ function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderPro
   return (
     <div
       data-testid="team-process-header"
-      className="flex h-12 items-center gap-3 border-b border-border bg-[rgba(var(--muted-rgb),0.30)] px-4"
+      data-tauri-drag-region
+      className="relative z-20 flex h-12 items-center gap-3 border-b border-border bg-[rgba(var(--muted-rgb),0.30)] px-4"
     >
       <h2 className="text-base font-medium text-foreground">{title}</h2>
       <span className="text-xs text-muted-foreground">{subtitle}</span>

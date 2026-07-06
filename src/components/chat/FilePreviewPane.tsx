@@ -120,7 +120,12 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
-      <div data-testid="file-preview-header" data-aijia-file-preview-header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+      <div
+        data-testid="file-preview-header"
+        data-aijia-file-preview-header
+        data-tauri-drag-region
+        className="relative z-20 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-4"
+      >
         <div className="flex min-w-0 items-center gap-2">
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
           <h2 className="truncate text-sm font-semibold text-foreground">{target.fileName}</h2>
