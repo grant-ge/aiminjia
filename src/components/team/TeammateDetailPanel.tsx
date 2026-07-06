@@ -108,7 +108,8 @@ export function TeammateDetailPanel({
     <div className="flex h-full flex-col">
       <div
         data-testid="teammate-detail-header"
-        className="flex h-12 items-center gap-2 border-b border-border px-4"
+        data-tauri-drag-region
+        className="relative z-20 flex h-12 items-center gap-2 border-b border-border px-4"
       >
         <Button variant="ghost" size="sm" onClick={onBack}>
           {t('team.detail.back')}

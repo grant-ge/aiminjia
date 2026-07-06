@@ -54,6 +54,8 @@ describe('TeammateDetailPanel', () => {
     const header = screen.getByTestId('teammate-detail-header')
 
     expect(header).toHaveClass('h-12')
+    expect(header).toHaveClass('relative', 'z-20')
+    expect(header).toHaveAttribute('data-tauri-drag-region')
     expect(header).not.toHaveClass('py-3')
   })
 

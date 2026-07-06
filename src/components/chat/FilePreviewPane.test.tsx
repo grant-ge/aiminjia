@@ -61,6 +61,16 @@ describe('FilePreviewPane', () => {
     expect(header).not.toHaveClass('py-2')
   })
 
+  it('keeps the preview header as clickable app chrome above the macOS overlay drag strip', () => {
+    previewMock.getFilePreview.mockReturnValue(new Promise(() => {}))
+
+    render(<FilePreviewPane target={target} onOpenExternal={() => {}} />)
+
+    const header = screen.getByTestId('file-preview-header')
+    expect(header).toHaveClass('relative', 'z-20')
+    expect(header).toHaveAttribute('data-tauri-drag-region')
+  })
+
   it('loads and renders markdown content', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'markdown',

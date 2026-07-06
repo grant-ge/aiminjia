@@ -111,6 +111,8 @@ describe('TeamChatDrawer', () => {
     expect(panel.children[0]).toBe(header)
     expect(panel.children[1]).toBe(scrollRegion)
     expect(header).toHaveClass('h-12')
+    expect(header).toHaveClass('relative', 'z-20')
+    expect(header).toHaveAttribute('data-tauri-drag-region')
     expect(header).not.toHaveClass('py-3')
     expect(content.parentElement).toBe(scrollRegion)
     expect(content).toHaveClass('flex', 'flex-col')
