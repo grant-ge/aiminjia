@@ -435,7 +435,7 @@ export function SidebarAccountFooter({
           >
             <div
               data-testid="sidebar-account-avatar"
-              className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card text-sm font-semibold text-primary"
+              className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card text-sm font-semibold text-primary"
             >
               <img src={accountLogoSrc} alt="" className="h-full w-full object-cover" />
             </div>

@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
-import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUiStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
 
@@ -161,201 +160,17 @@ const OVERLAY_TITLE_BAR_STYLE: React.CSSProperties = {
   backgroundColor: 'transparent',
 }
 
-const DEV_TOOLS_DOCK_STORAGE_KEY = 'aijia-titlebar-dev-tools-dock'
-const SIDEBAR_WIDTH_PX = 256
-const MAC_TRAFFIC_LIGHT_INSET_PX = 80
-const WINDOWS_CONTROLS_RESERVE_PX = 140
-
-interface DockPosition {
-  x: number
-}
-
-function readStoredDevToolsDockPosition(): DockPosition | null {
-  try {
-    const raw = window.localStorage.getItem(DEV_TOOLS_DOCK_STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<DockPosition>
-    if (!Number.isFinite(parsed.x)) return null
-    return { x: Number(parsed.x) }
-  } catch {
-    return null
-  }
-}
-
-function writeStoredDevToolsDockPosition(position: DockPosition) {
-  try {
-    window.localStorage.setItem(DEV_TOOLS_DOCK_STORAGE_KEY, JSON.stringify(position))
-  } catch {
-    // Best-effort only: losing the dev dock position should not affect the app.
-  }
-}
-
-function getDockBounds({
-  dockWidth,
-  isMacOS,
-  isWindows,
-  sidebarHidden,
-  reserveMacTrafficLightInset,
-}: {
-  dockWidth: number
-  isMacOS: boolean
-  isWindows: boolean
-  sidebarHidden: boolean
-  reserveMacTrafficLightInset: boolean
-}) {
-  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024
-  const leftReserve = sidebarHidden
-    ? (isMacOS && reserveMacTrafficLightInset ? MAC_TRAFFIC_LIGHT_INSET_PX : 8)
-    : SIDEBAR_WIDTH_PX
-  const rightReserve = isWindows ? WINDOWS_CONTROLS_RESERVE_PX : 16
-  const minX = leftReserve
-  const maxX = Math.max(minX, viewportWidth - rightReserve - dockWidth)
-
-  return { minX, maxX }
-}
-
-function clampDockPosition(position: DockPosition, bounds: ReturnType<typeof getDockBounds>): DockPosition {
-  return {
-    x: Math.min(bounds.maxX, Math.max(bounds.minX, position.x)),
-  }
-}
-
-function defaultDockPosition(bounds: ReturnType<typeof getDockBounds>): DockPosition {
-  return {
-    x: bounds.minX + (bounds.maxX - bounds.minX) / 2,
-  }
-}
-
-// "DEV" or "DEV 5174" when a vite dev port is detectable.  Including the port
-// makes multi-instance dev (two vite servers side by side) visually
-// distinguishable.  Pass an explicit `port` for tests; otherwise reads
-// `window.location.port` at call time.
-export function getDevBadgeLabel(port?: string): string {
-  const detected = port ?? (typeof window !== 'undefined' ? window.location.port : '')
-  return detected ? `DEV ${detected}` : 'DEV'
-}
-
-// DEV badge: not tenant-themed by design (it's a build-mode marker, not UI).
-// Color picked from semantic blue so it stays distinct from any tenant accent.
-function DevBadge() {
-  return (
-    <span
-      className="pointer-events-none mr-2 inline-flex h-[20px] min-h-[20px] items-center rounded border border-transparent bg-[var(--color-semantic-purple)] px-1.5 text-[10px] font-medium leading-[20px] tracking-widest text-primary-foreground shadow-[var(--shadow-sm)]"
-    >
-      {getDevBadgeLabel()}
-    </span>
-  )
-}
-
-function TitleBarDevToolsDock({
-  isMacOS,
-  isWindows,
-  sidebarHidden,
-  reserveMacTrafficLightInset,
-}: {
-  isMacOS: boolean
-  isWindows: boolean
-  sidebarHidden: boolean
-  reserveMacTrafficLightInset: boolean
-}) {
-  const dockRef = useRef<HTMLDivElement | null>(null)
-  const dragRef = useRef<{
-    pointerId: number
-    startX: number
-    origin: DockPosition
-  } | null>(null)
-  const [position, setPosition] = useState<DockPosition | null>(null)
-
-  const resolveBounds = () => {
-    const el = dockRef.current
-    return getDockBounds({
-      dockWidth: el?.offsetWidth || 160,
-      isMacOS,
-      isWindows,
-      sidebarHidden,
-      reserveMacTrafficLightInset,
-    })
-  }
-
-  useEffect(() => {
-    const syncPosition = () => {
-      const bounds = resolveBounds()
-      const stored = readStoredDevToolsDockPosition()
-      setPosition(clampDockPosition(stored ?? defaultDockPosition(bounds), bounds))
-    }
-
-    syncPosition()
-    window.addEventListener('resize', syncPosition)
-    return () => window.removeEventListener('resize', syncPosition)
-  }, [isMacOS, isWindows, sidebarHidden, reserveMacTrafficLightInset])
-
-  const moveToPointer = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current
-    if (!drag) return null
-
-    const next = clampDockPosition({
-      x: drag.origin.x + event.clientX - drag.startX,
-    }, resolveBounds())
-
-    setPosition(next)
-    return next
-  }
-
-  return (
-    <div
-      ref={dockRef}
-      data-aijia-titlebar-dev-tools-dock
-      className="pointer-events-auto absolute z-10 flex cursor-grab select-none items-center active:cursor-grabbing"
-      style={{
-        left: position ? `${position.x}px` : '50%',
-        top: '50%',
-        transform: 'translateY(-50%)',
-      }}
-      onPointerDown={(event) => {
-        if (event.button !== 0 || !position) return
-        event.stopPropagation()
-        dragRef.current = {
-          pointerId: event.pointerId,
-          startX: event.clientX,
-          origin: position,
-        }
-        event.currentTarget.setPointerCapture?.(event.pointerId)
-      }}
-      onPointerMove={(event) => {
-        if (!dragRef.current) return
-        event.stopPropagation()
-        moveToPointer(event)
-      }}
-      onPointerUp={(event) => {
-        if (!dragRef.current) return
-        event.stopPropagation()
-        const next = moveToPointer(event)
-        if (next) writeStoredDevToolsDockPosition(next)
-        event.currentTarget.releasePointerCapture?.(event.pointerId)
-        dragRef.current = null
-      }}
-      onPointerCancel={(event) => {
-        if (!dragRef.current) return
-        event.stopPropagation()
-        event.currentTarget.releasePointerCapture?.(event.pointerId)
-        dragRef.current = null
-      }}
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      <TitleBarEnvSwitcher />
-      <DevBadge />
-    </div>
-  )
-}
-
 /**
  * macOS overlays native traffic lights over the same 48px header band used by
  * the page top bars. Windows still renders a compact custom title bar.
  */
-export function TitleBar() {
+interface TitleBarProps {
+  appControls?: boolean
+}
+
+export function TitleBar({ appControls = true }: TitleBarProps) {
   const isMacOS = navigator.userAgent.includes('Macintosh')
   const isWindows = navigator.userAgent.includes('Windows')
-  const isDev = import.meta.env.DEV
   const sidebarHidden = useUiStore((s) => s.sidebarHidden)
   const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(isMacOS)
 
@@ -373,6 +188,16 @@ export function TitleBar() {
     : leftGroupClass
 
   if (isMacOS) {
+    if (!appControls) {
+      return (
+        <div
+          data-tauri-drag-region
+          className={macDragClass}
+          style={barStyle}
+        />
+      )
+    }
+
     return (
       <>
         <div
@@ -387,20 +212,22 @@ export function TitleBar() {
               <TitleBarNavigationButtons />
             </div>
           </div>
-          {isDev ? (
-            <TitleBarDevToolsDock
-              isMacOS={isMacOS}
-              isWindows={isWindows}
-              sidebarHidden={sidebarHidden}
-              reserveMacTrafficLightInset={reserveMacTrafficLightInset}
-            />
-          ) : null}
         </div>
       </>
     )
   }
 
   if (!isWindows) {
+    if (!appControls) {
+      return (
+        <div
+          data-tauri-drag-region
+          className={`${barClass} justify-end`}
+          style={barStyle}
+        />
+      )
+    }
+
     return (
       <div
         data-tauri-drag-region
@@ -411,14 +238,6 @@ export function TitleBar() {
           <SidebarToggleButton />
           <TitleBarNavigationButtons />
         </div>
-        {isDev ? (
-          <TitleBarDevToolsDock
-            isMacOS={isMacOS}
-            isWindows={isWindows}
-            sidebarHidden={sidebarHidden}
-            reserveMacTrafficLightInset={reserveMacTrafficLightInset}
-          />
-        ) : null}
       </div>
     )
   }
@@ -430,19 +249,13 @@ export function TitleBar() {
       style={barStyle}
       onMouseDown={handleDragStart}
     >
-      <div className={leftGroupClass}>
-        <SidebarToggleButton />
-        <TitleBarNavigationButtons />
-      </div>
-      <div className="flex-1" data-tauri-drag-region />
-      {isDev ? (
-        <TitleBarDevToolsDock
-          isMacOS={isMacOS}
-          isWindows={isWindows}
-          sidebarHidden={sidebarHidden}
-          reserveMacTrafficLightInset={reserveMacTrafficLightInset}
-        />
+      {appControls ? (
+        <div className={leftGroupClass}>
+          <SidebarToggleButton />
+          <TitleBarNavigationButtons />
+        </div>
       ) : null}
+      <div className="flex-1" data-tauri-drag-region />
       <WindowControls />
     </div>
   )

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 const tauriMock = vi.hoisted(() => ({
   getLogLevel: vi.fn(),
@@ -8,6 +8,8 @@ const tauriMock = vi.hoisted(() => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
   uploadDiagnosticLogs: vi.fn(),
+  getDevEnvironment: vi.fn(),
+  setDevEnvironment: vi.fn(),
 }))
 
 const authMock = vi.hoisted(() => ({
@@ -31,12 +33,33 @@ import { SettingsModal } from '../SettingsModal'
 describe('SettingsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('DEV', false)
     authMock.tenantType = 'personal'
     useUiStore.getState().closeSettings()
     tauriMock.getLogLevel.mockResolvedValue('info')
     tauriMock.setLogLevel.mockResolvedValue(undefined)
     tauriMock.getSettings.mockResolvedValue({})
     tauriMock.updateSettings.mockResolvedValue(undefined)
+    tauriMock.getDevEnvironment.mockResolvedValue({
+      currentTenant: 'https://ai-tenant.renlijia.com',
+      currentOps: 'https://ai-ops.renlijia.com',
+      isOverride: false,
+      presets: [
+        { key: 'test', tenant: 'https://test-ai-tenant.renlijia.com', ops: 'https://test-ai-ops.renlijia.com' },
+        { key: 'pre', tenant: 'https://pre-ai-tenant.renlijia.com', ops: 'https://pre-ai-ops.renlijia.com' },
+        { key: 'prod', tenant: 'https://ai-tenant.renlijia.com', ops: 'https://ai-ops.renlijia.com' },
+      ],
+    })
+    tauriMock.setDevEnvironment.mockResolvedValue({
+      currentTenant: 'https://test-ai-tenant.renlijia.com',
+      currentOps: 'https://test-ai-ops.renlijia.com',
+      isOverride: true,
+      presets: [],
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it('renders nothing when closed', () => {
@@ -51,6 +74,7 @@ describe('SettingsModal', () => {
     expect(screen.getByRole('button', { name: '系统设置' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '账户与消耗' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '系统权限' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '环境切换' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '关于' })).toBeInTheDocument()
     expect(screen.getByText('姚域权')).toBeInTheDocument()
     expect(screen.getByText('头像、账号与组织信息。')).toBeInTheDocument()
@@ -82,6 +106,21 @@ describe('SettingsModal', () => {
     render(<SettingsModal />)
     fireEvent.click(screen.getByRole('button', { name: '关于' }))
     expect(screen.getByRole('button', { name: '检查更新' })).toBeInTheDocument()
+  })
+
+  it('shows a dev-only environment settings category', async () => {
+    vi.stubEnv('DEV', true)
+    useUiStore.getState().openSettings('account')
+    render(<SettingsModal />)
+
+    fireEvent.click(screen.getByRole('button', { name: '环境切换' }))
+
+    const panel = screen.getByRole('heading', { name: '环境切换', level: 3 }).closest('section')
+    expect(panel).not.toBeNull()
+    await waitFor(() => {
+      expect(within(panel as HTMLElement).getAllByText('生产').length).toBeGreaterThan(0)
+    })
+    expect(within(panel as HTMLElement).getByText('https://ai-tenant.renlijia.com')).toBeInTheDocument()
   })
 
   it('loads and persists the log level from the about panel', async () => {

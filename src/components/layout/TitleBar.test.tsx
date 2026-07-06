@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { getDevBadgeLabel, TitleBar } from './TitleBar'
+import { TitleBar } from './TitleBar'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -32,7 +32,6 @@ describe('TitleBar', () => {
   beforeEach(() => {
     vi.stubEnv('DEV', false)
     localStorage.removeItem('aijia-sidebar-hidden')
-    localStorage.removeItem('aijia-titlebar-dev-tools-dock')
     useBrandingStore.setState({
       productName: 'AI 猫',
       logoUrl: '/app-icon.png',
@@ -85,55 +84,20 @@ describe('TitleBar', () => {
     expect(container.firstChild).not.toHaveClass('border-sidebar-border')
   })
 
-  it('shows DEV badge when import.meta.env.DEV is true', () => {
+  it('does not render the DEV port badge when import.meta.env.DEV is true', () => {
     vi.stubEnv('DEV', true)
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     render(<TitleBar />)
-    const badge = screen.getByText(getDevBadgeLabel())
-    expect(badge).toBeInTheDocument()
-    expect(badge).toHaveClass('inline-flex', 'border')
+    expect(screen.queryByText(/^DEV(?:\s+\d+)?$/)).not.toBeInTheDocument()
   })
 
-  it('places DEV tools dock inside the main title bar area by default', async () => {
+  it('does not render the dev environment switcher in the main title bar', () => {
     vi.stubEnv('DEV', true)
     Object.defineProperty(navigator, 'userAgent', { value: WINDOWS_UA, configurable: true })
     const { container } = render(<TitleBar />)
 
-    const dock = container.querySelector('[data-aijia-titlebar-dev-tools-dock]') as HTMLElement
-    expect(dock).toBeInTheDocument()
-
-    await waitFor(() => {
-      expect(Number.parseFloat(dock.style.left)).toBeGreaterThan(256)
-    })
-    expect(Number.parseFloat(dock.style.left)).toBeLessThan(window.innerWidth - 140)
-    expect(dock.style.top).toBe('50%')
-    expect(dock.style.transform).toBe('translateY(-50%)')
-
-    fireEvent.mouseDown(dock, { buttons: 1, detail: 1 })
-    expect(startDragging).not.toHaveBeenCalled()
-  })
-
-  it('drags DEV tools dock horizontally without changing vertical alignment', async () => {
-    vi.stubEnv('DEV', true)
-    Object.defineProperty(navigator, 'userAgent', { value: WINDOWS_UA, configurable: true })
-    const { container } = render(<TitleBar />)
-
-    const dock = container.querySelector('[data-aijia-titlebar-dev-tools-dock]') as HTMLElement
-    await waitFor(() => {
-      expect(Number.parseFloat(dock.style.left)).toBeGreaterThan(256)
-    })
-    const initialLeft = Number.parseFloat(dock.style.left)
-
-    fireEvent.pointerDown(dock, { button: 0, pointerId: 1, clientX: 400 })
-    fireEvent.pointerMove(dock, { pointerId: 1, clientX: 460, clientY: 999 })
-    fireEvent.pointerUp(dock, { pointerId: 1, clientX: 460, clientY: 999 })
-
-    expect(Number.parseFloat(dock.style.left)).toBeCloseTo(initialLeft + 60)
-    expect(dock.style.top).toBe('50%')
-    expect(dock.style.transform).toBe('translateY(-50%)')
-    expect(JSON.parse(localStorage.getItem('aijia-titlebar-dev-tools-dock') ?? '{}')).toEqual({
-      x: Number.parseFloat(dock.style.left),
-    })
+    expect(container.querySelector('[data-aijia-titlebar-dev-tools-dock]')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '环境切换' })).not.toBeInTheDocument()
   })
 
   it('places sidebar toggle on the left side of the macOS title bar', () => {
@@ -229,11 +193,6 @@ describe('TitleBar', () => {
     const style = (container.firstChild as HTMLElement).style
     expect(style.backgroundColor).toBe('transparent')
     expect(style.backgroundImage).toBe('')
-  })
-
-  it('formats current dev server port in DEV badge', () => {
-    expect(getDevBadgeLabel('5174')).toBe('DEV 5174')
-    expect(getDevBadgeLabel('')).toBe('DEV')
   })
 
   it('does not show DEV badge in production build', () => {

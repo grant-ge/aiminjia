@@ -453,6 +453,7 @@
         "prod": "生产"
       },
       "custom": "自定义",
+      "current": "当前环境",
       "customTitle": "自定义环境地址",
       "customHint": "分别输入 tenant 与 ops 源地址（如 https://host:port，不含路径），切换后将退出当前登录并需要重新登录。",
       "tenantLabel": "Tenant 网关地址",

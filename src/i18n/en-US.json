@@ -453,6 +453,7 @@
         "prod": "Production"
       },
       "custom": "Custom",
+      "current": "Current environment",
       "customTitle": "Custom environment hosts",
       "customHint": "Enter the tenant and ops origins (e.g. https://host:port, no path). Switching logs you out and requires re-login.",
       "tenantLabel": "Tenant gateway origin",

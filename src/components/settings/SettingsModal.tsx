@@ -11,7 +11,7 @@ import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/lega
 import { useUpdaterStore } from '@/lib/updaterStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
-import { useUiStore } from '@/stores/uiStore'
+import { useUiStore, type SettingsModalKey } from '@/stores/uiStore'
 
 import { SettingsContentBody } from './SettingsContentBody'
 import { SettingsMenu } from './SettingsMenu'
@@ -19,6 +19,7 @@ import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
 import { AccountBillingPanel } from './panels/AccountBillingPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
+import { EnvironmentPanel } from './panels/EnvironmentPanel'
 import { GeneralPanel } from './panels/GeneralPanel'
 import { PermissionsPanel } from './panels/PermissionsPanel'
 import { RuntimePanel } from './panels/RuntimePanel'
@@ -34,6 +35,11 @@ export function SettingsModal() {
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
   const showAccountBilling = tenant?.tenantType !== 'enterprise'
+  const showDevEnvironmentSettings = import.meta.env.DEV
+  const hiddenSettingsKeys: SettingsModalKey[] = [
+    ...(showAccountBilling ? [] : (['account-billing'] satisfies SettingsModalKey[])),
+    ...(showDevEnvironmentSettings ? [] : (['environment'] satisfies SettingsModalKey[])),
+  ]
   const [pendingLogout, setPendingLogout] = useState(false)
   const [appVersion, setAppVersion] = useState(t('settings.loadingVersion'))
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -62,6 +68,12 @@ export function SettingsModal() {
       openSettings('account')
     }
   }, [openSettings, settingsModal, showAccountBilling])
+
+  useEffect(() => {
+    if (settingsModal === 'environment' && !showDevEnvironmentSettings) {
+      openSettings('account')
+    }
+  }, [openSettings, settingsModal, showDevEnvironmentSettings])
 
   if (!settingsModal) return null
 
@@ -158,7 +170,7 @@ export function SettingsModal() {
           <SettingsMenu
             activeKey={settingsModal}
             onSelect={(k) => openSettings(k)}
-            hiddenKeys={showAccountBilling ? [] : ['account-billing']}
+            hiddenKeys={hiddenSettingsKeys}
           />
         }
         content={
@@ -192,6 +204,7 @@ export function SettingsModal() {
                 </>
               ) : null}
               {settingsModal === 'account-billing' && showAccountBilling ? <AccountBillingPanel /> : null}
+              {settingsModal === 'environment' && showDevEnvironmentSettings ? <EnvironmentPanel /> : null}
               {settingsModal === 'about' ? (
                 <AboutPanel
                   appName={productName}

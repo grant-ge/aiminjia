@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 export interface SettingsMenuItem {
   key: SettingsModalKey
   /**
-   * i18n key under `settings.tabs.*`. Resolved at render time so the
+   * i18n key. Resolved at render time so the
    * label follows the active language. `SETTINGS_MENU_ITEMS` is exported
    * as `const` for other modules that need the menu order; consumers
    * outside React should use the labelKey directly.
@@ -23,6 +23,7 @@ export interface SettingsMenuItem {
 export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', labelKey: 'settings.tabs.general' },
   { key: 'system', labelKey: 'settings.tabs.system' },
+  { key: 'environment', labelKey: 'settings.environment.title' },
   { key: 'account-billing', labelKey: 'settings.billing.title' },
   { key: 'usage', labelKey: 'settings.tabs.usage', disabled: true },
   { key: 'mcp', labelKey: 'settings.tabs.mcp', disabled: true },
