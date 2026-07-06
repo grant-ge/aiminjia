@@ -1434,6 +1434,7 @@ pub fn run() {
             settings::get_settings,
             settings::update_settings,
             settings::save_profile_avatar_image,
+            commands::window_chrome::sync_mac_traffic_light_inset,
             power::set_im_channel_keep_awake,
             settings::validate_api_key,
             settings::get_configured_providers,

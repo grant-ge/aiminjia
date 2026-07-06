@@ -1513,6 +1513,10 @@ export function setImChannelKeepAwake(enabled: boolean): Promise<void> {
   return invoke<void>("set_im_channel_keep_awake", { enabled });
 }
 
+export function syncMacTrafficLightInset(titleBarHeight: number): Promise<void> {
+  return invoke<void>("sync_mac_traffic_light_inset", { titleBarHeight });
+}
+
 /**
  * Copy a chosen local profile avatar image into the active user profile dir.
  *

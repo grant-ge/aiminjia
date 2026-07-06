@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
 import { useUiStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
+import { syncMacTrafficLightInset } from '@/lib/tauri'
 
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 2) {
@@ -55,6 +56,47 @@ function useReserveMacTrafficLightInset(enabled: boolean) {
   }, [enabled])
 
   return enabled && !isFullscreen
+}
+
+function useSyncMacTrafficLightInset(enabled: boolean) {
+  const titleBarRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const element = titleBarRef.current
+    if (!element) return
+
+    let lastHeight = 0
+    let frame = 0
+    const sync = () => {
+      if (frame) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        const height = element.getBoundingClientRect().height
+        if (height <= 0 || Math.abs(height - lastHeight) < 0.25) return
+        lastHeight = height
+        void syncMacTrafficLightInset(height).catch(() => undefined)
+      })
+    }
+
+    sync()
+
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(sync)
+      observer.observe(element)
+    }
+    window.addEventListener('resize', sync)
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('resize', sync)
+    }
+  }, [enabled])
+
+  return titleBarRef
 }
 
 function WindowControls() {
@@ -173,6 +215,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
   const isWindows = navigator.userAgent.includes('Windows')
   const sidebarHidden = useUiStore((s) => s.sidebarHidden)
   const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(isMacOS)
+  const macTitleBarRef = useSyncMacTrafficLightInset(isMacOS)
 
   const barClass = 'relative flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
   const macDragClass = 'absolute inset-x-0 top-0 z-10 flex h-12 w-full items-center text-sidebar-foreground'
@@ -194,6 +237,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
     if (!appControls) {
       return (
         <div
+          ref={macTitleBarRef}
           data-tauri-drag-region
           className={macDragClass}
           style={barStyle}
@@ -204,6 +248,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
     return (
       <>
         <div
+          ref={macTitleBarRef}
           data-tauri-drag-region
           className={macDragClass}
           style={barStyle}
