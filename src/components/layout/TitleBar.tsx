@@ -224,6 +224,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
   const leftGroupClass = sidebarHidden
     ? 'flex items-center pl-2'
     : 'flex w-64 items-center justify-end pr-2'
+  const windowsLeftGroupClass = 'flex items-center pl-2'
   const macLeftGroupClass = sidebarHidden
     ? reserveMacTrafficLightInset
       ? 'flex items-center pl-20'
@@ -298,7 +299,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
       onMouseDown={handleDragStart}
     >
       {appControls ? (
-        <div className={leftGroupClass}>
+        <div className={windowsLeftGroupClass}>
           <SidebarToggleButton />
           <TitleBarNavigationButtons />
         </div>

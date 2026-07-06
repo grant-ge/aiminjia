@@ -230,17 +230,30 @@ describe('TitleBar', () => {
       expect(startDragging).not.toHaveBeenCalled()
     })
 
-    it('aligns sidebar controls to the sidebar edge without starting drag', () => {
+    it('keeps sidebar controls left-aligned without starting drag', () => {
       const { container } = render(<TitleBar />)
       const titleBar = container.firstElementChild as HTMLElement
       const leftGroup = titleBar.firstElementChild as HTMLElement
       const toggle = screen.getByLabelText('隐藏侧栏')
 
       expect(leftGroup).toContainElement(toggle)
-      expect(leftGroup).toHaveClass('w-64', 'justify-end', 'pr-2')
+      expect(leftGroup).toHaveClass('flex', 'items-center', 'pl-2')
+      expect(leftGroup).not.toHaveClass('w-64', 'justify-end', 'pr-2')
 
       fireEvent.mouseDown(toggle, { buttons: 1, detail: 1 })
       expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('keeps Windows sidebar controls left-aligned when the sidebar is hidden', () => {
+      useUiStore.setState({ sidebarHidden: true })
+      const { container } = render(<TitleBar />)
+      const titleBar = container.firstElementChild as HTMLElement
+      const leftGroup = titleBar.firstElementChild as HTMLElement
+      const toggle = screen.getByLabelText('显示侧栏')
+
+      expect(leftGroup).toContainElement(toggle)
+      expect(leftGroup).toHaveClass('flex', 'items-center', 'pl-2')
+      expect(leftGroup).not.toHaveClass('w-64', 'justify-end', 'pr-2')
     })
 
     it('does not show the tenant brand in the Windows title bar', () => {
