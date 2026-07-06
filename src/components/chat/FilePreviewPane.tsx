@@ -7,6 +7,7 @@ import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { getFilePreview, getLocalFilePreview, openLocalFile, type FilePreview } from '@/lib/tauri'
 import type { PreviewTarget } from './generatedFileActions'
 import { Button } from '@/components/ui/button'
+import { handleChromeDragRegionMouseDown } from '@/components/layout/windowChrome'
 import { Spinner } from '@/components/ui/spinner'
 import { useNotificationStore } from '@/stores/notificationStore'
 
@@ -124,6 +125,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
         data-testid="file-preview-header"
         data-aijia-file-preview-header
         data-tauri-drag-region
+        onMouseDown={handleChromeDragRegionMouseDown}
         className="relative z-20 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-4"
       >
         <div className="flex min-w-0 items-center gap-2">

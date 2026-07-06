@@ -12,6 +12,7 @@ import { AgentAvatar } from './AgentAvatar'
 import { formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
 import { Button } from '@/components/ui/button'
+import { handleChromeDragRegionMouseDown } from '@/components/layout/windowChrome'
 
 interface TeammateDetailPanelProps {
   conversationId: string
@@ -109,6 +110,7 @@ export function TeammateDetailPanel({
       <div
         data-testid="teammate-detail-header"
         data-tauri-drag-region
+        onMouseDown={handleChromeDragRegionMouseDown}
         className="relative z-20 flex h-12 items-center gap-2 border-b border-border px-4"
       >
         <Button variant="ghost" size="sm" onClick={onBack}>

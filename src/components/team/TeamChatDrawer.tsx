@@ -14,6 +14,7 @@ import { formatDuration, formatShortDateTime } from './formatters'
 import { isLeadName } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
 import { Button } from '@/components/ui/button'
+import { handleChromeDragRegionMouseDown } from '@/components/layout/windowChrome'
 
 interface TeamChatDrawerProps {
   conversationId: string
@@ -229,6 +230,7 @@ function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderPro
     <div
       data-testid="team-process-header"
       data-tauri-drag-region
+      onMouseDown={handleChromeDragRegionMouseDown}
       className="relative z-20 flex h-12 items-center gap-3 border-b border-border bg-[rgba(var(--muted-rgb),0.30)] px-4"
     >
       <h2 className="text-base font-medium text-foreground">{title}</h2>

@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
 import { useUiStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
 import { syncMacTrafficLightInset } from '@/lib/tauri'
+import { handleChromeDragRegionMouseDown } from './windowChrome'
 
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 2) {
@@ -240,6 +241,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
         <div
           ref={macTitleBarRef}
           data-tauri-drag-region
+          onMouseDown={handleChromeDragRegionMouseDown}
           className={macDragClass}
           style={barStyle}
         />
@@ -251,6 +253,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
         <div
           ref={macTitleBarRef}
           data-tauri-drag-region
+          onMouseDown={handleChromeDragRegionMouseDown}
           className={macDragClass}
           style={barStyle}
         />

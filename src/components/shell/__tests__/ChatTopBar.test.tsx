@@ -1,16 +1,25 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatTopBar } from '../ChatTopBar'
 import { useUiStore } from '@/stores/uiStore'
 
+const toggleMaximize = vi.hoisted(() => vi.fn())
+
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({
+    toggleMaximize,
+  }),
+}))
+
 describe('ChatTopBar', () => {
   const originalUserAgent = navigator.userAgent
 
   beforeEach(() => {
     useUiStore.setState({ sidebarHidden: false })
+    toggleMaximize.mockClear()
   })
 
   afterEach(() => {
@@ -115,5 +124,33 @@ describe('ChatTopBar', () => {
   it('header has data-tauri-drag-region', () => {
     const { container } = render(<ChatTopBar title="X" />)
     expect(container.querySelector('header')?.hasAttribute('data-tauri-drag-region')).toBe(true)
+  })
+
+  it('toggles maximized state when the Windows drag header is double-clicked', () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Windows NT 10.0)',
+      configurable: true,
+    })
+
+    const { container } = render(<ChatTopBar title="X" />)
+    const header = container.querySelector('header')
+
+    fireEvent.mouseDown(header!, { button: 0, buttons: 1, detail: 2 })
+
+    expect(toggleMaximize).toHaveBeenCalledTimes(1)
+  })
+
+  it('toggles maximized state when the macOS drag header is double-clicked', () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh)',
+      configurable: true,
+    })
+
+    const { container } = render(<ChatTopBar title="X" />)
+    const header = container.querySelector('header')
+
+    fireEvent.mouseDown(header!, { button: 0, buttons: 1, detail: 2 })
+
+    expect(toggleMaximize).toHaveBeenCalledTimes(1)
   })
 })

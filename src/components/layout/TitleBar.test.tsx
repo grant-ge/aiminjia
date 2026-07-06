@@ -60,6 +60,16 @@ describe('TitleBar', () => {
     expect(container.querySelector('[data-aijia-titlebar-dev-tools-dock]')).not.toBeInTheDocument()
   })
 
+  it('toggles maximized state when the macOS overlay strip is double-clicked', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+    const titleBar = container.firstChild as HTMLElement
+
+    fireEvent.mouseDown(titleBar, { button: 0, buttons: 1, detail: 2 })
+
+    expect(toggleMaximize).toHaveBeenCalledTimes(1)
+  })
+
   it('renders window controls on Windows', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
     render(<TitleBar />)

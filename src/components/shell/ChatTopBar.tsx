@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { ChatAvatar } from '@/components/chat-scene/ChatAvatar'
 import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { handleChromeDragRegionMouseDown } from '@/components/layout/windowChrome'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -122,6 +123,7 @@ export function ChatTopBar({
   return (
     <header
       data-tauri-drag-region
+      onMouseDown={handleChromeDragRegionMouseDown}
       className={cn(
         "relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-6 transition-[padding] duration-200 ease-out motion-reduce:transition-none",
         // Reserve the macOS window-controls strip when the sidebar is collapsed.

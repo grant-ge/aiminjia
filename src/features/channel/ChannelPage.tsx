@@ -11,6 +11,7 @@ import { RightPanel } from "@/components/chat/RightPanel";
 import { savePreviewTargetToDisk } from "@/components/chat/fileDownload";
 import type { PreviewTarget } from "@/components/chat/generatedFileActions";
 import { ChatArea } from "@/components/layout/ChatArea";
+import { handleChromeDragRegionMouseDown } from "@/components/layout/windowChrome";
 import { ChatTopBar } from "@/components/shell/ChatTopBar";
 import { TeamChatDrawer } from "@/components/team/TeamChatDrawer";
 import { Button } from "@/components/ui/button";
@@ -404,6 +405,7 @@ function ChannelOverview({
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div
         data-tauri-drag-region
+        onMouseDown={handleChromeDragRegionMouseDown}
         className={cn(
           "relative z-20 flex h-12 shrink-0 items-center border-b border-border bg-background px-8 transition-[padding] duration-200 ease-out motion-reduce:transition-none",
           // Reserve the macOS window-controls strip when the sidebar is collapsed.
