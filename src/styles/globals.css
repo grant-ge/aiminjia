@@ -392,11 +392,6 @@ body {
   background: var(--primary-mix-scrollbar);
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
-}
-
 button:not(:disabled) {
   cursor: pointer;
 }
