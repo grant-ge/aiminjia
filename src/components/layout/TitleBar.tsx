@@ -186,6 +186,9 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
       ? 'flex items-center pl-20'
       : leftGroupClass
     : leftGroupClass
+  const macButtonGroupClass = reserveMacTrafficLightInset && sidebarHidden
+    ? 'pointer-events-auto ml-2 flex items-center'
+    : 'pointer-events-auto flex items-center'
 
   if (isMacOS) {
     if (!appControls) {
@@ -207,7 +210,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
         />
         <div className={macControlsClass}>
           <div className={macLeftGroupClass}>
-            <div className="pointer-events-auto flex items-center">
+            <div className={macButtonGroupClass}>
               <SidebarToggleButton />
               <TitleBarNavigationButtons />
             </div>

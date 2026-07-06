@@ -113,6 +113,7 @@ describe('TitleBar', () => {
     expect(leftGroup).toHaveClass('w-64', 'justify-end', 'pr-2')
     expect(leftGroup).not.toHaveClass('pointer-events-auto')
     expect(buttonGroup).toHaveClass('pointer-events-auto')
+    expect(buttonGroup).not.toHaveClass('ml-2')
     expect(leftGroup).not.toHaveClass('pl-20')
     expect(toggle).toHaveAttribute('data-aijia-sidebar-toggle', 'true')
     expect(container.querySelector('.lucide-panel-left')).toBeInTheDocument()
@@ -126,10 +127,12 @@ describe('TitleBar', () => {
 
     const controlsLayer = container.children[1] as HTMLElement
     const leftGroup = controlsLayer.firstElementChild as HTMLElement
+    const buttonGroup = leftGroup.firstElementChild as HTMLElement
 
     await waitFor(() => {
       expect(leftGroup).not.toHaveClass('pl-20')
     })
+    expect(buttonGroup).not.toHaveClass('ml-2')
     expect(leftGroup).toContainElement(screen.getByLabelText('显示侧栏'))
   })
 
@@ -146,6 +149,7 @@ describe('TitleBar', () => {
     expect(leftGroup).not.toHaveClass('pointer-events-auto')
     expect(leftGroup).not.toHaveClass('w-64', 'justify-end')
     expect(buttonGroup).toHaveClass('pointer-events-auto')
+    expect(buttonGroup).toHaveClass('ml-2')
     expect(leftGroup).toContainElement(screen.getByLabelText('显示侧栏'))
   })
 
