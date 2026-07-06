@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { TitleBar } from './TitleBar'
@@ -45,6 +45,7 @@ describe('TitleBar', () => {
 
   afterEach(() => {
     Object.defineProperty(navigator, 'userAgent', { value: originalUserAgent, configurable: true })
+    vi.useRealTimers()
     vi.unstubAllEnvs()
   })
 
@@ -220,11 +221,26 @@ describe('TitleBar', () => {
       Object.defineProperty(navigator, 'userAgent', { value: WINDOWS_UA, configurable: true })
     })
 
-    it('left-button single press starts window dragging', () => {
+    it('keeps single-press dragging on the native drag region instead of manual startDragging', () => {
       const { container } = render(<TitleBar />)
-      fireEvent.mouseDown(container.firstChild as Element, { buttons: 1, detail: 1 })
-      expect(startDragging).toHaveBeenCalledTimes(1)
+      const titleBar = container.firstChild as HTMLElement
+
+      fireEvent.mouseDown(titleBar, { button: 0, buttons: 1, detail: 1 })
+
+      expect(titleBar).toHaveAttribute('data-tauri-drag-region')
+      expect(startDragging).not.toHaveBeenCalled()
       expect(toggleMaximize).not.toHaveBeenCalled()
+    })
+
+    it('keeps the first press of a real double-click out of manual dragging', () => {
+      const { container } = render(<TitleBar />)
+      const titleBar = container.firstChild as Element
+
+      fireEvent.mouseDown(titleBar, { button: 0, buttons: 1, detail: 1 })
+      fireEvent.mouseDown(titleBar, { button: 0, buttons: 1, detail: 2 })
+
+      expect(startDragging).not.toHaveBeenCalled()
+      expect(toggleMaximize).toHaveBeenCalledTimes(1)
     })
 
     it('left-button double press toggles maximize instead of dragging', () => {
@@ -252,6 +268,52 @@ describe('TitleBar', () => {
 
       fireEvent.mouseDown(toggle, { buttons: 1, detail: 1 })
       expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('toggles maximized state when the Windows sidebar menu button is double-clicked', () => {
+      render(<TitleBar />)
+      const toggle = screen.getByLabelText('隐藏侧栏')
+
+      fireEvent.mouseDown(toggle, { button: 0, buttons: 1, detail: 2 })
+
+      expect(toggleMaximize).toHaveBeenCalledTimes(1)
+      expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('keeps the Windows sidebar menu button single-click behavior after the double-click window', () => {
+      vi.useFakeTimers()
+      render(<TitleBar />)
+      const toggle = screen.getByLabelText('隐藏侧栏')
+
+      fireEvent.mouseDown(toggle, { button: 0, buttons: 1, detail: 1 })
+      fireEvent.click(toggle, { detail: 1 })
+      expect(useUiStore.getState().sidebarHidden).toBe(false)
+
+      act(() => {
+        vi.runOnlyPendingTimers()
+      })
+
+      expect(useUiStore.getState().sidebarHidden).toBe(true)
+      expect(toggleMaximize).not.toHaveBeenCalled()
+    })
+
+    it('does not flash the sidebar when the Windows sidebar menu button is double-clicked', () => {
+      vi.useFakeTimers()
+      render(<TitleBar />)
+      const toggle = screen.getByLabelText('隐藏侧栏')
+
+      fireEvent.mouseDown(toggle, { button: 0, buttons: 1, detail: 1 })
+      fireEvent.click(toggle, { detail: 1 })
+      expect(useUiStore.getState().sidebarHidden).toBe(false)
+      fireEvent.mouseDown(toggle, { button: 0, buttons: 1, detail: 2 })
+      fireEvent.click(toggle, { detail: 2 })
+
+      act(() => {
+        vi.runOnlyPendingTimers()
+      })
+
+      expect(useUiStore.getState().sidebarHidden).toBe(false)
+      expect(toggleMaximize).toHaveBeenCalledTimes(1)
     })
 
     it('keeps Windows sidebar controls left-aligned when the sidebar is hidden', () => {

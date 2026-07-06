@@ -6,14 +6,22 @@ import { Button } from '@/components/ui/button'
 import { syncMacTrafficLightInset } from '@/lib/tauri'
 import { handleChromeDragRegionMouseDown } from './windowChrome'
 
-function handleDragStart(e: React.MouseEvent) {
-  if (e.buttons === 1 && e.detail === 2) {
+const WINDOWS_TITLE_BAR_CLICK_DELAY_MS = 220
+
+function isWindowsUserAgent() {
+  return navigator.userAgent.includes('Windows')
+}
+
+function handleTitleBarControlMouseDown(e: React.MouseEvent<HTMLElement>) {
+  if (isWindowsUserAgent() && e.button === 0 && e.buttons === 1 && e.detail === 2) {
+    e.preventDefault()
+    e.stopPropagation()
     void getCurrentWindow().toggleMaximize()
-    return
+    return true
   }
-  if (e.buttons === 1 && e.detail === 1) {
-    getCurrentWindow().startDragging()
-  }
+
+  e.stopPropagation()
+  return false
 }
 
 function useReserveMacTrafficLightInset(enabled: boolean) {
@@ -136,8 +144,22 @@ function WindowControls() {
 function SidebarToggleButton({ className = '' }: { className?: string }) {
   const sidebarHidden = useUiStore((s) => s.sidebarHidden)
   const toggleSidebarHidden = useUiStore((s) => s.toggleSidebarHidden)
+  const pendingToggleRef = useRef<number | null>(null)
   const Icon = sidebarHidden ? PanelRight : PanelLeft
   const label = sidebarHidden ? '显示侧栏' : '隐藏侧栏'
+  const clearPendingToggle = () => {
+    if (pendingToggleRef.current === null) return
+    window.clearTimeout(pendingToggleRef.current)
+    pendingToggleRef.current = null
+  }
+
+  useEffect(() => {
+    return () => {
+      if (pendingToggleRef.current !== null) {
+        window.clearTimeout(pendingToggleRef.current)
+      }
+    }
+  }, [])
 
   return (
     <Button
@@ -148,10 +170,27 @@ function SidebarToggleButton({ className = '' }: { className?: string }) {
       title={label}
       className={`titlebar-sidebar-toggle ${className}`}
       icon={<Icon className="h-4 w-4" aria-hidden="true" />}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        const handledAsDoubleClick = handleTitleBarControlMouseDown(e)
+        if (handledAsDoubleClick) clearPendingToggle()
+      }}
       onClick={(e) => {
         e.stopPropagation()
-        toggleSidebarHidden()
+        if (!isWindowsUserAgent()) {
+          toggleSidebarHidden()
+          return
+        }
+
+        if (e.detail > 1) {
+          clearPendingToggle()
+          return
+        }
+
+        clearPendingToggle()
+        pendingToggleRef.current = window.setTimeout(() => {
+          pendingToggleRef.current = null
+          toggleSidebarHidden()
+        }, WINDOWS_TITLE_BAR_CLICK_DELAY_MS)
       }}
     />
   )
@@ -164,7 +203,7 @@ function TitleBarNavigationButtons() {
   const goForward = useUiStore((s) => s.goForward)
 
   return (
-    <div className="ml-2 flex items-center" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="ml-2 flex items-center" onMouseDown={handleTitleBarControlMouseDown}>
       <Button
         link
         type="button"
@@ -299,7 +338,7 @@ export function TitleBar({ appControls = true }: TitleBarProps) {
       data-tauri-drag-region
       className={barClass}
       style={barStyle}
-      onMouseDown={handleDragStart}
+      onMouseDown={handleChromeDragRegionMouseDown}
     >
       {appControls ? (
         <div className={windowsLeftGroupClass}>
