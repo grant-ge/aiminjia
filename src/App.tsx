@@ -79,6 +79,7 @@ function RouteSwitch() {
 
 function AppShell() {
   useUpdater()
+  const isMacOS = navigator.userAgent.includes('Macintosh')
   const sidebarHidden = useUiStore((state) => state.sidebarHidden)
   const skillDetailDialogId = useUiStore((state) => state.skillDetailDialogId)
   const closeSkillDetailDialog = useUiStore((state) => state.closeSkillDetailDialog)
@@ -98,8 +99,14 @@ function AppShell() {
     setRoute({ kind: 'home' })
   }
 
+  const mainChromeClass = sidebarHidden
+    ? (isMacOS ? '' : 'border-t border-border')
+    : isMacOS
+      ? 'border-l border-border'
+      : 'rounded-l-md border-l border-t border-border'
+
   return (
-    <div className="flex h-screen w-screen flex-col bg-background text-foreground">
+    <div className={`${isMacOS ? 'relative ' : ''}flex h-screen w-screen flex-col bg-background text-foreground`}>
       <TitleBar />
       <NetworkStatusIndicator />
       <div className="flex min-h-0 flex-1 bg-sidebar">
@@ -107,9 +114,7 @@ function AppShell() {
           <AppSidebar />
         </SidebarCollapseFrame>
         <main
-          className={`min-w-0 flex-1 overflow-hidden border-t border-border bg-background ${
-            sidebarHidden ? '' : 'rounded-l-md border-l'
-          }`}
+          className={`min-w-0 flex-1 overflow-hidden bg-background ${mainChromeClass}`}
         >
           <RouteSwitch />
         </main>

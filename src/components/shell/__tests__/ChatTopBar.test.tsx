@@ -1,11 +1,25 @@
 import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatTopBar } from '../ChatTopBar'
+import { useUiStore } from '@/stores/uiStore'
 
 describe('ChatTopBar', () => {
+  const originalUserAgent = navigator.userAgent
+
+  beforeEach(() => {
+    useUiStore.setState({ sidebarHidden: false })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: originalUserAgent,
+      configurable: true,
+    })
+  })
+
   it('renders title and workspace', () => {
     render(
       <ChatTopBar
@@ -82,6 +96,20 @@ describe('ChatTopBar', () => {
     expect(header).not.toHaveClass('h-14')
     expect(header?.className).toMatch(/px-6/)
     expect(header?.className).toMatch(/border-b/)
+  })
+
+  it('reserves macOS window-control space when the sidebar is hidden', () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh)',
+      configurable: true,
+    })
+    useUiStore.setState({ sidebarHidden: true })
+
+    const { container } = render(<ChatTopBar title="人才盘点数据处理与分析" />)
+    const header = container.querySelector('header')
+
+    expect(header).toHaveClass('pl-48')
+    expect(header).toHaveClass('transition-[padding]', 'duration-200', 'ease-out')
   })
 
   it('header has data-tauri-drag-region', () => {

@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { DEFAULTS, useBrandingStore } from "@/stores/brandingStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { setEnvironmentCache } from "@/lib/environment";
+import { useUpdaterStore } from "@/lib/updaterStore";
 import { SidebarAccountFooter } from "../SidebarAccountFooter";
 
 const tauriMock = vi.hoisted(() => ({
@@ -49,6 +50,14 @@ describe("SidebarAccountFooter", () => {
     tauriMock.getSettings.mockResolvedValue(useSettingsStore.getState());
     tauriMock.updateSettings.mockResolvedValue(undefined);
     tauriMock.setImChannelKeepAwake.mockResolvedValue(undefined);
+    useUpdaterStore.setState({
+      phase: "idle",
+      version: null,
+      panelOpen: false,
+      _update: null,
+      _cachedBytes: null,
+      _bootstrapPromise: null,
+    });
   });
 
   it("opens only the root account menu before hovering preferences", async () => {
@@ -151,6 +160,30 @@ describe("SidebarAccountFooter", () => {
     await user.click(screen.getByText("oay xg"));
 
     expect(screen.getByRole("menu", { name: "账户与设置" })).toBeInTheDocument();
+  });
+
+  it("shows the updater button beside settings and opens the updater panel without opening the account menu", async () => {
+    const user = userEvent.setup();
+    useUpdaterStore.setState({
+      phase: "ready",
+      version: "0.5.99",
+      _update: { install: vi.fn() } as never,
+      _cachedBytes: new Uint8Array([1]),
+    });
+
+    render(<SidebarAccountFooter onOpenSettings={vi.fn()} />);
+
+    const accountTrigger = screen.getByRole("button", { name: /账户与设置/ });
+    const updateButton = screen.getByRole("button", { name: "安装" });
+    expect(accountTrigger).toContainElement(updateButton);
+    expect(updateButton.nextElementSibling).toHaveClass("h-8", "w-8");
+    expect(updateButton).toHaveAttribute("data-aijia-updater-sidebar-button");
+    expect(updateButton).toHaveAttribute("data-aijia-updater-phase", "ready");
+
+    await user.click(updateButton);
+
+    expect(useUpdaterStore.getState().panelOpen).toBe(true);
+    expect(screen.queryByRole("menu", { name: "账户与设置" })).not.toBeInTheDocument();
   });
 
   it("uses the brand logo instead of the user's profile avatar", () => {

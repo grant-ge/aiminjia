@@ -35,6 +35,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import type { SettingsModalKey } from "@/stores/uiStore";
 import type { AppLanguage } from "@/i18n";
 import type { ChatWidthMode, FontScale } from "@/types/settings";
+import { SidebarUpdateButton } from "./SidebarUpdateButton";
 
 interface SidebarAccountFooterProps {
   onOpenSettings: (key: SettingsModalKey) => void;
@@ -434,7 +435,7 @@ export function SidebarAccountFooter({
           >
             <div
               data-testid="sidebar-account-avatar"
-              className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card text-sm font-semibold text-primary"
+              className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-card text-sm font-semibold text-primary"
             >
               <img src={accountLogoSrc} alt="" className="h-full w-full object-cover" />
             </div>
@@ -447,6 +448,8 @@ export function SidebarAccountFooter({
                 {accountSubtitle}
               </div>
             </div>
+
+            <SidebarUpdateButton />
 
             <span
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground"

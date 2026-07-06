@@ -1,12 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
-import { UpdateAvailableLink } from './UpdateAvailableLink'
-import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
-import { useUpdaterStore } from '@/lib/updaterStore'
 import { useUiStore } from '@/stores/uiStore'
-import { Tag } from '@/components/common/Tag'
 import { Button } from '@/components/ui/button'
+import { syncMacTrafficLightInset } from '@/lib/tauri'
 
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 2) {
@@ -59,6 +56,47 @@ function useReserveMacTrafficLightInset(enabled: boolean) {
   }, [enabled])
 
   return enabled && !isFullscreen
+}
+
+function useSyncMacTrafficLightInset(enabled: boolean) {
+  const titleBarRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const element = titleBarRef.current
+    if (!element) return
+
+    let lastHeight = 0
+    let frame = 0
+    const sync = () => {
+      if (frame) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        const height = element.getBoundingClientRect().height
+        if (height <= 0 || Math.abs(height - lastHeight) < 0.25) return
+        lastHeight = height
+        void syncMacTrafficLightInset(height).catch(() => undefined)
+      })
+    }
+
+    sync()
+
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(sync)
+      observer.observe(element)
+    }
+    window.addEventListener('resize', sync)
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('resize', sync)
+    }
+  }, [enabled])
+
+  return titleBarRef
 }
 
 function WindowControls() {
@@ -156,75 +194,97 @@ function TitleBarNavigationButtons() {
   )
 }
 
-/**
- * The native drag strip uses the same surface color as the left sidebar so the
- * window chrome and app navigation read as one continuous shell.
- */
-const TITLE_BAR_STYLE: React.CSSProperties = {
+const SIDEBAR_TITLE_BAR_STYLE: React.CSSProperties = {
   backgroundColor: 'var(--sidebar)',
 }
 
-// "DEV" or "DEV 5174" when a vite dev port is detectable.  Including the port
-// makes multi-instance dev (two vite servers side by side) visually
-// distinguishable.  Pass an explicit `port` for tests; otherwise reads
-// `window.location.port` at call time.
-export function getDevBadgeLabel(port?: string): string {
-  const detected = port ?? (typeof window !== 'undefined' ? window.location.port : '')
-  return detected ? `DEV ${detected}` : 'DEV'
-}
-
-// DEV badge: not tenant-themed by design (it's a build-mode marker, not UI).
-// Color picked from semantic blue so it stays distinct from any tenant accent.
-function DevBadge() {
-  return (
-    <Tag
-      size="xs"
-      variant="solid"
-      color="primary"
-      className="pointer-events-none mr-2 border-transparent bg-[var(--color-semantic-purple)] tracking-widest shadow-[var(--shadow-sm)]"
-    >
-      {getDevBadgeLabel()}
-    </Tag>
-  )
+const OVERLAY_TITLE_BAR_STYLE: React.CSSProperties = {
+  backgroundColor: 'transparent',
 }
 
 /**
- * Both macOS (Overlay titleBarStyle) and Windows render a 28px shell strip at
- * the top. macOS draws native traffic lights over this strip.
+ * macOS overlays native traffic lights over the same 48px header band used by
+ * the page top bars. Windows still renders a compact custom title bar.
  */
-export function TitleBar() {
-  const showUpdateLink = useUpdaterStore((s) =>
-    s.phase === 'available' || s.phase === 'downloading' || s.phase === 'ready' || s.phase === 'failed'
-  )
-  const isWindows = navigator.userAgent.includes('Windows')
-  const isDev = import.meta.env.DEV
-  const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(!isWindows)
+interface TitleBarProps {
+  appControls?: boolean
+}
 
-  const barClass = 'flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
-  const barStyle = TITLE_BAR_STYLE
-  const macLeftGroupClass = reserveMacTrafficLightInset
-    ? 'flex items-center pl-20'
-    : 'flex items-center'
+export function TitleBar({ appControls = true }: TitleBarProps) {
+  const isMacOS = navigator.userAgent.includes('Macintosh')
+  const isWindows = navigator.userAgent.includes('Windows')
+  const sidebarHidden = useUiStore((s) => s.sidebarHidden)
+  const reserveMacTrafficLightInset = useReserveMacTrafficLightInset(isMacOS)
+  const macTitleBarRef = useSyncMacTrafficLightInset(isMacOS)
+
+  const barClass = 'relative flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
+  const macDragClass = 'absolute inset-x-0 top-0 z-10 flex h-12 w-full items-center text-sidebar-foreground'
+  const macControlsClass = 'pointer-events-none absolute inset-x-0 top-0 z-30 flex h-12 w-full items-center justify-between text-sidebar-foreground'
+  const barStyle = isMacOS ? OVERLAY_TITLE_BAR_STYLE : SIDEBAR_TITLE_BAR_STYLE
+  const leftGroupClass = sidebarHidden
+    ? 'flex items-center pl-2'
+    : 'flex w-64 items-center justify-end pr-2'
+  const macLeftGroupClass = sidebarHidden
+    ? reserveMacTrafficLightInset
+      ? 'flex items-center pl-20'
+      : leftGroupClass
+    : leftGroupClass
+  const macButtonGroupClass = reserveMacTrafficLightInset && sidebarHidden
+    ? 'pointer-events-auto ml-2 flex items-center'
+    : 'pointer-events-auto flex items-center'
+
+  if (isMacOS) {
+    if (!appControls) {
+      return (
+        <div
+          ref={macTitleBarRef}
+          data-tauri-drag-region
+          className={macDragClass}
+          style={barStyle}
+        />
+      )
+    }
+
+    return (
+      <>
+        <div
+          ref={macTitleBarRef}
+          data-tauri-drag-region
+          className={macDragClass}
+          style={barStyle}
+        />
+        <div className={macControlsClass}>
+          <div className={macLeftGroupClass}>
+            <div className={macButtonGroupClass}>
+              <SidebarToggleButton />
+              <TitleBarNavigationButtons />
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
 
   if (!isWindows) {
+    if (!appControls) {
+      return (
+        <div
+          data-tauri-drag-region
+          className={`${barClass} justify-end`}
+          style={barStyle}
+        />
+      )
+    }
+
     return (
       <div
         data-tauri-drag-region
         className={`${barClass} justify-between`}
         style={barStyle}
       >
-        <div className={macLeftGroupClass}>
+        <div className={leftGroupClass}>
           <SidebarToggleButton />
           <TitleBarNavigationButtons />
-        </div>
-        <div className="flex items-center">
-          {showUpdateLink ? (
-            <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
-              <UpdateAvailableLink />
-            </div>
-          ) : null}
-          {isDev ? <TitleBarEnvSwitcher /> : null}
-          {isDev ? <DevBadge /> : null}
         </div>
       </div>
     )
@@ -237,14 +297,13 @@ export function TitleBar() {
       style={barStyle}
       onMouseDown={handleDragStart}
     >
-      <SidebarToggleButton className="ml-2" />
-      <TitleBarNavigationButtons />
+      {appControls ? (
+        <div className={leftGroupClass}>
+          <SidebarToggleButton />
+          <TitleBarNavigationButtons />
+        </div>
+      ) : null}
       <div className="flex-1" data-tauri-drag-region />
-      <div onMouseDown={(e) => e.stopPropagation()}>
-        <UpdateAvailableLink />
-      </div>
-      {isDev ? <TitleBarEnvSwitcher /> : null}
-      {isDev ? <DevBadge /> : null}
       <WindowControls />
     </div>
   )

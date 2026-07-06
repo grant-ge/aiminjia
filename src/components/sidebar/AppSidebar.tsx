@@ -128,6 +128,7 @@ function ChannelConversationRow({
 
 export function AppSidebar() {
   const { t } = useTranslation();
+  const isMacOS = navigator.userAgent.includes("Macintosh");
   const route = useUiStore((s) => s.route);
   const setRoute = useUiStore((s) => s.setRoute);
   const openSettings = useUiStore((s) => s.openSettings);
@@ -423,7 +424,7 @@ export function AppSidebar() {
   return (
     <>
       <aside
-        className="flex h-full shrink-0 flex-col overflow-hidden bg-sidebar pt-2 text-sidebar-foreground"
+        className={`flex h-full shrink-0 flex-col overflow-hidden bg-sidebar ${isMacOS ? "pt-12" : "pt-2"} text-sidebar-foreground`}
       >
         <SidebarNav
           activeKey={activeKey}

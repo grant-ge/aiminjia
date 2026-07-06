@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
@@ -34,10 +34,14 @@ vi.mock('@/lib/tauri', () => ({
   cloudSendEmailCode: mocks.sendEmailCode,
   cloudResetPassword: mocks.resetPassword,
   getDevEnvironment: vi.fn().mockResolvedValue({
-    currentTenant: 'https://ai.renlijia.com',
-    currentOps: 'https://ops.renlijia.com',
+    currentTenant: 'https://ai-tenant.renlijia.com',
+    currentOps: 'https://ai-ops.renlijia.com',
     isOverride: false,
-    presets: [],
+    presets: [
+      { key: 'test', tenant: 'https://test-ai-tenant.renlijia.com', ops: 'https://test-ai-ops.renlijia.com' },
+      { key: 'pre', tenant: 'https://pre-ai-tenant.renlijia.com', ops: 'https://pre-ai-ops.renlijia.com' },
+      { key: 'prod', tenant: 'https://ai-tenant.renlijia.com', ops: 'https://ai-ops.renlijia.com' },
+    ],
   }),
   setDevEnvironment: vi.fn(),
 }))
@@ -46,13 +50,36 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { LoginPage } from '../LoginPage'
 
 describe('LoginPage password reset', () => {
+  const originalUserAgent = navigator.userAgent
+
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('DEV', false)
     mocks.sendSmsCode.mockResolvedValue(undefined)
     mocks.sendEmailCode.mockResolvedValue(undefined)
     mocks.resetPassword.mockResolvedValue(undefined)
     useNotificationStore.getState().dismissAll()
     localStorage.clear()
+  })
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'userAgent', { value: originalUserAgent, configurable: true })
+    vi.unstubAllEnvs()
+  })
+
+  it('keeps the dev environment switcher beside the login language switch and hides app navigation chrome', async () => {
+    vi.stubEnv('DEV', true)
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+
+    render(<LoginPage />)
+
+    const topControls = screen.getByTestId('login-top-controls')
+    expect(topControls).toContainElement(screen.getByRole('radiogroup', { name: '界面语言' }))
+    expect(topControls).toContainElement(await screen.findByRole('button', { name: '环境切换' }))
+    expect(await screen.findByText('生产')).toBeInTheDocument()
+    expect(screen.queryByLabelText('隐藏侧栏')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '后退' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '前进' })).not.toBeInTheDocument()
   })
 
   it('shows an alert and toast when login rejects invalid password', async () => {

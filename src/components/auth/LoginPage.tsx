@@ -12,6 +12,7 @@ import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
 import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { TitleBar } from '@/components/layout/TitleBar'
+import { TitleBarEnvSwitcher } from '@/components/layout/TitleBarEnvSwitcher'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/authStore'
@@ -129,6 +130,7 @@ export function LoginPage() {
   const accountHint = PHONE_LIKE_REGEX.test(account.trim())
     ? t('login.phoneLoginHint')
     : t('login.accountHint')
+  const showDevEnvironmentSwitcher = import.meta.env.DEV
 
   return (
     <div
@@ -142,11 +144,11 @@ export function LoginPage() {
           Pre-auth the main app shell (which owns the only other TitleBar) is not
           mounted, and native window decorations are disabled on Windows — without
           this the login/register screen has no way to close or minimize. */}
-      <TitleBar />
-      {/* Pre-auth language toggle: pinned top-right under the title bar so it
-          stays in place for both the login and register cards. The dev-only
-          environment switcher lives in the title bar (TitleBarEnvSwitcher). */}
-      <div className="absolute right-4 top-11 z-10">
+      <TitleBar appControls={false} />
+      {/* Pre-auth controls: pinned top-right under the title bar so they stay in
+          place for login/register/reset cards. */}
+      <div data-testid="login-top-controls" className="absolute right-4 top-11 z-10 flex items-center gap-2">
+        {showDevEnvironmentSwitcher ? <TitleBarEnvSwitcher className="mr-0" /> : null}
         <LoginLanguageSwitch />
       </div>
       <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6">

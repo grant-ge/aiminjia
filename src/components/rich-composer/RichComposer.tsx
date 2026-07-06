@@ -45,6 +45,10 @@ export interface ComposerSkillCommand {
   id?: string
 }
 
+export interface RichComposerContentChangeMeta {
+  source: 'user' | 'programmatic'
+}
+
 export interface RichComposerProps {
   placeholder?: string
   disabled?: boolean
@@ -55,9 +59,11 @@ export interface RichComposerProps {
 
   onSubmit: (payload: RichComposerSubmitPayload) => void | Promise<void>
   onStop?: () => void
+  onContentChange?: (markdown: string, meta: RichComposerContentChangeMeta) => void
 
   topSlot?: ReactNode
   tips?: ReactNode
+  leftToolbarHint?: ReactNode
 
   onOpenSkill?: () => void
   skillCommand?: ComposerSkillCommand | null
@@ -82,6 +88,7 @@ export interface RichComposerProps {
 
 export interface RichComposerHandle {
   focus: () => void
+  setMarkdown: (markdown: string) => void
   insertAttachmentTokens: (tokens: ComposerAttachmentToken[]) => void
   insertSkillToken: (token: ComposerSkillToken) => void
   clear: () => void
@@ -98,8 +105,10 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     clearOnSubmit = false,
     onSubmit,
     onStop,
+    onContentChange,
     topSlot,
     tips,
+    leftToolbarHint,
     onOpenSkill,
     skillCommand,
     onClearSkillCommand,
@@ -120,8 +129,10 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   const { t } = useTranslation()
   const isComposingRef = useRef(false)
   const submittingRef = useRef(false)
+  const programmaticChangeRef = useRef(false)
   // Force a re-render when content/submit state changes so the send button's disabled state stays accurate.
   const [, forceTick] = useState(0)
+  const [isComposerSubmitting, setIsComposerSubmitting] = useState(false)
   const editor = useEditor({
     extensions: buildComposerExtensions({ placeholder, skills: skillTokens ?? [] }),
     content: initialMarkdown
@@ -129,7 +140,13 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       : undefined,
     editable: !disabled,
     autofocus: autoFocus ? 'end' : false,
-    onUpdate: () => forceTick((n) => n + 1),
+    onUpdate: ({ editor }) => {
+      forceTick((n) => n + 1)
+      onContentChange?.(
+        serializeComposerDoc(editor.getJSON() as unknown as ComposerJsonNode).markdown,
+        { source: programmaticChangeRef.current ? 'programmatic' : 'user' },
+      )
+    },
   })
 
   useEffect(() => {
@@ -147,11 +164,18 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     const payload = serializeComposerDoc(json)
     if (payload.isEmpty) return
     submittingRef.current = true
+    setIsComposerSubmitting(true)
     // Clear synchronously so the user can start typing the next message while
     // onSubmit is still in flight. If onSubmit rejects we restore the prior
     // content (markdown round-trip via parseMarkdownToComposerJson keeps text /
     // attachment tokens but loses richer marks — acceptable for a failure path).
-    if (clearOnSubmit) editor.commands.clearContent()
+    if (clearOnSubmit) {
+      programmaticChangeRef.current = true
+      editor.commands.clearContent()
+      queueMicrotask(() => {
+        programmaticChangeRef.current = false
+      })
+    }
     // Release submittingRef on the next microtask. The earlier "await onSubmit
     // then release in finally" approach deadlocked the composer for the entire
     // streaming turn: the SentDirectly IPC only resolves after stream:done, so
@@ -160,6 +184,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     // backend is the real serialization point.
     queueMicrotask(() => {
       submittingRef.current = false
+      setIsComposerSubmitting(false)
       forceTick((n) => n + 1)
     })
     try {
@@ -228,6 +253,16 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       focus: () => {
         editor?.commands.focus('end')
       },
+      setMarkdown: (markdown) => {
+        if (!editor) return
+        programmaticChangeRef.current = true
+        editor.commands.setContent(parseMarkdownToComposerJson(markdown))
+        editor.commands.focus('end')
+        queueMicrotask(() => {
+          programmaticChangeRef.current = false
+        })
+        forceTick((n) => n + 1)
+      },
       insertAttachmentTokens: (tokens) => {
         editor?.commands.insertAttachmentTokens(tokens)
       },
@@ -235,7 +270,12 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
         editor?.commands.insertSkillToken(token)
       },
       clear: () => {
-        editor?.commands.clearContent()
+        if (!editor) return
+        programmaticChangeRef.current = true
+        editor.commands.clearContent()
+        queueMicrotask(() => {
+          programmaticChangeRef.current = false
+        })
       },
       getEditor: () => editor ?? null,
     }),
@@ -245,8 +285,8 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   const isEmpty = !editor || editor.isEmpty
   // Send button is disabled when there's nothing to send. During streaming
   // we still allow send (it queues via PendingQueueManager).
-  const sendDisabled = disabled || isEmpty || submittingRef.current
-  const sendButtonLoading = submittingRef.current
+  const sendDisabled = disabled || isEmpty || isComposerSubmitting
+  const sendButtonLoading = isComposerSubmitting
   const sendIcon = sendButtonLoading ? (
     <span className="block h-3 w-3 rounded-full bg-current" />
   ) : (
@@ -317,6 +357,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               disabled={disabled}
               icon={<Plus />}
             />
+            {leftToolbarHint}
             <Button
               type="button"
               variant={skillCommand ? 'secondary' : 'ghost'}

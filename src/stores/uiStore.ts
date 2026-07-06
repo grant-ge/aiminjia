@@ -16,6 +16,7 @@ export type Route =
 export type SettingsModalKey =
   | 'account'
   | 'system'
+  | 'environment'
   | 'account-billing'
   | 'usage'
   | 'permissions'

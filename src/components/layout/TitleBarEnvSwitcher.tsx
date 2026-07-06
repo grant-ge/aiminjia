@@ -11,14 +11,19 @@ import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useUiStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
-/**
- * Dev-only environment switcher living in the title bar (the green badge).
- * Always visible in debug builds regardless of login state. Switching while
- * logged in logs the user out and bounces to login. Stripped from release
- * builds by the title bar's `isDev` guard.
- */
-export function TitleBarEnvSwitcher() {
+interface TitleBarEnvSwitcherProps {
+  className?: string
+  triggerClassName?: string
+  onStateChange?: (state: DevEnvironmentState) => void
+}
+
+export function TitleBarEnvSwitcher({
+  className,
+  triggerClassName,
+  onStateChange,
+}: TitleBarEnvSwitcherProps) {
   const { t } = useTranslation()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const logout = useAuthStore((s) => s.logout)
@@ -32,6 +37,7 @@ export function TitleBarEnvSwitcher() {
       .then((s) => {
         setEnvironmentCache({ tenant: s.currentTenant, ops: s.currentOps })
         setState(s)
+        onStateChange?.(s)
       })
       .catch((e) => {
         // Outside Tauri (vitest/jsdom) the command is unavailable; in a dev
@@ -39,7 +45,7 @@ export function TitleBarEnvSwitcher() {
         // so surface it instead of swallowing it.
         console.error('[TitleBarEnvSwitcher] getDevEnvironment failed:', e)
       })
-  }, [])
+  }, [onStateChange])
 
   if (!state) return null
 
@@ -57,6 +63,7 @@ export function TitleBarEnvSwitcher() {
     try {
       const next = await setDevEnvironment(tenant, ops)
       setEnvironmentCache({ tenant: next.currentTenant, ops: next.currentOps })
+      onStateChange?.(next)
       if (isLoggedIn) {
         // Close settings before logout: logout() doesn't reset uiStore, so a
         // lingering settingsModal would reopen after re-login.
@@ -90,14 +97,17 @@ export function TitleBarEnvSwitcher() {
   }
 
   return (
-    <span className="mr-2" onMouseDown={(e) => e.stopPropagation()}>
+    <span className={cn('mr-2', className)} onMouseDown={(e) => e.stopPropagation()}>
       <AppDropdown
         ariaLabel={t('settings.environment.title')}
         align="end"
         trigger={
           <Button unstyled
             type="button"
-            className="inline-flex items-center gap-0.5 rounded bg-[var(--color-semantic-green)] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-primary-foreground shadow-[var(--shadow-sm)] transition-[filter] hover:brightness-95"
+            className={cn(
+              'inline-flex h-[20px] min-h-[20px] items-center gap-0.5 rounded bg-[var(--color-semantic-green)] px-1.5 text-[11px] font-semibold leading-[20px] tracking-wide text-primary-foreground shadow-[var(--shadow-sm)] transition-[filter] hover:brightness-95',
+              triggerClassName,
+            )}
           >
             {currentLabel}
             <ChevronDown className="h-3 w-3" />

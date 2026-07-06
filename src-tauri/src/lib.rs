@@ -137,6 +137,36 @@ fn handle_window_close_requested<R: tauri::Runtime>(
     let _ = event;
 }
 
+fn handle_window_chrome_event<R: tauri::Runtime + 'static>(
+    window: &tauri::Window<R>,
+    event: &tauri::WindowEvent,
+) {
+    #[cfg(target_os = "macos")]
+    {
+        if window.label() != "main" {
+            return;
+        }
+
+        let should_check = matches!(
+            event,
+            tauri::WindowEvent::Resized(_)
+                | tauri::WindowEvent::Moved(_)
+                | tauri::WindowEvent::ScaleFactorChanged { .. }
+                | tauri::WindowEvent::Focused(true)
+        );
+        if !should_check {
+            return;
+        }
+
+        if let Some(webview_window) = window.app_handle().get_webview_window("main") {
+            commands::window_chrome::schedule_traffic_light_position_check(&webview_window);
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, event);
+}
+
 fn build_localized_app_menu<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     language: &str,
@@ -302,6 +332,42 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
+fn configure_main_window_chrome<R: tauri::Runtime + 'static>(app: &tauri::App<R>) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+
+    // TitleBar is rendered by React, but the native title still drives the
+    // macOS Dock right-click menu, Mission Control and Cmd+Tab window list.
+    let native_title = app
+        .config()
+        .product_name
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| std::env::var("AIJIA_DEV_APP_NAME").ok())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "AIjia".to_string());
+    let _ = win.set_title(&native_title);
+
+    #[cfg(target_os = "macos")]
+    {
+        commands::window_chrome::position_traffic_lights_then_show(&win);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = win.set_decorations(false);
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 fn build_tray_menu<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     labels: AppMenuLabels,
@@ -412,10 +478,12 @@ pub fn run() {
     builder
         .on_window_event(|window, event| {
             handle_window_close_requested(window, event);
+            handle_window_chrome_event(window, event);
         })
         .setup(|app| {
             install_app_navigation_menu(app)?;
             install_app_tray(app)?;
+            configure_main_window_chrome(app);
 
             // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
@@ -733,42 +801,6 @@ pub fn run() {
                 llm::gateway::LlmGateway::new_with_registry(db.clone(), run_registry.clone())
                     .with_auth_manager(auth_manager.clone()),
             );
-
-            // Set window title from persisted branding (before WebView renders)
-            // Window setup: custom titlebar on all platforms
-            {
-                if let Some(win) = app.get_webview_window("main") {
-                    // Title bar is rendered by the HTML TitleBar component, but the
-                    // native window title still drives the macOS Dock right-click
-                    // menu, Mission Control and Cmd+Tab window list — a blank " "
-                    // there shows up as a nameless entry. Seed it with the product
-                    // name; brandingStore refines it to the tenant productName once
-                    // the webview loads.
-                    let native_title = app
-                        .config()
-                        .product_name
-                        .clone()
-                        .filter(|value| !value.trim().is_empty())
-                        .or_else(|| std::env::var("AIJIA_DEV_APP_NAME").ok())
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or_else(|| "AIjia".to_string());
-                    let _ = win.set_title(&native_title);
-
-                    // macOS: `titleBarStyle: Overlay` floats the traffic lights over
-                    // content but does NOT hide the native title text — it would
-                    // otherwise show "AIjia" right of the lights. Hide it so the
-                    // TitleBar React component is the only thing in that strip.
-                    commands::window_chrome::hide_window_title(&win);
-
-                    // Windows: disable native decorations to avoid double titlebar.
-                    // macOS uses titleBarStyle: Overlay (set in tauri.conf.json) which
-                    // keeps the traffic light buttons overlaid on content.
-                    #[cfg(target_os = "windows")]
-                    {
-                        let _ = win.set_decorations(false);
-                    }
-                }
-            }
 
             // Initialize DingTalk bridge (dws CLI sidecar)
             let dingtalk_bridge = Arc::new(connector::dingtalk::DingtalkBridge::new(
@@ -1402,6 +1434,7 @@ pub fn run() {
             settings::get_settings,
             settings::update_settings,
             settings::save_profile_avatar_image,
+            commands::window_chrome::sync_mac_traffic_light_inset,
             power::set_im_channel_keep_awake,
             settings::validate_api_key,
             settings::get_configured_providers,

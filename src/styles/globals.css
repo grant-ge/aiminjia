@@ -145,6 +145,13 @@
   --color-semantic-green-bg-light: rgba(52, 199, 89, 0.04);
   --color-semantic-orange-bg-light: rgba(245, 166, 35, 0.04);
   --color-semantic-orange-border: rgba(245, 166, 35, 0.2);
+  --color-updater-action-blue: #4096ff;
+  --color-updater-action-blue-hover: #69b1ff;
+  --color-updater-action-green: #22c55e;
+  --color-updater-action-green-hover: #4ade80;
+  --color-updater-action-red: var(--color-semantic-red);
+  --color-updater-action-red-hover: #f87171;
+  --color-updater-action-foreground: var(--primary-foreground);
 
   --color-filetype-green-bg: rgba(52, 199, 89, 0.15);
   --color-filetype-blue-bg: rgba(91, 155, 213, 0.15);
@@ -385,11 +392,6 @@ body {
   background: var(--primary-mix-scrollbar);
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
-}
-
 button:not(:disabled) {
   cursor: pointer;
 }
@@ -418,8 +420,8 @@ button:not(:disabled) {
 }
 
 .titlebar-sidebar-toggle {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   color: rgba(var(--sidebar-foreground-rgb), 0.7);
 }
@@ -433,7 +435,7 @@ button:not(:disabled) {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  color: rgba(var(--sidebar-foreground-rgb), 0.46);
+  color: rgba(var(--sidebar-foreground-rgb), 0.7);
 }
 
 .titlebar-navigation-button:hover:not(:disabled) {
@@ -805,6 +807,24 @@ button:not(:disabled) {
   }
   50% {
     opacity: 0.6;
+  }
+}
+
+@keyframes workspaceHintNudge {
+  0% {
+    transform: translateX(0);
+  }
+  22% {
+    transform: translateX(5px);
+  }
+  48% {
+    transform: translateX(-2px);
+  }
+  72% {
+    transform: translateX(1.5px);
+  }
+  100% {
+    transform: translateX(0);
   }
 }
 
