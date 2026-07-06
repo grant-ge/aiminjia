@@ -8,7 +8,6 @@ use tauri::{Manager, Runtime, WebviewWindow};
 
 const MAC_TRAFFIC_LIGHT_X: f64 = 16.0;
 const DEFAULT_MAC_TITLE_BAR_HEIGHT: f64 = 45.0;
-const MAC_TRAFFIC_LIGHT_CENTER_OFFSET: f64 = 2.0;
 const MAC_TRAFFIC_LIGHT_REPOSITION_DELAY_MS: u64 = 400;
 #[cfg(target_os = "macos")]
 const MAC_TRAFFIC_LIGHT_EVENT_DEBOUNCE_MS: u64 = 120;
@@ -140,9 +139,7 @@ fn apply_traffic_light_position_if_needed<R: Runtime>(_window: &WebviewWindow<R>
                 return;
             };
 
-            let close_rect = NSView::frame(&close);
-            let traffic_light_y = current_traffic_light_y();
-            let title_bar_frame_height = close_rect.size.height + traffic_light_y;
+            let title_bar_frame_height = current_title_bar_height();
             let mut title_bar_rect = NSView::frame(&title_bar_container_view);
             let expected_title_bar_origin_y = window.frame().size.height - title_bar_frame_height;
             if !is_near(title_bar_rect.size.height, title_bar_frame_height)
@@ -153,13 +150,25 @@ fn apply_traffic_light_position_if_needed<R: Runtime>(_window: &WebviewWindow<R>
                 title_bar_container_view.setFrame(title_bar_rect);
             }
 
+            let mut button_container_rect = NSView::frame(&close_superview);
+            if !is_near(button_container_rect.size.height, title_bar_frame_height)
+                || !is_near(button_container_rect.origin.y, 0.0)
+            {
+                button_container_rect.size.height = title_bar_frame_height;
+                button_container_rect.origin.y = 0.0;
+                close_superview.setFrame(button_container_rect);
+            }
+
+            let close_rect = NSView::frame(&close);
             let space_between = NSView::frame(&minimize).origin.x - close_rect.origin.x;
             let buttons = [Some(close), Some(minimize), zoom];
             for (index, button) in buttons.into_iter().flatten().enumerate() {
                 let mut rect = NSView::frame(&button);
                 let expected_x = MAC_TRAFFIC_LIGHT_X + (index as f64 * space_between);
-                if !is_near(rect.origin.x, expected_x) {
+                let expected_y = traffic_light_button_y(title_bar_frame_height, rect.size.height);
+                if !is_near(rect.origin.x, expected_x) || !is_near(rect.origin.y, expected_y) {
                     rect.origin.x = expected_x;
+                    rect.origin.y = expected_y;
                     button.setFrameOrigin(rect.origin);
                 }
             }
@@ -167,15 +176,13 @@ fn apply_traffic_light_position_if_needed<R: Runtime>(_window: &WebviewWindow<R>
     }
 }
 
-fn traffic_light_y_for_title_bar_height(title_bar_height: f64) -> f64 {
-    title_bar_height / 2.0 + MAC_TRAFFIC_LIGHT_CENTER_OFFSET
+fn traffic_light_button_y(title_bar_height: f64, button_height: f64) -> f64 {
+    (title_bar_height - button_height).max(0.0) / 2.0
 }
 
 #[cfg(target_os = "macos")]
-fn current_traffic_light_y() -> f64 {
-    traffic_light_y_for_title_bar_height(f64::from_bits(
-        MAC_TITLE_BAR_HEIGHT_BITS.load(std::sync::atomic::Ordering::Relaxed),
-    ))
+fn current_title_bar_height() -> f64 {
+    f64::from_bits(MAC_TITLE_BAR_HEIGHT_BITS.load(std::sync::atomic::Ordering::Relaxed))
 }
 
 #[cfg(target_os = "macos")]
@@ -194,11 +201,12 @@ fn is_near(value: f64, expected: f64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::traffic_light_y_for_title_bar_height;
+    use super::traffic_light_button_y;
 
     #[test]
-    fn traffic_light_y_tracks_half_of_title_bar_height() {
-        assert_eq!(traffic_light_y_for_title_bar_height(45.0), 24.5);
-        assert_eq!(traffic_light_y_for_title_bar_height(48.0), 26.0);
+    fn traffic_light_button_y_centers_button_inside_title_bar() {
+        assert_eq!(traffic_light_button_y(45.0, 14.0), 15.5);
+        assert_eq!(traffic_light_button_y(48.0, 14.0), 17.0);
+        assert_eq!(traffic_light_button_y(12.0, 14.0), 0.0);
     }
 }
